@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "super_secure_random_jwt_secret_key_at_least_32_chars_long"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_DAYS: int = 30
+    REQUIRE_AUTH: bool = False
 
     # Rate Limiting
     RATE_LIMIT_LOGIN: str = "5/minute"

@@ -82,6 +82,12 @@ class SettingsViewModel(
         }
     }
 
+    fun setServerUrl(url: String) {
+        viewModelScope.launch {
+            dataStoreManager.setServerUrl(url)
+        }
+    }
+
     fun logout() {
         viewModelScope.launch {
             authRepository.logout()

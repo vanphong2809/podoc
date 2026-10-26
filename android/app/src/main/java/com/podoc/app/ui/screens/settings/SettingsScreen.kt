@@ -30,11 +30,12 @@ import com.podoc.app.ui.theme.parseHexColor
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
-    onLogout: () -> Unit
+    onLogout: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    var showLogoutDialog by remember { mutableStateOf(false) }
+    var showServerDialog by remember { mutableStateOf(false) }
+    var editingServerUrl by remember { mutableStateOf("") }
 
     // Launcher cho Storage Access Framework (SAF) để lưu file ZIP xuất dữ liệu
     val exportLauncher = rememberLauncherForActivityResult(
@@ -220,7 +221,7 @@ fun SettingsScreen(
                 }
             }
 
-            // Nhóm: Tài khoản & Máy chủ
+            // Nhóm: Máy chủ kết nối
             Card(
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -228,7 +229,7 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = stringResource(R.string.section_account),
+                        text = "Máy chủ kết nối",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -237,32 +238,24 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
-                        text = stringResource(R.string.connected_server, uiState.serverUrl),
+                        text = stringResource(R.string.connected_server, uiState.serverUrl.ifBlank { "Chưa thiết lập" }),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
 
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Text(
-                        text = stringResource(R.string.logged_in_as, uiState.username),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    Button(
-                        onClick = { showLogoutDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                    OutlinedButton(
+                        onClick = {
+                            editingServerUrl = uiState.serverUrl
+                            showServerDialog = true
+                        },
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            text = stringResource(R.string.logout),
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Icon(imageVector = Icons.Default.Dns, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Thay đổi địa chỉ máy chủ")
                     }
                 }
             }
@@ -298,27 +291,38 @@ fun SettingsScreen(
         }
     }
 
-    // Dialog xác nhận Đăng xuất
-    if (showLogoutDialog) {
+    // Dialog cập nhật Địa chỉ máy chủ
+    if (showServerDialog) {
         AlertDialog(
-            onDismissRequest = { showLogoutDialog = false },
-            icon = { Icon(Icons.Default.Logout, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text(stringResource(R.string.logout)) },
-            text = { Text(stringResource(R.string.logout_confirm)) },
+            onDismissRequest = { showServerDialog = false },
+            icon = { Icon(Icons.Default.Dns, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text("Địa chỉ máy chủ") },
+            text = {
+                Column {
+                    Text("Nhập địa chỉ máy chủ PoDoc của bạn:", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = editingServerUrl,
+                        onValueChange = { editingServerUrl = it },
+                        label = { Text("URL máy chủ") },
+                        placeholder = { Text("http://10.0.2.2:8000") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
             confirmButton = {
                 Button(
                     onClick = {
-                        showLogoutDialog = false
-                        viewModel.logout()
-                        onLogout()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        showServerDialog = false
+                        viewModel.setServerUrl(editingServerUrl)
+                    }
                 ) {
                     Text(stringResource(R.string.btn_confirm))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showLogoutDialog = false }) {
+                TextButton(onClick = { showServerDialog = false }) {
                     Text(stringResource(R.string.btn_cancel))
                 }
             }

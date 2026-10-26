@@ -16,6 +16,7 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "po
 class DataStoreManager(private val context: Context) {
 
     companion object {
+        const val DEFAULT_SERVER_URL = "http://10.0.2.2:8000"
         val SERVER_URL = stringPreferencesKey("server_url")
         val AUTH_TOKEN = stringPreferencesKey("auth_token")
         val USERNAME = stringPreferencesKey("username")
@@ -26,7 +27,7 @@ class DataStoreManager(private val context: Context) {
     }
 
     val serverUrlFlow: Flow<String> = context.dataStore.data.map { preferences ->
-        preferences[SERVER_URL] ?: ""
+        preferences[SERVER_URL]?.takeIf { it.isNotBlank() } ?: DEFAULT_SERVER_URL
     }
 
     val authTokenFlow: Flow<String> = context.dataStore.data.map { preferences ->
@@ -34,7 +35,7 @@ class DataStoreManager(private val context: Context) {
     }
 
     val usernameFlow: Flow<String> = context.dataStore.data.map { preferences ->
-        preferences[USERNAME] ?: ""
+        preferences[USERNAME] ?: "admin"
     }
 
     val themeModeFlow: Flow<String> = context.dataStore.data.map { preferences ->
@@ -53,9 +54,25 @@ class DataStoreManager(private val context: Context) {
         preferences[DEFAULT_FONT_SIZE] ?: 16
     }
 
+    suspend fun setServerUrl(url: String) {
+        context.dataStore.edit { preferences ->
+            var cleanUrl = url.trim().trimEnd('/')
+            if (cleanUrl.isNotBlank() && !cleanUrl.startsWith("http://", ignoreCase = true) && !cleanUrl.startsWith("https://", ignoreCase = true)) {
+                cleanUrl = if (cleanUrl.contains("localhost") || cleanUrl.matches(Regex("^[0-9.:]+.*"))) {
+                    "http://$cleanUrl"
+                } else {
+                    "https://$cleanUrl"
+                }
+            }
+            preferences[SERVER_URL] = cleanUrl
+        }
+    }
+
     suspend fun saveAuthData(serverUrl: String, token: String, username: String) {
         context.dataStore.edit { preferences ->
-            preferences[SERVER_URL] = serverUrl.trimEnd('/')
+            if (serverUrl.isNotBlank()) {
+                preferences[SERVER_URL] = serverUrl.trimEnd('/')
+            }
             preferences[AUTH_TOKEN] = token
             preferences[USERNAME] = username
         }

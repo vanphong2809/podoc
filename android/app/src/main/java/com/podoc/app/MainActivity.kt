@@ -19,8 +19,6 @@ import androidx.navigation.navArgument
 import com.podoc.app.ui.components.AddOptionBottomSheet
 import com.podoc.app.ui.components.PoDocBottomBar
 import com.podoc.app.ui.navigation.Screen
-import com.podoc.app.ui.screens.auth.LoginScreen
-import com.podoc.app.ui.screens.auth.LoginViewModel
 import com.podoc.app.ui.screens.category.CategoryScreen
 import com.podoc.app.ui.screens.category.CategoryViewModel
 import com.podoc.app.ui.screens.library.LibraryScreen
@@ -65,8 +63,14 @@ class MainActivity : ComponentActivity() {
             val settingsViewModel = remember {
                 SettingsViewModel(container.authRepository, container.articleRepository, container.dataStoreManager)
             }
-            val loginViewModel = remember {
-                LoginViewModel(container.authRepository)
+
+            // Reload khi server URL thay đổi
+            val serverUrl by container.dataStoreManager.serverUrlFlow.collectAsState(initial = "")
+            LaunchedEffect(serverUrl) {
+                if (serverUrl.isNotBlank()) {
+                    libraryViewModel.loadArticles(refresh = true)
+                    categoryViewModel.loadCategories()
+                }
             }
 
             // Launcher SAF chọn 1 hoặc nhiều file từ máy để lưu trực tiếp vào thư viện (không trích xuất)
@@ -93,15 +97,6 @@ class MainActivity : ComponentActivity() {
                         navController.navigate(Screen.Library.route) {
                             popUpTo(Screen.Library.route) { inclusive = true }
                         }
-                    }
-                }
-            }
-
-            // Lắng nghe sự kiện token hết hạn -> Quay về Login
-            LaunchedEffect(Unit) {
-                container.tokenExpiredEvent.collect {
-                    navController.navigate(Screen.Login.route) {
-                        popUpTo(0) { inclusive = true }
                     }
                 }
             }
@@ -154,21 +149,9 @@ class MainActivity : ComponentActivity() {
                 ) { innerPadding ->
                     NavHost(
                         navController = navController,
-                        startDestination = if (authToken.isNotBlank()) Screen.Library.route else Screen.Login.route,
+                        startDestination = Screen.Library.route,
                         modifier = Modifier.padding(innerPadding)
                     ) {
-                        // Màn hình Đăng nhập
-                        composable(Screen.Login.route) {
-                            LoginScreen(
-                                viewModel = loginViewModel,
-                                onLoginSuccess = {
-                                    libraryViewModel.loadArticles(refresh = true)
-                                    navController.navigate(Screen.Library.route) {
-                                        popUpTo(Screen.Login.route) { inclusive = true }
-                                    }
-                                }
-                            )
-                        }
 
                         // Màn hình Thư viện
                         composable(Screen.Library.route) {
@@ -221,12 +204,7 @@ class MainActivity : ComponentActivity() {
                         // Màn hình Cài đặt
                         composable(Screen.Settings.route) {
                             SettingsScreen(
-                                viewModel = settingsViewModel,
-                                onLogout = {
-                                    navController.navigate(Screen.Login.route) {
-                                        popUpTo(0) { inclusive = true }
-                                    }
-                                }
+                                viewModel = settingsViewModel
                             )
                         }
                     }
