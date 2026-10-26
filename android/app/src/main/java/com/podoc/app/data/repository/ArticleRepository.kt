@@ -73,7 +73,13 @@ class ArticleRepository(
             val filePart = MultipartBody.Part.createFormData("file", fileName, requestFile)
 
             val draft = getApi().extractFile(filePart)
-            Result.success(draft.copy(fileName = fileName, mimeType = mimeType))
+            Result.success(
+                draft.copy(
+                    fileName = draft.fileName ?: fileName,
+                    mimeType = draft.mimeType ?: mimeType,
+                    filePath = draft.filePath
+                )
+            )
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -124,10 +130,19 @@ class ArticleRepository(
         }
     }
 
-    suspend fun downloadArticleFile(id: Int): Result<ResponseBody> {
+    suspend fun downloadArticleFile(id: Int, inline: Boolean = false): Result<ResponseBody> {
         return try {
-            val body = getApi().downloadArticleFile(id)
+            val body = getApi().downloadArticleFile(id, inline)
             Result.success(body)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun previewArticleHtml(id: Int): Result<String> {
+        return try {
+            val body = getApi().previewArticleHtml(id)
+            Result.success(body.string())
         } catch (e: Exception) {
             Result.failure(e)
         }

@@ -465,16 +465,45 @@ fun PreviewScreen(
                                             else Modifier
                                         )
                                 ) {
-                                    Markdown(
-                                        content = if (!isFullPreviewExpanded && cleanedPreviewContent.length > 800) {
-                                            cleanedPreviewContent.take(800) + "...\n\n*(Bấm \"Mở rộng\" để xem toàn bộ nội dung)*"
-                                        } else {
-                                            cleanedPreviewContent
-                                        },
-                                        typography = previewTypography,
-                                        colors = previewColors,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
+                                    if (cleanedPreviewContent.isNotBlank()) {
+                                        Markdown(
+                                            content = if (!isFullPreviewExpanded && cleanedPreviewContent.length > 800) {
+                                                cleanedPreviewContent.take(800) + "...\n\n*(Bấm \"Mở rộng\" để xem toàn bộ nội dung)*"
+                                            } else {
+                                                cleanedPreviewContent
+                                            },
+                                            typography = previewTypography,
+                                            colors = previewColors,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    } else {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.CheckCircle,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(28.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Column {
+                                                Text(
+                                                    text = "Tệp tin: ${draft.fileName ?: "Tài liệu"}",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                                Text(
+                                                    text = "Tệp tin nguyên bản sẽ được mở và xem trực tiếp trên ứng dụng khi đọc.",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

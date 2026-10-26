@@ -25,6 +25,7 @@ data class ArticleDraft(
     @SerialName("is_fallback_bookmark") val isFallbackBookmark: Boolean = false,
     @SerialName("error_message") val errorMessage: String? = null,
     @SerialName("file_name") val fileName: String? = null,
+    @SerialName("file_path") val filePath: String? = null,
     @SerialName("mime_type") val mimeType: String? = null
 )
 
@@ -35,8 +36,9 @@ data class CreateArticleRequest(
     @SerialName("source_url") val sourceUrl: String? = null,
     @SerialName("normalized_url") val normalizedUrl: String? = null,
     @SerialName("file_name") val fileName: String? = null,
+    @SerialName("file_path") val filePath: String? = null,
     @SerialName("mime_type") val mimeType: String? = null,
-    @SerialName("content_markdown") val contentMarkdown: String,
+    @SerialName("content_markdown") val contentMarkdown: String = "",
     @SerialName("excerpt") val excerpt: String? = null,
     @SerialName("author") val author: String? = null,
     @SerialName("site_name") val siteName: String? = null,
@@ -62,6 +64,9 @@ data class ArticleListItem(
     @SerialName("title") val title: String,
     @SerialName("source_type") val sourceType: String = "URL",
     @SerialName("source_url") val sourceUrl: String? = null,
+    @SerialName("file_name") val fileName: String? = null,
+    @SerialName("file_path") val filePath: String? = null,
+    @SerialName("mime_type") val mimeType: String? = null,
     @SerialName("excerpt") val excerpt: String? = null,
     @SerialName("author") val author: String? = null,
     @SerialName("site_name") val siteName: String? = null,
@@ -83,6 +88,7 @@ data class ArticleDetail(
     @SerialName("source_url") val sourceUrl: String? = null,
     @SerialName("normalized_url") val normalizedUrl: String? = null,
     @SerialName("file_name") val fileName: String? = null,
+    @SerialName("file_path") val filePath: String? = null,
     @SerialName("mime_type") val mimeType: String? = null,
     @SerialName("content_markdown") val contentMarkdown: String = "",
     @SerialName("excerpt") val excerpt: String? = null,

@@ -71,8 +71,15 @@ interface PoDocApiService {
     @GET("api/export")
     suspend fun exportData(): ResponseBody
 
-    // Download original file
+    // Download original file or stream inline
     @Streaming
     @GET("api/articles/{id}/file")
-    suspend fun downloadArticleFile(@Path("id") id: Int): ResponseBody
+    suspend fun downloadArticleFile(
+        @Path("id") id: Int,
+        @Query("inline") inline: Boolean = false
+    ): ResponseBody
+
+    // Preview HTML (for DOCX, HTML, TXT, MD)
+    @GET("api/articles/{id}/preview-html")
+    suspend fun previewArticleHtml(@Path("id") id: Int): ResponseBody
 }

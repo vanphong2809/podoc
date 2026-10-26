@@ -101,6 +101,9 @@ async def list_articles(
                 title=art.title,
                 source_type=art.source_type,
                 source_url=art.source_url,
+                file_name=art.file_name,
+                file_path=art.file_path,
+                mime_type=art.mime_type,
                 excerpt=art.excerpt,
                 author=art.author,
                 site_name=art.site_name,
@@ -124,7 +127,7 @@ async def get_article(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Lấy chi tiết toàn bộ nội dung bài viết và Markdown để đọc."""
+    """Lấy chi tiết toàn bộ nội dung bài viết và thông tin file đính kèm."""
     stmt = select(Article).options(selectinload(Article.category)).where(Article.id == id)
     result = await db.execute(stmt)
     art = result.scalar_one_or_none()
@@ -139,6 +142,7 @@ async def get_article(
         source_url=art.source_url,
         normalized_url=art.normalized_url,
         file_name=art.file_name,
+        file_path=art.file_path,
         mime_type=art.mime_type,
         content_markdown=art.content_markdown,
         excerpt=art.excerpt,
@@ -178,8 +182,9 @@ async def create_article(
         source_url=data.source_url,
         normalized_url=norm_url,
         file_name=data.file_name,
+        file_path=data.file_path,
         mime_type=data.mime_type,
-        content_markdown=data.content_markdown,
+        content_markdown=data.content_markdown or "",
         excerpt=excerpt,
         author=data.author,
         site_name=data.site_name,
@@ -265,8 +270,9 @@ async def download_article_file(
     id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    inline: bool = Query(False, description="Hiển thị trực tiếp (inline) hay tải về (attachment)"),
 ):
-    """Tải lại file gốc của bài viết (Phase 2)."""
+    """Tải lại file gốc hoặc xem trực tiếp trên app."""
     stmt = select(Article).where(Article.id == id)
     result = await db.execute(stmt)
     art = result.scalar_one_or_none()
@@ -288,4 +294,61 @@ async def download_article_file(
         path=disk_path,
         filename=download_name,
         media_type=media_type,
+        content_disposition_type="inline" if inline else "attachment",
     )
+
+
+@router.get("/{id}/preview-html")
+async def preview_article_html(
+    id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Trả về nội dung HTML để mở và xem trực tiếp trên app:
+    - Nếu là DOCX: convert sang HTML bằng mammoth
+    - Nếu là HTML: trả về HTML nguyên gốc
+    - Nếu là TXT / MD / MDF: trả về HTML bọc sẵn style typography
+    """
+    from fastapi.responses import HTMLResponse
+
+    stmt = select(Article).where(Article.id == id)
+    result = await db.execute(stmt)
+    art = result.scalar_one_or_none()
+
+    if not art:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
+
+    if not art.file_path:
+        styled_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>body{{font-family:system-ui,-apple-system,sans-serif;line-height:1.7;padding:16px;color:#1e293b;max-width:800px;margin:auto}}</style></head><body><h1>{art.title}</h1><div>{art.content_markdown}</div></body></html>"""
+        return HTMLResponse(content=styled_html)
+
+    disk_path = os.path.join(settings.FILES_STORAGE_DIR, art.file_path)
+    if not os.path.exists(disk_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File vật lý không còn tồn tại trên server")
+
+    ext = os.path.splitext(art.file_name or art.file_path)[1].lower()
+
+    if ext in (".docx", ".doc"):
+        try:
+            import mammoth
+            with open(disk_path, "rb") as docx_file:
+                result_html = mammoth.convert_to_html(docx_file)
+                html_body = result_html.value
+            styled_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>body{{font-family:system-ui,-apple-system,sans-serif;line-height:1.7;padding:20px;color:#1e293b;max-width:850px;margin:auto;word-wrap:break-word}}table{{border-collapse:collapse;width:100%;margin:16px 0}}th,td{{border:1px solid #cbd5e1;padding:8px 12px;text-align:left}}img{{max-width:100%;height:auto;border-radius:8px}}h1,h2,h3{{color:#0f172a}}p{{margin-bottom:12px}}</style></head><body>{html_body}</body></html>"""
+            return HTMLResponse(content=styled_html)
+        except Exception as e:
+            fallback = f"<!DOCTYPE html><html><body style='padding:20px;font-family:sans-serif;'><h3>Lỗi hiển thị Word: {str(e)}</h3><p>Vui lòng tải về hoặc mở bằng ứng dụng chuyên dụng.</p></body></html>"
+            return HTMLResponse(content=fallback)
+
+    elif ext in (".html", ".htm"):
+        with open(disk_path, "r", encoding="utf-8", errors="replace") as f:
+            return HTMLResponse(content=f.read())
+
+    elif ext in (".txt", ".md", ".mdf"):
+        with open(disk_path, "r", encoding="utf-8", errors="replace") as f:
+            text_content = f.read()
+        styled_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>body{{font-family:system-ui,-apple-system,sans-serif;line-height:1.7;padding:20px;color:#1e293b;max-width:850px;margin:auto;white-space:pre-wrap;word-wrap:break-word}}</style></head><body>{text_content}</body></html>"""
+        return HTMLResponse(content=styled_html)
+
+    return FileResponse(path=disk_path, filename=art.file_name, media_type=art.mime_type or "application/octet-stream")

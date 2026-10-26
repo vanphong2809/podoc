@@ -123,14 +123,15 @@ async def extract_file(
     current_user: Annotated[User, Depends(get_current_user)] = None,
 ):
     """
-    Trích xuất bản nháp từ file tải lên (Phase 2):
-    - Hỗ trợ các định dạng: .txt, .md, .docx, .html/.htm, .pdf, .rtf.
+    Lưu nguyên dạng file tải lên (không bắt buộc bóc tách text):
+    - Hỗ trợ các định dạng: txt, md, mdf, html, pdf, doc, docx, png, svg, v.v.
     - Giới hạn tối đa 30MB/file.
-    - Kiểm tra magic bytes nội dung thật, không tin phần mở rộng do người dùng gửi.
     - Lưu file gốc vào volume /data/files với tên định danh duy nhất.
+    - Trả về bản nháp kèm file_path, file_name, mime_type để hiển thị trực tiếp trên app.
     """
     file_bytes = await file.read()
-    file_size_mb = len(file_bytes) / (1024 * 1024)
+    file_size_bytes = len(file_bytes)
+    file_size_mb = file_size_bytes / (1024 * 1024)
 
     if file_size_mb > settings.MAX_UPLOAD_SIZE_MB:
         raise HTTPException(
@@ -138,42 +139,70 @@ async def extract_file(
             detail=f"Kích thước file vượt quá giới hạn cho phép ({settings.MAX_UPLOAD_SIZE_MB}MB)",
         )
 
-    # Nhận diện loại mime bằng nội dung thật (magic bytes)
-    real_mime = extractor_registry.detect_real_mime_type(file_bytes, file.filename or "")
+    orig_name = file.filename or "uploaded_file"
+    orig_ext = os.path.splitext(orig_name)[1].lower()
 
-    # Lưu file vật lý vào /data/files
+    # Nhận diện MIME type
+    mime_map = {
+        ".txt": "text/plain",
+        ".md": "text/markdown",
+        ".mdf": "text/markdown",
+        ".html": "text/html",
+        ".htm": "text/html",
+        ".pdf": "application/pdf",
+        ".doc": "application/msword",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".png": "image/png",
+        ".svg": "image/svg+xml",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+    }
+
+    real_mime = extractor_registry.detect_real_mime_type(file_bytes, orig_name)
+    mime_type = mime_map.get(orig_ext, real_mime or file.content_type or "application/octet-stream")
+
+    # Lưu nguyên vẹn file vật lý vào /data/files
     os.makedirs(settings.FILES_STORAGE_DIR, exist_ok=True)
-    orig_ext = os.path.splitext(file.filename or "")[1]
     unique_filename = f"{uuid.uuid4().hex}{orig_ext}"
     disk_path = os.path.join(settings.FILES_STORAGE_DIR, unique_filename)
 
     with open(disk_path, "wb") as f:
         f.write(file_bytes)
 
-    # Chọn extractor phù hợp và bóc tách
-    extractor = extractor_registry.get_extractor("FILE", real_mime)
-    context = {
-        "file_name": file.filename or "uploaded_file",
-        "file_path": unique_filename,
-        "mime_type": real_mime,
-        "source_type": "FILE",
-    }
+    # Tiêu đề mặc định lấy tên file bỏ đuôi
+    title = os.path.splitext(orig_name)[0].strip() or orig_name
+    if file_size_mb >= 1.0:
+        size_str = f"{file_size_mb:.1f} MB"
+    else:
+        size_str = f"{file_size_bytes / 1024:.1f} KB"
 
-    result = await extractor.extract(file_bytes, context)
+    # Với file text/markdown, đọc sẵn nội dung để hiển thị/tìm kiếm nhanh
+    content_text = ""
+    if orig_ext in (".txt", ".md", ".mdf"):
+        try:
+            content_text = file_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            content_text = ""
+    else:
+        content_text = f"Tệp tin đính kèm: {orig_name} ({size_str})"
 
     return ArticleDraft(
-        title=result.title,
+        title=title,
         source_url="",
         normalized_url="",
-        author=result.author,
+        author="Tệp tin",
         site_name="Tệp tin tải lên",
         image_url=None,
-        language=result.language,
-        reading_minutes=result.reading_minutes,
-        excerpt=result.excerpt,
-        content_markdown=result.content_markdown,
+        language="vi",
+        reading_minutes=1,
+        excerpt=f"Tệp tin {orig_ext.upper().replace('.', '')}: {orig_name} ({size_str})",
+        content_markdown=content_text,
+        file_name=orig_name,
+        file_path=unique_filename,
+        mime_type=mime_type,
         is_duplicate=False,
         existing_article_id=None,
-        is_fallback_bookmark=result.is_fallback_bookmark,
-        error_message=result.error_message,
+        is_fallback_bookmark=False,
+        error_message=None,
     )

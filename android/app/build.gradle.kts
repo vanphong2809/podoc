@@ -70,8 +70,9 @@ dependencies {
     // Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
 
-    // Image loading
+    // Image loading & SVG support
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("io.coil-kt:coil-svg:2.7.0")
 
     // Preferences DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.2")
