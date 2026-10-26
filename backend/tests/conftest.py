@@ -21,6 +21,10 @@ def remove_accents(input_str: str | None) -> str:
     return no_accent.replace("đ", "d").replace("Đ", "D").lower()
 
 
+from app.core.rate_limit import limiter
+
+limiter.enabled = False
+
 # Test Database dùng SQLite In-Memory bất đồng bộ
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 

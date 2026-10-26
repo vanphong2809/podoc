@@ -74,8 +74,27 @@ fun ReaderScreen(
 
     val article = uiState.article
     val isFile = article != null && (article.sourceType == "FILE" || !article.fileName.isNullOrBlank())
-    val fileExt = remember(article?.fileName, article?.filePath) {
-        (article?.fileName ?: article?.filePath ?: "").substringAfterLast('.', "").lowercase()
+    val fileExt = remember(article?.fileName, article?.filePath, article?.mimeType) {
+        val fileName = article?.fileName ?: article?.filePath ?: ""
+        val rawExt = if (fileName.contains('.')) fileName.substringAfterLast('.', "").lowercase() else ""
+        if (rawExt.isNotBlank()) rawExt
+        else {
+            when {
+                article?.mimeType == "image/jpeg" -> "jpg"
+                article?.mimeType == "image/png" -> "png"
+                article?.mimeType == "image/webp" -> "webp"
+                article?.mimeType == "image/svg+xml" -> "svg"
+                article?.mimeType == "image/gif" -> "gif"
+                article?.mimeType == "application/pdf" -> "pdf"
+                article?.mimeType == "text/plain" -> "txt"
+                article?.mimeType == "text/markdown" -> "md"
+                article?.mimeType == "text/html" -> "html"
+                article?.mimeType?.contains("wordprocessingml") == true -> "docx"
+                article?.mimeType?.contains("msword") == true -> "doc"
+                article?.mimeType?.startsWith("image/") == true -> "jpg"
+                else -> ""
+            }
+        }
     }
 
     // Làm sạch nội dung Markdown nếu là bài đọc dạng văn bản/web
@@ -313,9 +332,12 @@ private fun InAppFileContent(
         return
     }
 
-    when (fileExt) {
+    val isImage = fileExt in listOf("png", "svg", "jpg", "jpeg", "webp", "gif") || article.mimeType?.startsWith("image/") == true
+    val isSvg = fileExt == "svg" || article.mimeType == "image/svg+xml"
+
+    when {
         // 1. Xem file PDF bằng PdfRenderer tích hợp sẵn
-        "pdf" -> {
+        fileExt == "pdf" || article.mimeType == "application/pdf" -> {
             val file = uiState.localFile
             if (file != null && file.exists()) {
                 InAppPdfViewer(file = file)
@@ -327,10 +349,10 @@ private fun InAppFileContent(
         }
 
         // 2. Xem ảnh (PNG, SVG, JPG, JPEG, WEBP) với phóng to/thu nhỏ
-        "png", "svg", "jpg", "jpeg", "webp", "gif" -> {
+        isImage -> {
             val file = uiState.localFile
             if (file != null && file.exists()) {
-                InAppImageViewer(file = file, isSvg = fileExt == "svg")
+                InAppImageViewer(file = file, isSvg = isSvg)
             } else {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
@@ -339,7 +361,7 @@ private fun InAppFileContent(
         }
 
         // 3. Xem HTML hoặc Word (DOCX / DOC) qua WebView
-        "html", "htm", "docx", "doc" -> {
+        fileExt in listOf("html", "htm", "docx", "doc") || article.mimeType in listOf("text/html", "application/msword") -> {
             InAppHtmlViewer(
                 htmlContent = uiState.htmlContent,
                 localFile = uiState.localFile,
@@ -348,7 +370,7 @@ private fun InAppFileContent(
         }
 
         // 4. Xem TXT, Markdown (MD, MDF)
-        "txt", "md", "mdf" -> {
+        fileExt in listOf("txt", "md", "mdf") || article.mimeType in listOf("text/plain", "text/markdown") -> {
             ArticleReaderContent(
                 article = article,
                 uiState = uiState,

@@ -1,6 +1,7 @@
 import os
+import uuid
 from typing import Annotated, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, File, status
 from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +20,7 @@ from app.schemas.article import (
     ArticleUpdate,
 )
 from app.services.extractors.base import generate_excerpt
+from app.services.extractors.registry import extractor_registry
 from app.services.url_utils import normalize_url
 
 router = APIRouter(prefix="/articles", tags=["Articles"])
@@ -119,6 +121,127 @@ async def list_articles(
         )
 
     return response_items
+
+
+@router.post("/upload", response_model=ArticleDetailResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/upload/", response_model=ArticleDetailResponse, status_code=status.HTTP_201_CREATED)
+async def upload_article_file(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    file: UploadFile = File(...),
+    category_id: Optional[int] = Form(None),
+    title: Optional[str] = Form(None),
+):
+    """
+    Tải lên và lưu trực tiếp tệp tin (PDF, DOCX, DOC, HTML, PNG, SVG, JPG, JPEG, WEBP, TXT, MD, MDF...)
+    vào thư viện để mở xem sau mà KHÔNG qua bước trích xuất text.
+    """
+    orig_name = file.filename or "uploaded_file"
+    orig_ext = os.path.splitext(orig_name)[1].lower()
+
+    # 1. Đọc nội dung file & kiểm tra dung lượng tối đa
+    file_bytes = await file.read()
+    max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    if len(file_bytes) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Dung lượng tệp tin ({len(file_bytes) / 1024 / 1024:.1f} MB) vượt quá giới hạn cho phép ({settings.MAX_UPLOAD_SIZE_MB} MB)",
+        )
+
+    # 2. Nhận diện MIME type thực tế và phần mở rộng chuẩn xác
+    real_mime = extractor_registry.detect_real_mime_type(file_bytes, orig_name)
+    mime_type = real_mime or file.content_type or "application/octet-stream"
+
+    mime_to_ext = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+        "image/gif": ".gif",
+        "image/svg+xml": ".svg",
+        "application/pdf": ".pdf",
+        "text/plain": ".txt",
+        "text/markdown": ".md",
+        "text/html": ".html",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+        "application/msword": ".doc",
+    }
+
+    if not orig_ext or orig_ext not in mime_to_ext.values():
+        deduced_ext = mime_to_ext.get(mime_type, "")
+        if deduced_ext:
+            orig_ext = deduced_ext
+            if not orig_name.lower().endswith(deduced_ext):
+                orig_name = f"{orig_name}{deduced_ext}"
+
+    # 3. Xác định Danh mục (nếu không truyền thì lấy danh mục đầu tiên)
+    cat = None
+    if category_id is not None:
+        cat_stmt = select(Category).where(Category.id == category_id)
+        cat_res = await db.execute(cat_stmt)
+        cat = cat_res.scalar_one_or_none()
+        if not cat:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Danh mục không tồn tại")
+    
+    if not cat:
+        first_cat_stmt = select(Category).order_by(Category.sort_order.asc(), Category.id.asc()).limit(1)
+        first_cat_res = await db.execute(first_cat_stmt)
+        cat = first_cat_res.scalar_one_or_none()
+        if not cat:
+            cat = Category(name="Tài liệu", icon="📁", color="#6366f1", is_system=True)
+            db.add(cat)
+            await db.flush()
+
+    # 4. Lưu nguyên vẹn file vật lý vào thư mục storage
+    os.makedirs(settings.FILES_STORAGE_DIR, exist_ok=True)
+    stored_filename = f"{uuid.uuid4().hex}{orig_ext}"
+    disk_path = os.path.join(settings.FILES_STORAGE_DIR, stored_filename)
+
+    with open(disk_path, "wb") as f_out:
+        f_out.write(file_bytes)
+
+    final_title = title.strip() if (title and title.strip()) else os.path.splitext(orig_name)[0].strip() or orig_name
+
+    # 5. Đối với văn bản text/markdown, đọc trước nội dung để hỗ trợ tìm kiếm toàn văn
+    content_text = ""
+    if orig_ext in (".txt", ".md", ".mdf"):
+        try:
+            content_text = file_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            content_text = ""
+    else:
+        file_size_mb = len(file_bytes) / (1024 * 1024)
+        if file_size_mb >= 1.0:
+            size_str = f"{file_size_mb:.1f} MB"
+        else:
+            size_str = f"{len(file_bytes) / 1024:.1f} KB"
+        content_text = f"Tệp tin đính kèm: {orig_name} ({size_str})"
+
+    excerpt = generate_excerpt(content_text) if content_text else f"Tệp tin đính kèm: {orig_name}"
+    reading_mins = max(1, len(content_text.split()) // 200) if content_text else 1
+
+    new_article = Article(
+        title=final_title,
+        source_type="FILE",
+        file_name=orig_name,
+        file_path=stored_filename,
+        mime_type=mime_type,
+        content_markdown=content_text,
+        excerpt=excerpt,
+        category_id=cat.id,
+        reading_minutes=reading_mins,
+    )
+
+    db.add(new_article)
+    await db.flush()
+
+    # Nếu là ảnh, tự động cấu hình đường dẫn ảnh thumbnail inline
+    if mime_type.startswith("image/") or orig_ext in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"):
+        new_article.image_url = f"/api/articles/{new_article.id}/file?inline=true"
+
+    await db.commit()
+    await db.refresh(new_article)
+
+    return await get_article(new_article.id, current_user, db)
 
 
 @router.get("/{id}", response_model=ArticleDetailResponse)
@@ -352,3 +475,4 @@ async def preview_article_html(
         return HTMLResponse(content=styled_html)
 
     return FileResponse(path=disk_path, filename=art.file_name, media_type=art.mime_type or "application/octet-stream")
+

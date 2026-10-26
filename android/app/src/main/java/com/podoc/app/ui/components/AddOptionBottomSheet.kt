@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,7 +25,8 @@ import com.podoc.app.R
 fun AddOptionBottomSheet(
     onDismiss: () -> Unit,
     onPasteLink: (String) -> Unit,
-    onPickFiles: () -> Unit
+    onPickFiles: () -> Unit,
+    onPickImages: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var urlInput by remember { mutableStateOf("") }
@@ -133,6 +135,22 @@ fun AddOptionBottomSheet(
             Spacer(modifier = Modifier.height(16.dp))
             HorizontalDivider()
             Spacer(modifier = Modifier.height(16.dp))
+
+            // Tuỳ chọn Chọn hình ảnh từ thiết bị
+            OutlinedButton(
+                onClick = {
+                    onPickImages()
+                    onDismiss()
+                },
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(imageVector = Icons.Default.Image, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.action_import_image))
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Tuỳ chọn Nhập tệp tin từ máy (Phase 2)
             OutlinedButton(

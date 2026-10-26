@@ -51,14 +51,14 @@ class AppContainer(private val context: Context) {
         }
     )
 
-    private val okHttpClient = OkHttpClient.Builder()
+    val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(authInterceptor)
         .addInterceptor(HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BASIC
         })
-        .connectTimeout(25, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
     fun getApiService(): PoDocApiService? {
@@ -102,7 +102,8 @@ class AppContainer(private val context: Context) {
     val articleRepository: ArticleRepository by lazy {
         ArticleRepository(
             apiServiceProvider = { getApiService() },
-            context = context
+            context = context,
+            serverUrlProvider = { currentServerUrl }
         )
     }
 }

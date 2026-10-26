@@ -58,6 +58,18 @@ fun LibraryScreen(
         }
     }
 
+    // Xử lý Snackbar Thông báo người dùng (lưu file...)
+    LaunchedEffect(uiState.userMessage) {
+        val msg = uiState.userMessage
+        if (msg != null) {
+            snackbarHostState.showSnackbar(
+                message = msg,
+                duration = SnackbarDuration.Short
+            )
+            viewModel.clearUserMessage()
+        }
+    }
+
     // Tải thêm trang tiếp theo khi cuộn gần cuối
     LaunchedEffect(listState) {
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
@@ -205,27 +217,62 @@ fun LibraryScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when {
-                uiState.isLoading && uiState.articles.isEmpty() -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+            Column(modifier = Modifier.fillMaxSize()) {
+                AnimatedVisibility(
+                    visible = uiState.isUploading,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        tonalElevation = 2.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.5.dp,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = uiState.uploadProgressMessage ?: "Đang lưu tệp tin...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
                     }
                 }
-                uiState.articles.isEmpty() -> {
-                    if (uiState.searchQuery.isNotBlank()) {
-                        EmptyStateView(
-                            icon = Icons.Default.SearchOff,
-                            title = stringResource(R.string.empty_search_title),
-                            description = stringResource(R.string.empty_search_desc)
-                        )
-                    } else {
-                        EmptyStateView(
-                            icon = Icons.Default.LocalLibrary,
-                            title = stringResource(R.string.empty_library_title),
-                            description = stringResource(R.string.empty_library_desc)
-                        )
-                    }
-                }
+
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    when {
+                        uiState.isLoading && uiState.articles.isEmpty() -> {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                        uiState.articles.isEmpty() -> {
+                            if (uiState.searchQuery.isNotBlank()) {
+                                EmptyStateView(
+                                    icon = Icons.Default.SearchOff,
+                                    title = stringResource(R.string.empty_search_title),
+                                    description = stringResource(R.string.empty_search_desc)
+                                )
+                            } else {
+                                EmptyStateView(
+                                    icon = Icons.Default.LocalLibrary,
+                                    title = stringResource(R.string.empty_library_title),
+                                    description = stringResource(R.string.empty_library_desc)
+                                )
+                            }
+                        }
                 else -> {
                     LazyColumn(
                         state = listState,
@@ -285,6 +332,8 @@ fun LibraryScreen(
             }
         }
     }
+}
+}
 
     // Dialog Sửa Tiêu Đề
     if (editingArticle != null) {

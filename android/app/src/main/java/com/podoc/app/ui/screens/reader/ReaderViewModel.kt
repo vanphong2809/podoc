@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.podoc.app.data.local.DataStoreManager
 import com.podoc.app.data.model.ArticleDetail
 import com.podoc.app.data.repository.ArticleRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 data class ReaderUiState(
@@ -76,8 +78,29 @@ class ReaderViewModel(
     }
 
     fun loadFileForInApp(context: Context, detail: ArticleDetail) {
-        val fileName = detail.fileName ?: "document_${detail.id}"
-        val ext = (detail.fileName ?: detail.filePath ?: "").substringAfterLast('.', "").lowercase()
+        val rawExt = (detail.fileName ?: detail.filePath ?: "").let { path ->
+            if (path.contains('.')) path.substringAfterLast('.', "").lowercase() else ""
+        }
+        val ext = if (rawExt.isNotBlank()) rawExt
+        else {
+            when {
+                detail.mimeType == "image/jpeg" -> "jpg"
+                detail.mimeType == "image/png" -> "png"
+                detail.mimeType == "image/webp" -> "webp"
+                detail.mimeType == "image/svg+xml" -> "svg"
+                detail.mimeType == "image/gif" -> "gif"
+                detail.mimeType == "application/pdf" -> "pdf"
+                detail.mimeType == "text/plain" -> "txt"
+                detail.mimeType == "text/markdown" -> "md"
+                detail.mimeType == "text/html" -> "html"
+                detail.mimeType?.contains("wordprocessingml") == true -> "docx"
+                detail.mimeType?.contains("msword") == true -> "doc"
+                detail.mimeType?.startsWith("image/") == true -> "jpg"
+                else -> ""
+            }
+        }
+        val safeExt = if (ext.isNotBlank()) ".$ext" else ""
+        val fileName = detail.fileName?.let { if (it.contains('.')) it else "$it$safeExt" } ?: "document_${detail.id}$safeExt"
         val cacheFile = File(context.cacheDir, "podoc_doc_${detail.id}_$fileName")
 
         _uiState.value = _uiState.value.copy(isFileLoading = true, fileError = null)
@@ -90,38 +113,44 @@ class ReaderViewModel(
                 }
             }
 
-            // Kiểm tra cache nội bộ
-            if (cacheFile.exists() && cacheFile.length() > 0) {
-                setupLocalFile(cacheFile, ext)
-            } else {
-                articleRepository.downloadArticleFile(detail.id, inline = true).fold(
-                    onSuccess = { responseBody ->
-                        try {
-                            cacheFile.outputStream().use { output ->
-                                responseBody.byteStream().use { input ->
-                                    input.copyTo(output)
+            withContext(Dispatchers.IO) {
+                // Kiểm tra cache nội bộ
+                if (cacheFile.exists() && cacheFile.length() > 0) {
+                    setupLocalFile(cacheFile, ext)
+                } else {
+                    articleRepository.downloadArticleFile(detail.id, inline = true).fold(
+                        onSuccess = { responseBody ->
+                            try {
+                                cacheFile.outputStream().use { output ->
+                                    responseBody.byteStream().use { input ->
+                                        input.copyTo(output)
+                                    }
+                                }
+                                setupLocalFile(cacheFile, ext)
+                            } catch (e: Exception) {
+                                withContext(Dispatchers.Main) {
+                                    _uiState.value = _uiState.value.copy(
+                                        isFileLoading = false,
+                                        fileError = "Lỗi lưu file: ${e.message ?: e.javaClass.simpleName}"
+                                    )
                                 }
                             }
-                            setupLocalFile(cacheFile, ext)
-                        } catch (e: Exception) {
-                            _uiState.value = _uiState.value.copy(
-                                isFileLoading = false,
-                                fileError = "Lỗi lưu file: ${e.message}"
-                            )
+                        },
+                        onFailure = { error ->
+                            withContext(Dispatchers.Main) {
+                                _uiState.value = _uiState.value.copy(
+                                    isFileLoading = false,
+                                    fileError = error.message ?: "Không thể tải tệp tin từ máy chủ"
+                                )
+                            }
                         }
-                    },
-                    onFailure = { error ->
-                        _uiState.value = _uiState.value.copy(
-                            isFileLoading = false,
-                            fileError = error.message ?: "Không thể tải tệp tin từ máy chủ"
-                        )
-                    }
-                )
+                    )
+                }
             }
         }
     }
 
-    private fun setupLocalFile(file: File, ext: String) {
+    private suspend fun setupLocalFile(file: File, ext: String) {
         val text = if (ext in listOf("txt", "md", "mdf")) {
             try { file.readText() } catch (e: Exception) { null }
         } else null
@@ -130,12 +159,14 @@ class ReaderViewModel(
             try { file.readText() } catch (e: Exception) { null }
         } else _uiState.value.htmlContent
 
-        _uiState.value = _uiState.value.copy(
-            isFileLoading = false,
-            localFile = file,
-            textContent = text,
-            htmlContent = html
-        )
+        withContext(Dispatchers.Main) {
+            _uiState.value = _uiState.value.copy(
+                isFileLoading = false,
+                localFile = file,
+                textContent = text,
+                htmlContent = html
+            )
+        }
     }
 
     private var lastSavedProgress = 0.0f
@@ -180,27 +211,35 @@ class ReaderViewModel(
 
         _uiState.value = _uiState.value.copy(isDownloadingFile = true)
         viewModelScope.launch {
-            articleRepository.downloadArticleFile(article.id).fold(
-                onSuccess = { responseBody ->
-                    try {
-                        val fileName = article.fileName ?: "document_${article.id}"
-                        val cacheFile = File(context.cacheDir, "podoc_doc_${article.id}_$fileName")
-                        cacheFile.outputStream().use { output ->
-                            responseBody.byteStream().use { input ->
-                                input.copyTo(output)
+            withContext(Dispatchers.IO) {
+                articleRepository.downloadArticleFile(article.id).fold(
+                    onSuccess = { responseBody ->
+                        try {
+                            val fileName = article.fileName ?: "document_${article.id}"
+                            val cacheFile = File(context.cacheDir, "podoc_doc_${article.id}_$fileName")
+                            cacheFile.outputStream().use { output ->
+                                responseBody.byteStream().use { input ->
+                                    input.copyTo(output)
+                                }
+                            }
+                            withContext(Dispatchers.Main) {
+                                openFileWithIntent(context, cacheFile, article.mimeType)
+                            }
+                        } catch (e: Exception) {
+                            // Handle open error
+                        } finally {
+                            withContext(Dispatchers.Main) {
+                                _uiState.value = _uiState.value.copy(isDownloadingFile = false)
                             }
                         }
-                        openFileWithIntent(context, cacheFile, article.mimeType)
-                    } catch (e: Exception) {
-                        // Handle open error
-                    } finally {
-                        _uiState.value = _uiState.value.copy(isDownloadingFile = false)
+                    },
+                    onFailure = {
+                        withContext(Dispatchers.Main) {
+                            _uiState.value = _uiState.value.copy(isDownloadingFile = false)
+                        }
                     }
-                },
-                onFailure = {
-                    _uiState.value = _uiState.value.copy(isDownloadingFile = false)
-                }
-            )
+                )
+            }
         }
     }
 

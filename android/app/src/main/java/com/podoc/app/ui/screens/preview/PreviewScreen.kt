@@ -86,7 +86,9 @@ fun PreviewScreen(
                         Spacer(modifier = Modifier.height(24.dp))
                         Text(
                             text = if (uiState.isBatchMode) {
-                                "Đang xử lý tệp tin (${uiState.batchCurrentIndex}/${uiState.batchTotalCount})..."
+                                uiState.uploadProgressMessage ?: "Đang xử lý tệp tin (${uiState.batchCurrentIndex}/${uiState.batchTotalCount})..."
+                            } else if (uiState.isUploadingFile) {
+                                uiState.uploadProgressMessage ?: stringResource(R.string.saving_file_status)
                             } else {
                                 stringResource(R.string.extracting_status)
                             },

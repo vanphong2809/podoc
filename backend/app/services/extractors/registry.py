@@ -53,8 +53,11 @@ class ExtractorRegistry:
         if header_sample.startswith(b"{\\rtf"):
             return "text/rtf"
 
-        # HTML
+        # HTML / SVG
         lower_header = header_sample.lower()
+        if b"<svg" in lower_header:
+            return "image/svg+xml"
+
         if (
             b"<!doctype html" in lower_header
             or b"<html" in lower_header

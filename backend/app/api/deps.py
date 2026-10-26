@@ -1,5 +1,5 @@
-from typing import Annotated
-from fastapi import Depends, HTTPException, status
+from typing import Annotated, Optional
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,17 +14,18 @@ security_scheme = HTTPBearer(auto_error=False)
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security_scheme)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    token: Optional[str] = Query(None, description="Access token xác thực tuỳ chọn qua query param"),
 ) -> User:
-    """Xác thực JWT token từ Header Authorization: Bearer <token>."""
-    if not credentials:
+    """Xác thực JWT token từ Header Authorization: Bearer <token> hoặc query param ?token=."""
+    raw_token = credentials.credentials if credentials else token
+    if not raw_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Yêu cầu xác thực tài khoản",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token = credentials.credentials
-    payload = decode_access_token(token)
+    payload = decode_access_token(raw_token)
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

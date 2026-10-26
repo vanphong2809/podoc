@@ -69,18 +69,30 @@ class MainActivity : ComponentActivity() {
                 LoginViewModel(container.authRepository)
             }
 
-            // Launcher SAF chọn 1 hoặc nhiều file từ máy (Phase 2)
+            // Launcher SAF chọn 1 hoặc nhiều file từ máy để lưu trực tiếp vào thư viện (không trích xuất)
             val filePickerLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.OpenMultipleDocuments()
             ) { uris: List<Uri> ->
                 if (uris.isNotEmpty()) {
-                    if (uris.size == 1) {
-                        previewViewModel.extractFile(uris[0])
-                    } else {
-                        previewViewModel.extractMultipleFiles(uris)
+                    libraryViewModel.uploadFiles(uris)
+                    if (currentRoute != Screen.Library.route) {
+                        navController.navigate(Screen.Library.route) {
+                            popUpTo(Screen.Library.route) { inclusive = true }
+                        }
                     }
-                    navController.navigate(Screen.Preview.route) {
-                        launchSingleTop = true
+                }
+            }
+
+            // Launcher chọn 1 hoặc nhiều ảnh trực tiếp từ thư viện ảnh
+            val imagePickerLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.GetMultipleContents()
+            ) { uris: List<Uri> ->
+                if (uris.isNotEmpty()) {
+                    libraryViewModel.uploadFiles(uris)
+                    if (currentRoute != Screen.Library.route) {
+                        navController.navigate(Screen.Library.route) {
+                            popUpTo(Screen.Library.route) { inclusive = true }
+                        }
                     }
                 }
             }
@@ -91,6 +103,14 @@ class MainActivity : ComponentActivity() {
                     navController.navigate(Screen.Login.route) {
                         popUpTo(0) { inclusive = true }
                     }
+                }
+            }
+
+            // Mở trực tiếp bài viết nếu được chuyển sang từ ShareReceiveActivity
+            LaunchedEffect(Unit) {
+                val openArticleId = intent?.getIntExtra("open_article_id", -1)?.takeIf { it > 0 }
+                if (openArticleId != null) {
+                    navController.navigate(Screen.Reader.createRoute(openArticleId))
                 }
             }
 
@@ -222,18 +242,12 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onPickFiles = {
-                                // Mở trình chọn file cho phép chọn mọi loại file văn bản (PDF, DOCX, TXT, MD...)
-                                filePickerLauncher.launch(
-                                    arrayOf(
-                                        "application/pdf",
-                                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                        "application/msword",
-                                        "text/plain",
-                                        "text/markdown",
-                                        "text/html",
-                                        "*/*"
-                                    )
-                                )
+                                // Mở trình chọn file cho phép chọn mọi loại file (PDF, Word, HTML, TXT, MD...)
+                                filePickerLauncher.launch(arrayOf("*/*"))
+                            },
+                            onPickImages = {
+                                // Mở trình chọn ảnh từ máy (PNG, JPG, WEBP, GIF, SVG...)
+                                imagePickerLauncher.launch("image/*")
                             }
                         )
                     }

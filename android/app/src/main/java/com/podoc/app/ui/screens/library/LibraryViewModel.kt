@@ -1,5 +1,6 @@
 package com.podoc.app.ui.screens.library
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.podoc.app.data.model.ArticleListItem
@@ -26,7 +27,10 @@ data class LibraryUiState(
     val page: Int = 1,
     val hasMore: Boolean = true,
     val errorMessage: String? = null,
-    val recentlyDeletedArticle: ArticleListItem? = null
+    val recentlyDeletedArticle: ArticleListItem? = null,
+    val isUploading: Boolean = false,
+    val uploadProgressMessage: String? = null,
+    val userMessage: String? = null
 )
 
 class LibraryViewModel(
@@ -206,5 +210,46 @@ class LibraryViewModel(
             articles = listOf(deleted) + _uiState.value.articles,
             recentlyDeletedArticle = null
         )
+    }
+
+    fun uploadFiles(uris: List<Uri>, onDone: ((count: Int) -> Unit)? = null) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isUploading = true,
+                uploadProgressMessage = if (uris.size == 1) "Đang lưu tệp tin vào thư viện..." else "Đang lưu ${uris.size} tệp tin vào thư viện..."
+            )
+            var successCount = 0
+            var lastErrorMessage: String? = null
+            for ((index, uri) in uris.withIndex()) {
+                if (uris.size > 1) {
+                    _uiState.value = _uiState.value.copy(
+                        uploadProgressMessage = "Đang lưu tệp ${index + 1}/${uris.size}..."
+                    )
+                }
+                articleRepository.uploadFile(uri).fold(
+                    onSuccess = { successCount++ },
+                    onFailure = { error ->
+                        lastErrorMessage = error.message
+                    }
+                )
+            }
+            _uiState.value = _uiState.value.copy(
+                isUploading = false,
+                uploadProgressMessage = null,
+                userMessage = if (successCount > 0) {
+                    "Đã lưu thành công $successCount tệp tin vào thư viện"
+                } else {
+                    lastErrorMessage ?: "Không thể lưu tệp tin"
+                }
+            )
+            // Tải lại danh sách thư viện ngay lập tức để hiện các file vừa lưu
+            loadArticles(refresh = true)
+            onDone?.invoke(successCount)
+        }
+    }
+
+    fun clearUserMessage() {
+        _uiState.value = _uiState.value.copy(userMessage = null)
     }
 }

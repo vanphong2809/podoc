@@ -24,7 +24,9 @@ data class PreviewUiState(
     val errorMessage: String? = null,
     val isBatchMode: Boolean = false,
     val batchCurrentIndex: Int = 0,
-    val batchTotalCount: Int = 0
+    val batchTotalCount: Int = 0,
+    val isUploadingFile: Boolean = false,
+    val uploadProgressMessage: String? = null
 )
 
 class PreviewViewModel(
@@ -107,15 +109,17 @@ class PreviewViewModel(
         }
     }
 
-    fun extractFile(uri: Uri) {
+    fun uploadFile(uri: Uri) {
         lastUri = uri
         lastUrl = null
         val cats = _uiState.value.categories
-        val defaultCat = cats.find { it.isSystem }?.id ?: 1
+        val defaultCat = cats.find { it.isSystem }?.id ?: cats.firstOrNull()?.id ?: 1
         _uiState.value = PreviewUiState(
             isLoading = true,
+            isUploadingFile = true,
             categories = cats,
             selectedCategoryId = defaultCat,
+            uploadProgressMessage = "Đang lưu tệp tin vào thư viện...",
             draft = null,
             editedTitle = "",
             isSaved = false,
@@ -127,44 +131,50 @@ class PreviewViewModel(
         )
 
         viewModelScope.launch {
-            articleRepository.extractFile(uri).fold(
-                onSuccess = { draft ->
+            articleRepository.uploadFile(uri, defaultCat).fold(
+                onSuccess = { article ->
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        draft = draft,
-                        editedTitle = draft.title,
-                        isSaved = false,
-                        savedArticleId = null,
+                        isUploadingFile = false,
+                        isSaved = true,
+                        savedArticleId = article.id,
                         errorMessage = null
                     )
                 },
                 onFailure = { error ->
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
+                        isUploadingFile = false,
                         draft = null,
-                        errorMessage = error.message ?: "Lỗi khi trích xuất tệp tin"
+                        errorMessage = error.message ?: "Lỗi khi lưu tệp tin vào thư viện"
                     )
                 }
             )
         }
     }
 
-    fun extractMultipleFiles(uris: List<Uri>) {
+    fun extractFile(uri: Uri) {
+        uploadFile(uri)
+    }
+
+    fun uploadMultipleFiles(uris: List<Uri>) {
         if (uris.isEmpty()) return
         if (uris.size == 1) {
-            extractFile(uris[0])
+            uploadFile(uris[0])
             return
         }
 
         val cats = _uiState.value.categories
-        val defaultCat = cats.find { it.isSystem }?.id ?: 1
+        val defaultCat = cats.find { it.isSystem }?.id ?: cats.firstOrNull()?.id ?: 1
         _uiState.value = PreviewUiState(
             isLoading = true,
+            isUploadingFile = true,
             isBatchMode = true,
             batchCurrentIndex = 0,
             batchTotalCount = uris.size,
             categories = cats,
             selectedCategoryId = defaultCat,
+            uploadProgressMessage = "Đang lưu ${uris.size} tệp tin vào thư viện...",
             draft = null,
             isSaved = false,
             savedArticleId = null,
@@ -172,36 +182,28 @@ class PreviewViewModel(
         )
 
         viewModelScope.launch {
-            var successCount = 0
-            val defaultCat = _uiState.value.categories.find { it.isSystem }?.id ?: 1
-
+            var lastId: Int? = null
             for ((index, uri) in uris.withIndex()) {
-                _uiState.value = _uiState.value.copy(batchCurrentIndex = index + 1)
-                articleRepository.extractFile(uri).onSuccess { draft ->
-                    val createReq = CreateArticleRequest(
-                        title = draft.title,
-                        sourceType = "FILE",
-                        fileName = draft.fileName,
-                        filePath = draft.filePath,
-                        mimeType = draft.mimeType,
-                        contentMarkdown = draft.contentMarkdown,
-                        excerpt = draft.excerpt,
-                        author = draft.author,
-                        siteName = draft.siteName,
-                        categoryId = defaultCat,
-                        readingMinutes = draft.readingMinutes
-                    )
-                    articleRepository.createArticle(createReq).onSuccess {
-                        successCount++
-                    }
+                _uiState.value = _uiState.value.copy(
+                    batchCurrentIndex = index + 1,
+                    uploadProgressMessage = "Đang lưu tệp tin ${index + 1}/${uris.size}..."
+                )
+                articleRepository.uploadFile(uri, defaultCat).onSuccess { article ->
+                    lastId = article.id
                 }
             }
 
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
-                isSaved = true
+                isUploadingFile = false,
+                isSaved = true,
+                savedArticleId = lastId
             )
         }
+    }
+
+    fun extractMultipleFiles(uris: List<Uri>) {
+        uploadMultipleFiles(uris)
     }
 
     fun onTitleChange(newTitle: String) {

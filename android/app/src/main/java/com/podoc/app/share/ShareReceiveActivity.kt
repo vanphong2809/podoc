@@ -76,7 +76,14 @@ class ShareReceiveActivity : ComponentActivity() {
                         PreviewScreen(
                             viewModel = vm,
                             onNavigateBack = { finish() },
-                            onOpenArticle = { finish() }
+                            onOpenArticle = { articleId ->
+                                val mainIntent = Intent(this@ShareReceiveActivity, com.podoc.app.MainActivity::class.java).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                                    putExtra("open_article_id", articleId)
+                                }
+                                startActivity(mainIntent)
+                                finish()
+                            }
                         )
                     }
                 }
@@ -112,7 +119,7 @@ class ShareReceiveActivity : ComponentActivity() {
                     }
 
                     if (fileUri != null) {
-                        viewModel.extractFile(fileUri)
+                        viewModel.uploadFile(fileUri)
                     } else {
                         finish()
                     }
@@ -129,7 +136,7 @@ class ShareReceiveActivity : ComponentActivity() {
                 }
 
                 if (!uris.isNullOrEmpty()) {
-                    viewModel.extractMultipleFiles(uris)
+                    viewModel.uploadMultipleFiles(uris)
                 } else {
                     finish()
                 }

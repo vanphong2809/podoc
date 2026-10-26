@@ -2,6 +2,7 @@ package com.podoc.app.data.api
 
 import com.podoc.app.data.model.*
 import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.*
@@ -56,6 +57,14 @@ interface PoDocApiService {
 
     @POST("api/articles")
     suspend fun createArticle(@Body request: CreateArticleRequest): ArticleDetail
+
+    @Multipart
+    @POST("api/articles/upload")
+    suspend fun uploadArticleFile(
+        @Part file: MultipartBody.Part,
+        @Part("category_id") categoryId: RequestBody? = null,
+        @Part("title") title: RequestBody? = null
+    ): ArticleDetail
 
     @PATCH("api/articles/{id}")
     suspend fun updateArticle(
