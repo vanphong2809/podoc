@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Chỉ xin duy nhất quyền INTERNET -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:name=".PoDocApplication"
+        android:allowBackup="true"
+        android:icon="@android:drawable/ic_menu_agenda"
+        android:label="@string/app_name"
+        android:roundIcon="@android:drawable/ic_menu_agenda"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.PoDoc"
+        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config">
+
+        <!-- Màn hình chính -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Activity nhận link và nhận file từ Share Sheet hệ thống dưới dạng BottomSheet trong suốt -->
+        <activity
+            android:name=".share.ShareReceiveActivity"
+            android:exported="true"
+            android:theme="@style/Theme.PoDoc.Translucent"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:launchMode="singleTask"
+            android:noHistory="true"
+            android:windowSoftInputMode="adjustResize">
+
+            <!-- Nhận văn bản / link chia sẻ -->
+            <intent-filter android:label="Lưu vào PoDoc">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
+            <!-- Nhận một file bất kỳ (PDF, Word, Markdown, Text...) -->
+            <intent-filter android:label="Nhập file vào PoDoc">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+
+            <!-- Nhận nhiều file cùng lúc -->
+            <intent-filter android:label="Nhập nhiều file vào PoDoc">
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
+
+        <!-- FileProvider cho phép mở file gốc bằng ứng dụng chuyên dụng trên máy -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+    </application>
+
+</manifest>

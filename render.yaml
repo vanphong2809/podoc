@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: podoc-api
+    runtime: docker
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
+    plan: free
+    region: singapore
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: podoc-db
+          property: connectionString
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_DAYS
+        value: 30
+      - key: RATE_LIMIT_LOGIN
+        value: 10/minute
+
+databases:
+  - name: podoc-db
+    plan: free
+    region: singapore
+    databaseName: podoc
+    user: podoc

@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: podoc_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-podoc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-podoc_secure_db_pass_123}
+      POSTGRES_DB: ${POSTGRES_DB:-podoc}
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - podoc_postgres_data:/var/lib/postgresql/data
+    # Cơ sở dữ liệu hoàn toàn KHÔNG mở cổng ra internet, chỉ giao tiếp nội bộ
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-podoc} -d ${POSTGRES_DB:-podoc}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: podoc_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ../.env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-podoc}:${POSTGRES_PASSWORD:-podoc_secure_db_pass_123}@postgres:5432/${POSTGRES_DB:-podoc}
+      - FILES_STORAGE_DIR=/data/files
+    volumes:
+      - podoc_files_data:/data/files
+    # Cổng 8000 chỉ nằm trong mạng nội bộ, Caddy sẽ đứng trước làm reverse proxy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  caddy:
+    image: caddy:2.9.1-alpine
+    container_name: podoc_caddy
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  podoc_postgres_data:
+    name: podoc_postgres_data
+  podoc_files_data:
+    name: podoc_files_data
+  caddy_data:
+    name: podoc_caddy_data
+  caddy_config:
+    name: podoc_caddy_config

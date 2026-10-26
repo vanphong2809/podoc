@@ -1,0 +1,24 @@
+{$DOMAIN:localhost} {
+    # Tự động cấp và gia hạn chứng chỉ SSL Let's Encrypt / ZeroSSL
+
+    # Giới hạn kích thước tải lên tối đa 35MB (cho upload file 30MB)
+    request_body {
+        max_size 35MB
+    }
+
+    # Reverse proxy tới container Backend FastAPI
+    reverse_proxy api:8000 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # Bật nén phản hồi gzip / zstd
+    encode zstd gzip
+
+    # Log truy cập (tự động loại trừ dữ liệu nhạy cảm)
+    log {
+        output stdout
+        format console
+    }
+}

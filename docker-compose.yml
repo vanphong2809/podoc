@@ -1,0 +1,49 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: podoc_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-podoc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-podoc_secure_db_pass_123}
+      POSTGRES_DB: ${POSTGRES_DB:-podoc}
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Database hoàn toàn nằm trong mạng nội bộ Docker, không mở ra ngoài
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-podoc} -d ${POSTGRES_DB:-podoc}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: podoc_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-podoc}:${POSTGRES_PASSWORD:-podoc_secure_db_pass_123}@postgres:5432/${POSTGRES_DB:-podoc}
+    ports:
+      - "8000:8000"
+      - "8080:8000"
+    volumes:
+      - ./backend:/app
+      - podoc_files_data:/data/files
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:
+    name: podoc_postgres_data
+  podoc_files_data:
+    name: podoc_files_data
