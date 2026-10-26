@@ -15,17 +15,6 @@ class AuthInterceptor(
         val requestBuilder = originalRequest.newBuilder()
             .header("Accept", "application/json")
 
-        if (!token.isNullOrBlank()) {
-            requestBuilder.header("Authorization", "Bearer $token")
-        }
-
-        val response = chain.proceed(requestBuilder.build())
-
-        // Nếu mã lỗi 401 thì thông báo token đã hết hạn
-        if (response.code == 401 && !originalRequest.url.encodedPath.contains("/api/auth/login")) {
-            onTokenExpired()
-        }
-
-        return response
+        return chain.proceed(requestBuilder.build())
     }
 }

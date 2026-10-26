@@ -39,34 +39,22 @@ async def test_login_nonexistent_user(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_get_me_without_token(client: AsyncClient, monkeypatch):
-    """Kiểm tra truy cập endpoint khi tắt đăng nhập (REQUIRE_AUTH=False) trả về 200 admin."""
-    from app.core.config import settings
-    monkeypatch.setattr(settings, "REQUIRE_AUTH", False)
+async def test_get_me_without_token(client: AsyncClient):
+    """Kiểm tra truy cập endpoint mà không có token luôn trả về 200 admin (đã bỏ authen)."""
     response = await client.get("/api/auth/me")
     assert response.status_code == 200
     assert response.json()["username"] == "admin"
 
 
 @pytest.mark.asyncio
-async def test_get_me_without_token_when_auth_required(client: AsyncClient, monkeypatch):
-    """Kiểm tra khi bật bắt buộc đăng nhập (REQUIRE_AUTH=True), không có token trả về 401."""
-    from app.core.config import settings
-    monkeypatch.setattr(settings, "REQUIRE_AUTH", True)
-    response = await client.get("/api/auth/me")
-    assert response.status_code == 401
-
-
-@pytest.mark.asyncio
-async def test_get_me_with_invalid_token(client: AsyncClient, monkeypatch):
-    """Kiểm tra truy cập endpoint bảo vệ với token giả mạo khi REQUIRE_AUTH=True trả về 401."""
-    from app.core.config import settings
-    monkeypatch.setattr(settings, "REQUIRE_AUTH", True)
+async def test_get_me_with_invalid_token(client: AsyncClient):
+    """Kiểm tra truy cập endpoint với token bất kỳ vẫn trả về 200 admin mà không chặn 401."""
     response = await client.get(
         "/api/auth/me",
         headers={"Authorization": "Bearer invalid_fake_jwt_token_here"},
     )
-    assert response.status_code == 401
+    assert response.status_code == 200
+    assert response.json()["username"] == "admin"
 
 
 @pytest.mark.asyncio
