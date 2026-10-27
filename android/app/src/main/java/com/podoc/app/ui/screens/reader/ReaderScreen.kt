@@ -6,9 +6,12 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color as AndroidColor
 import android.graphics.pdf.PdfRenderer
+import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -18,6 +21,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -36,6 +40,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -143,6 +148,21 @@ fun ReaderScreen(
                 viewModel.updateReadProgress(progress)
             }
         }
+    }
+
+    // Nếu bài viết được lưu ở chế độ giữ nguyên định dạng web gốc -> Mở toàn màn hình bằng InAppWebViewer
+    val isWebFormat = article != null && (
+        article.mimeType == "text/html-web" ||
+        article.contentMarkdown.startsWith("<!-- WEB_VIEW_MODE -->")
+    ) && !article.sourceUrl.isNullOrBlank()
+
+    if (isWebFormat && article != null) {
+        InAppWebViewer(
+            url = article.sourceUrl!!,
+            title = article.title,
+            onNavigateBack = onNavigateBack
+        )
+        return
     }
 
     Scaffold(
@@ -937,4 +957,165 @@ private fun InAppVideoViewer(
         }
     }
 }
+
+/**
+ * Trình duyệt nhúng mở toàn màn hình (Full Screen In-App Browser)
+ * cho các bài viết được lưu ở chế độ giữ nguyên định dạng web gốc.
+ */
+@Composable
+private fun InAppWebViewer(
+    url: String,
+    title: String,
+    onNavigateBack: () -> Unit
+) {
+    val context = LocalContext.current
+    var webView: WebView? by remember { mutableStateOf(null) }
+    var currentTitle by remember { mutableStateOf(title) }
+    var pageProgress by remember { mutableStateOf(0) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    // Xử lý nút Back của Android (quay lại trang trước trong web hoặc thoát ra ngoài)
+    BackHandler(enabled = true) {
+        if (webView?.canGoBack() == true) {
+            webView?.goBack()
+        } else {
+            onNavigateBack()
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        // Thanh TopBar hiện đại, mỏng gọn có nút Back ra ngoài
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 2.dp,
+            shadowElevation = 3.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .height(52.dp)
+                        .padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = {
+                        if (webView?.canGoBack() == true) {
+                            webView?.goBack()
+                        } else {
+                            onNavigateBack()
+                        }
+                    }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Quay lại"
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 6.dp)
+                    ) {
+                        Text(
+                            text = currentTitle,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        val host = try { Uri.parse(url).host ?: url } catch (_: Exception) { url }
+                        Text(
+                            text = host,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    IconButton(onClick = { webView?.reload() }) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Tải lại trang",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    IconButton(onClick = {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                            context.startActivity(intent)
+                        } catch (_: Exception) {}
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.OpenInNew,
+                            contentDescription = "Mở bằng trình duyệt ngoài",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                if (isLoading && pageProgress < 100) {
+                    LinearProgressIndicator(
+                        progress = { pageProgress / 100f },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(2.5.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                }
+            }
+        }
+
+        // Khung WebView full màn hình
+        AndroidView(
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.databaseEnabled = true
+                    settings.builtInZoomControls = true
+                    settings.displayZoomControls = false
+                    settings.useWideViewPort = true
+                    settings.loadWithOverviewMode = true
+
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                            pageProgress = newProgress
+                            isLoading = newProgress < 100
+                        }
+
+                        override fun onReceivedTitle(view: WebView?, webTitle: String?) {
+                            if (!webTitle.isNullOrBlank()) {
+                                currentTitle = webTitle
+                            }
+                        }
+                    }
+
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                            isLoading = true
+                        }
+
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            isLoading = false
+                        }
+                    }
+
+                    loadUrl(url)
+                    webView = this
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
 

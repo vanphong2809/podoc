@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -377,6 +378,13 @@ fun CategoryDetailScreen(
     }
 
     // Dialog Đổi Danh Mục
+    // Tự động tải lại danh sách danh mục mới nhất khi mở hộp thoại Đổi danh mục
+    LaunchedEffect(changingCategoryArticle) {
+        if (changingCategoryArticle != null) {
+            viewModel.loadCategories()
+        }
+    }
+
     if (changingCategoryArticle != null) {
         AlertDialog(
             onDismissRequest = { changingCategoryArticle = null },
@@ -385,6 +393,8 @@ fun CategoryDetailScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState())
                         .padding(top = 8.dp)
                 ) {
                     uiState.categories.forEach { cat ->
@@ -406,11 +416,31 @@ fun CategoryDetailScreen(
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(
-                                    text = cat.name,
-                                    fontWeight = if (changingCategoryArticle?.categoryId == cat.id) FontWeight.Bold else FontWeight.Normal,
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.fillMaxWidth()
-                                )
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(12.dp)
+                                            .clip(CircleShape)
+                                            .background(parseHexColor(cat.color))
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = cat.name,
+                                        fontWeight = if (changingCategoryArticle?.categoryId == cat.id) FontWeight.Bold else FontWeight.Normal,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (changingCategoryArticle?.categoryId == cat.id) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

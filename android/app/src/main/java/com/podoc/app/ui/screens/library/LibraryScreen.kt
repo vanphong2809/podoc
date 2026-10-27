@@ -3,12 +3,15 @@ package com.podoc.app.ui.screens.library
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -17,6 +20,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -389,6 +393,13 @@ fun LibraryScreen(
         )
     }
 
+    // Tự động tải lại danh sách danh mục mới nhất khi mở hộp thoại Đổi danh mục
+    LaunchedEffect(changingCategoryArticle) {
+        if (changingCategoryArticle != null) {
+            viewModel.loadCategories()
+        }
+    }
+
     // Dialog Đổi Danh Mục
     if (changingCategoryArticle != null) {
         AlertDialog(
@@ -398,6 +409,8 @@ fun LibraryScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState())
                         .padding(top = 8.dp)
                 ) {
                     uiState.categories.forEach { cat ->
@@ -419,11 +432,31 @@ fun LibraryScreen(
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(
-                                    text = cat.name,
-                                    fontWeight = if (changingCategoryArticle?.categoryId == cat.id) FontWeight.Bold else FontWeight.Normal,
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.fillMaxWidth()
-                                )
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(12.dp)
+                                            .clip(CircleShape)
+                                            .background(com.podoc.app.ui.theme.parseHexColor(cat.color))
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = cat.name,
+                                        fontWeight = if (changingCategoryArticle?.categoryId == cat.id) FontWeight.Bold else FontWeight.Normal,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (changingCategoryArticle?.categoryId == cat.id) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

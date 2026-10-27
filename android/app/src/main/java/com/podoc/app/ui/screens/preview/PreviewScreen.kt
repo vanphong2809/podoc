@@ -44,6 +44,10 @@ fun PreviewScreen(
         }
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.loadCategories()
+    }
+
     LaunchedEffect(uiState.isSaved) {
         if (uiState.isSaved) {
             val articleId = uiState.savedArticleId
@@ -512,7 +516,7 @@ fun PreviewScreen(
 
                         Spacer(modifier = Modifier.height(32.dp))
 
-                        // Hai nút hành động: "Lưu tài liệu" và "Lưu nhanh"
+                        // Hai lựa chọn lưu bài viết: Chế độ đọc sạch trích xuất HOẶC Giữ nguyên định dạng web gốc
                         Button(
                             onClick = { viewModel.saveArticle() },
                             shape = RoundedCornerShape(16.dp),
@@ -520,23 +524,43 @@ fun PreviewScreen(
                                 .fillMaxWidth()
                                 .height(52.dp)
                         ) {
-                            Icon(imageVector = Icons.Default.Save, contentDescription = null)
+                            Icon(imageVector = Icons.Default.Description, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = stringResource(R.string.action_save),
+                                text = "Lưu trích xuất (Đọc sạch)",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        // Lựa chọn: Giữ nguyên định dạng web gốc (Full Web View) khi người dùng thêm qua link
+                        if (draft.fileName == null && !draft.sourceUrl.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            FilledTonalButton(
+                                onClick = { viewModel.saveAsWebFormat() },
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(52.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Language, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Lưu giữ nguyên định dạng web",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
 
                         OutlinedButton(
                             onClick = { viewModel.quickSave() },
                             shape = RoundedCornerShape(16.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(52.dp)
+                                .height(48.dp)
                         ) {
                             Text(
                                 text = "${stringResource(R.string.action_quick_save)} ${stringResource(R.string.quick_save_note)}",

@@ -41,16 +41,42 @@ class PreviewViewModel(
     private var lastUri: Uri? = null
 
     init {
+        // Lắng nghe cập nhật danh mục từ CategoryRepository theo thời gian thực
+        viewModelScope.launch {
+            categoryRepository.categoriesFlow.collect { updatedList ->
+                if (updatedList.isNotEmpty()) {
+                    val currentSelected = _uiState.value.selectedCategoryId
+                    val newSelected = if (updatedList.any { it.id == currentSelected }) {
+                        currentSelected
+                    } else if (currentSelected > 0) {
+                        currentSelected
+                    } else {
+                        updatedList.find { it.isSystem }?.id ?: updatedList.firstOrNull()?.id ?: 1
+                    }
+                    _uiState.value = _uiState.value.copy(
+                        categories = updatedList,
+                        selectedCategoryId = newSelected
+                    )
+                }
+            }
+        }
         loadCategories()
     }
 
-    private fun loadCategories() {
+    fun loadCategories(targetCategoryId: Int? = null) {
         viewModelScope.launch {
             categoryRepository.getCategories().onSuccess { list ->
-                val defaultCat = list.find { it.isSystem }?.id ?: list.firstOrNull()?.id ?: 1
+                val currentSelected = targetCategoryId ?: _uiState.value.selectedCategoryId
+                val validSelected = if (list.any { it.id == currentSelected }) {
+                    currentSelected
+                } else if (currentSelected > 0) {
+                    currentSelected
+                } else {
+                    list.find { it.isSystem }?.id ?: list.firstOrNull()?.id ?: 1
+                }
                 _uiState.value = _uiState.value.copy(
                     categories = list,
-                    selectedCategoryId = if (_uiState.value.selectedCategoryId == 7) defaultCat else _uiState.value.selectedCategoryId
+                    selectedCategoryId = validSelected
                 )
             }
         }
@@ -67,11 +93,16 @@ class PreviewViewModel(
         lastUri = null
     }
 
-    fun extractUrl(url: String) {
+    fun extractUrl(url: String, initialCategoryId: Int? = null) {
         lastUrl = url
         lastUri = null
         val cats = _uiState.value.categories
-        val defaultCat = cats.find { it.isSystem }?.id ?: 1
+        val defaultCat = initialCategoryId
+            ?: if (_uiState.value.selectedCategoryId > 0 && cats.any { it.id == _uiState.value.selectedCategoryId }) {
+                _uiState.value.selectedCategoryId
+            } else {
+                cats.find { it.isSystem }?.id ?: cats.firstOrNull()?.id ?: 1
+            }
         _uiState.value = PreviewUiState(
             isLoading = true,
             categories = cats,
@@ -85,6 +116,7 @@ class PreviewViewModel(
             batchCurrentIndex = 0,
             batchTotalCount = 0
         )
+        loadCategories(targetCategoryId = defaultCat)
 
         viewModelScope.launch {
             articleRepository.extractUrl(url).fold(
@@ -216,10 +248,69 @@ class PreviewViewModel(
 
     fun createCategory(name: String) {
         viewModelScope.launch {
-            categoryRepository.createCategory(name, "folder", "#4F46E5", 0).onSuccess { newCat ->
-                loadCategories()
-                _uiState.value = _uiState.value.copy(selectedCategoryId = newCat.id)
-            }
+            categoryRepository.createCategory(name, "folder", "#4F46E5", 0).fold(
+                onSuccess = { newCat ->
+                    // Đảm bảo danh mục mới được thêm vào danh sách và chọn ngay danh mục vừa tạo
+                    val currentCats = _uiState.value.categories
+                    val updatedList = if (currentCats.none { it.id == newCat.id }) currentCats + newCat else currentCats
+                    _uiState.value = _uiState.value.copy(
+                        categories = updatedList,
+                        selectedCategoryId = newCat.id
+                    )
+                },
+                onFailure = { error ->
+                    _uiState.value = _uiState.value.copy(
+                        errorMessage = error.message ?: "Không thể tạo danh mục"
+                    )
+                }
+            )
+        }
+    }
+
+    /**
+     * Lưu bài viết ở chế độ giữ nguyên định dạng web gốc (Full Web View)
+     */
+    fun saveAsWebFormat() {
+        val draft = _uiState.value.draft ?: return
+        val title = _uiState.value.editedTitle.ifBlank { draft.title }
+        val targetCatId = _uiState.value.selectedCategoryId
+
+        _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+
+        viewModelScope.launch {
+            val req = CreateArticleRequest(
+                title = title,
+                sourceType = "URL",
+                sourceUrl = draft.sourceUrl,
+                normalizedUrl = draft.normalizedUrl,
+                fileName = null,
+                filePath = null,
+                mimeType = "text/html-web",
+                contentMarkdown = "<!-- WEB_VIEW_MODE -->\n\n${draft.contentMarkdown}",
+                excerpt = if (!draft.excerpt.isNullOrBlank()) draft.excerpt else "Trang web gốc: ${draft.sourceUrl}",
+                author = draft.author,
+                siteName = draft.siteName,
+                imageUrl = draft.imageUrl,
+                language = draft.language,
+                readingMinutes = draft.readingMinutes,
+                categoryId = targetCatId
+            )
+
+            articleRepository.createArticle(req).fold(
+                onSuccess = { created ->
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        isSaved = true,
+                        savedArticleId = created.id
+                    )
+                },
+                onFailure = { error ->
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = error.message ?: "Lỗi khi lưu trang web"
+                    )
+                }
+            )
         }
     }
 
@@ -267,9 +358,9 @@ class PreviewViewModel(
     }
 
     fun quickSave() {
-        // Lưu nhanh vào Chưa phân loại (is_system=True)
-        val defaultCat = _uiState.value.categories.find { it.isSystem }?.id ?: 1
-        _uiState.value = _uiState.value.copy(selectedCategoryId = defaultCat)
+        val currentCat = _uiState.value.selectedCategoryId
+        val targetCat = if (currentCat > 0) currentCat else (_uiState.value.categories.find { it.isSystem }?.id ?: 1)
+        _uiState.value = _uiState.value.copy(selectedCategoryId = targetCat)
         saveArticle()
     }
 

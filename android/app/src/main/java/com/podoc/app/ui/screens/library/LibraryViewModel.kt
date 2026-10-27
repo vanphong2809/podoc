@@ -45,6 +45,14 @@ class LibraryViewModel(
     private var searchJob: Job? = null
 
     init {
+        // Lắng nghe cập nhật danh mục từ CategoryRepository theo thời gian thực
+        viewModelScope.launch {
+            categoryRepository.categoriesFlow.collect { updatedList ->
+                if (updatedList.isNotEmpty()) {
+                    _uiState.value = _uiState.value.copy(categories = updatedList)
+                }
+            }
+        }
         loadCategories()
         loadArticles(refresh = true)
     }

@@ -105,6 +105,23 @@ fun ArticleCard(
                     Spacer(modifier = Modifier.width(8.dp))
                 }
 
+                // Badge TRANG WEB nếu bài viết được lưu ở chế độ giữ nguyên định dạng web gốc
+                if (article.mimeType == "text/html-web") {
+                    Surface(
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "TRANG WEB",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+
                 // Tên nguồn hoặc web
                 Text(
                     text = article.siteName ?: if (article.sourceType == "FILE") "File máy" else "Web",

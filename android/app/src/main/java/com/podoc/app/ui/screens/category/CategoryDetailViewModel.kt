@@ -49,6 +49,13 @@ class CategoryDetailViewModel(
     private var searchJob: Job? = null
 
     init {
+        viewModelScope.launch {
+            categoryRepository.categoriesFlow.collect { updatedList ->
+                if (updatedList.isNotEmpty()) {
+                    _uiState.value = _uiState.value.copy(categories = updatedList)
+                }
+            }
+        }
         loadCategories()
         loadArticles(refresh = true)
     }

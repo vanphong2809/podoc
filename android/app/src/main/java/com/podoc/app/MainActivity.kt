@@ -258,7 +258,7 @@ class MainActivity : ComponentActivity() {
                                     navController.navigate(Screen.Reader.createRoute(articleId))
                                 },
                                 onPasteLink = { url ->
-                                    previewViewModel.extractUrl(url)
+                                    previewViewModel.extractUrl(url, initialCategoryId = catId)
                                     navController.navigate(Screen.Preview.route) {
                                         launchSingleTop = true
                                     }
