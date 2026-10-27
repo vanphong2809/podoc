@@ -1,5 +1,6 @@
 package com.podoc.app.ui.components
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -15,12 +16,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
+import coil.compose.rememberAsyncImagePainter
+import coil.request.ImageRequest
 import com.podoc.app.R
 import com.podoc.app.data.model.ArticleListItem
 
@@ -37,6 +41,7 @@ fun ArticleCard(
     onEditTitle: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     // Màu sắc badge chuẩn thiết kế hiện đại
     val categoryBadgeBg = Color(0xFFE0EDFF)
@@ -72,8 +77,34 @@ fun ArticleCard(
         else -> Triple(null, Color.Transparent, Color.Transparent)
     }
 
-    val hasThumbnail = !article.imageUrl.isNullOrBlank()
-    val showAsHero = isHeroBanner && hasThumbnail
+    // Tải ảnh và phân tích độ phân giải gốc để kiểm tra chất lượng chống vỡ hình
+    val imagePainter = if (!article.imageUrl.isNullOrBlank()) {
+        rememberAsyncImagePainter(
+            model = ImageRequest.Builder(context)
+                .data(article.imageUrl)
+                .crossfade(true)
+                .build()
+        )
+    } else {
+        null
+    }
+
+    val painterState = imagePainter?.state
+    val drawable = (painterState as? AsyncImagePainter.State.Success)?.result?.drawable
+    val intrinsicWidth = drawable?.intrinsicWidth ?: 0
+    val intrinsicHeight = drawable?.intrinsicHeight ?: 0
+
+    // ĐIỀU KIỆN CHẤT LƯỢNG ẢNH:
+    // 1. Ảnh lớn cho Hero Banner: Yêu cầu bề ngang >= 380px VÀ chiều cao >= 200px, tỉ lệ cân đối
+    val isLargeHighQuality = intrinsicWidth >= 380 && intrinsicHeight >= 200 &&
+            (intrinsicWidth.toFloat() / intrinsicHeight.coerceAtLeast(1) in 0.8f..3.2f)
+
+    // 2. Ảnh Thumbnail bên phải: Yêu cầu tối thiểu bề ngang >= 180px VÀ chiều cao >= 120px
+    // Nếu nhỏ hơn 180x120 (như logo nhỏ, icon, favicon) sẽ bị vỡ hạt -> TUYỆT ĐỐI KHÔNG HIỂN THỊ
+    val isThumbnailQuality = intrinsicWidth >= 180 && intrinsicHeight >= 120
+
+    val showHero = isHeroBanner && isLargeHighQuality
+    val showSideThumbnail = !showHero && isThumbnailQuality
 
     Card(
         shape = RoundedCornerShape(22.dp),
@@ -87,15 +118,15 @@ fun ArticleCard(
             .clickable(onClick = onClick)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            if (showAsHero) {
-                // KIỂU 1: HERO BANNER (ẢNH LỚN TRÊN ĐỈNH CARD)
+            if (showHero && imagePainter != null) {
+                // KIỂU 1: HERO BANNER (CHỈ KHI CÓ ẢNH ĐỘ PHÂN GIẢI CAO, SẮC NÉT, KHÔNG BỊ VỠ)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(170.dp)
                 ) {
-                    AsyncImage(
-                        model = article.imageUrl,
+                    Image(
+                        painter = imagePainter,
                         contentDescription = article.title,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
@@ -211,7 +242,7 @@ fun ArticleCard(
                     )
                 }
             } else {
-                // KIỂU 2: CARD NGANG VỚI THUMBNAIL BÊN PHẢI
+                // KIỂU 2: CARD NỘI DUNG CHUẨN (VỚI THUMBNAIL BÊN PHẢI NẾU ĐỦ NÉT, HOẶC DẠNG TEXT THUẦN SẠCH SẼ)
                 Column(modifier = Modifier.padding(16.dp)) {
                     // Header: Badges + Tên nguồn + Nút 3 chấm
                     Row(
@@ -287,7 +318,7 @@ fun ArticleCard(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Body: Bên trái là Tiêu đề + Trích dẫn, Bên phải là Thumbnail
+                    // Body: Bên trái là Tiêu đề + Trích dẫn, Bên phải là Thumbnail (nếu ảnh sắc nét)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
@@ -320,10 +351,11 @@ fun ArticleCard(
                             }
                         }
 
-                        if (hasThumbnail) {
+                        // Chỉ hiển thị thumbnail bên phải nếu ảnh đạt chuẩn độ nét (không bị vỡ hạt)
+                        if (showSideThumbnail && imagePainter != null) {
                             Spacer(modifier = Modifier.width(12.dp))
-                            AsyncImage(
-                                model = article.imageUrl,
+                            Image(
+                                painter = imagePainter,
                                 contentDescription = article.title,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier

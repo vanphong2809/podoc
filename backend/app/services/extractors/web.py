@@ -131,14 +131,43 @@ class WebExtractor(BaseExtractor):
                     return val
         return None
 
+    def _is_good_image_url(self, url: str) -> bool:
+        if not url:
+            return False
+        url_lower = url.lower()
+        # Loại bỏ các định dạng icon hoặc vector không phù hợp làm thumbnail
+        if any(url_lower.endswith(ext) for ext in (".ico", ".svg")):
+            return False
+        # Loại bỏ các từ khóa biểu thị icon, logo, badge, avatar, ảnh cực nhỏ
+        bad_words = [
+            "favicon", "apple-touch-icon", "logo", "icon", "badge", "avatar",
+            "pixel", "spinner", "loading", "blank.gif", "spacer", "16x16", "32x32",
+            "48x48", "64x64", "72x72", "96x96", "128x128", "emoji", "btn_", "button",
+            "header-logo", "site-logo", "brand", "gravatar", "user-photo", "placeholder"
+        ]
+        if any(bw in url_lower for bw in bad_words):
+            return False
+        return True
+
     def _extract_image_url(self, soup: BeautifulSoup, base_url: str) -> str | None:
         """
-        Trích xuất thumbnail ảnh đại diện của trang web theo nhiều nguồn ưu tiên:
-        1. OpenGraph / Twitter Cards / Meta tags
+        Trích xuất thumbnail ảnh đại diện chất lượng cao của trang web:
+        1. OpenGraph / Twitter Cards / Meta tags (chỉ lấy ảnh kích thước lớn)
         2. Schema JSON-LD
-        3. Link rel=image_src / thumbnail
-        4. Thẻ img tiêu biểu trong bài viết
+        3. Link rel=image_src (bỏ apple-touch-icon, favicon)
+        4. Thẻ img tiêu biểu trong bài viết (kích thước lớn > 250px)
         """
+        # Kiểm tra nếu có kích thước trong meta og:image:width
+        meta_w_str = self._extract_meta(soup, ["og:image:width", "twitter:image:width"])
+        meta_h_str = self._extract_meta(soup, ["og:image:height", "twitter:image:height"])
+        try:
+            if meta_w_str and int(re.sub(r"\D", "", meta_w_str)) < 250:
+                return None
+            if meta_h_str and int(re.sub(r"\D", "", meta_h_str)) < 150:
+                return None
+        except Exception:
+            pass
+
         # 1. Thẻ meta phổ biến
         meta_names = [
             "og:image",
@@ -150,24 +179,28 @@ class WebExtractor(BaseExtractor):
             "thumbnail",
         ]
         raw_meta = self._extract_meta(soup, meta_names)
-        if raw_meta:
+        if raw_meta and self._is_good_image_url(raw_meta):
             resolved = urljoin(base_url, raw_meta) if base_url else raw_meta
-            if resolved.startswith("http://") or resolved.startswith("https://"):
+            if (resolved.startswith("http://") or resolved.startswith("https://")) and self._is_good_image_url(resolved):
                 return resolved
 
         # Thẻ meta itemprop="image"
         itemprop_meta = soup.find("meta", attrs={"itemprop": "image"})
         if itemprop_meta and itemprop_meta.get("content"):
             c = itemprop_meta.get("content").strip()
-            if c:
-                return urljoin(base_url, c) if base_url else c
+            if c and self._is_good_image_url(c):
+                resolved = urljoin(base_url, c) if base_url else c
+                if (resolved.startswith("http://") or resolved.startswith("https://")) and self._is_good_image_url(resolved):
+                    return resolved
 
-        # 2. Thẻ link rel (image_src, apple-touch-icon)
-        link_img = soup.find("link", rel=lambda r: r and any(k in r.lower() for k in ("image_src", "thumbnail")))
+        # 2. Thẻ link rel (chỉ lấy image_src, loại bỏ icon/apple-touch-icon)
+        link_img = soup.find("link", rel=lambda r: r and "image_src" in r.lower())
         if link_img and link_img.get("href"):
             h = link_img.get("href").strip()
-            if h:
-                return urljoin(base_url, h) if base_url else h
+            if h and self._is_good_image_url(h):
+                resolved = urljoin(base_url, h) if base_url else h
+                if (resolved.startswith("http://") or resolved.startswith("https://")) and self._is_good_image_url(resolved):
+                    return resolved
 
         # 3. JSON-LD schema
         for script in soup.find_all("script", type="application/ld+json"):
@@ -176,12 +209,14 @@ class WebExtractor(BaseExtractor):
             try:
                 data = json.loads(script.string.strip())
                 img = self._find_image_in_json_ld(data)
-                if img:
-                    return urljoin(base_url, img) if base_url else img
+                if img and self._is_good_image_url(img):
+                    resolved = urljoin(base_url, img) if base_url else img
+                    if (resolved.startswith("http://") or resolved.startswith("https://")) and self._is_good_image_url(resolved):
+                        return resolved
             except Exception:
                 continue
 
-        # 4. Thẻ img đầu tiên trong article hoặc main hoặc class featured/thumb
+        # 4. Thẻ img đầu tiên trong article hoặc main hoặc class featured/thumb (kích thước lớn)
         container = (
             soup.find("article")
             or soup.find("main")
@@ -189,6 +224,17 @@ class WebExtractor(BaseExtractor):
             or soup
         )
         for img in container.find_all("img"):
+            # Kiểm tra thuộc tính width/height nếu có
+            w_attr = img.get("width")
+            h_attr = img.get("height")
+            try:
+                if w_attr and int(re.sub(r"\D", "", str(w_attr))) < 250:
+                    continue
+                if h_attr and int(re.sub(r"\D", "", str(h_attr))) < 150:
+                    continue
+            except Exception:
+                pass
+
             src = img.get("src") or img.get("data-src") or img.get("data-original") or img.get("data-lazy-src")
             if not src:
                 # Check srcset
@@ -197,13 +243,10 @@ class WebExtractor(BaseExtractor):
                     src = srcset.split(",")[0].strip().split(" ")[0]
             if src:
                 src = src.strip()
-                # Bỏ qua icon, tracking pixel 1x1, base64 quá ngắn
-                if src.startswith("data:") and len(src) < 500:
-                    continue
-                if any(x in src.lower() for x in ("avatar", "logo", "icon", "pixel", "blank.gif", "spacer")):
+                if not self._is_good_image_url(src):
                     continue
                 resolved = urljoin(base_url, src) if base_url else src
-                if resolved.startswith("http://") or resolved.startswith("https://"):
+                if (resolved.startswith("http://") or resolved.startswith("https://")) and self._is_good_image_url(resolved):
                     return resolved
 
         return None
