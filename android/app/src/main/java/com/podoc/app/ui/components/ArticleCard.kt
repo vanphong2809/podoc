@@ -89,117 +89,14 @@ fun ArticleCard(
             .clip(RoundedCornerShape(22.dp))
             .clickable(onClick = onClick)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Header: Badges + Tên nguồn + Nút 3 chấm
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                if (!article.categoryName.isNullOrBlank()) {
-                    Surface(
-                        color = categoryBadgeBg,
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(
-                            text = article.categoryName,
-                            fontSize = 11.5.sp,
-                            color = categoryBadgeText,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(6.dp))
-                }
-
-                if (typeBadgeText != null) {
-                    Surface(
-                        color = typeBadgeBg,
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(
-                            text = typeBadgeText,
-                            fontSize = 11.5.sp,
-                            color = typeBadgeColor,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
-
-                val sourceLabel = article.siteName ?: if (article.sourceType == "FILE") "File máy" else "Web"
-                Text(
-                    text = sourceLabel,
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
-                    color = Color(0xFF6B7280),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-
-                Box {
-                    IconButton(
-                        onClick = { showMenu = true },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Thao tác",
-                            tint = Color(0xFF6B7280),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    ArticleActionDropdownMenu(
-                        expanded = showMenu,
-                        onDismiss = { showMenu = false },
-                        onEditTitle = onEditTitle,
-                        onChangeCategory = onChangeCategory,
-                        onOpenSource = onOpenSource,
-                        onShare = onShare,
-                        onDelete = onDelete
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Body: Bên trái là Tiêu đề + Trích dẫn, Bên phải là Thumbnail chuẩn thiết kế
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = article.title,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontSize = 16.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            lineHeight = 22.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    if (!article.excerpt.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = article.excerpt,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = 13.sp,
-                                lineHeight = 18.5.sp
-                            ),
-                            color = Color(0xFF6B7280),
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
-                // Thumbnail bên phải sắc nét (104dp x 82dp, bo góc 14dp, tỉ lệ Crop)
-                if (!article.imageUrl.isNullOrBlank() && isImageValid) {
-                    Spacer(modifier = Modifier.width(12.dp))
+        if (isHeroBanner && !article.imageUrl.isNullOrBlank() && isImageValid) {
+            // KIỂU 1: HERO BANNER (Đúng như Card 1 trong ảnh thiết kế)
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(175.dp)
+                ) {
                     AsyncImage(
                         model = ImageRequest.Builder(context)
                             .data(article.imageUrl)
@@ -208,36 +105,276 @@ fun ArticleCard(
                         contentDescription = article.title,
                         contentScale = ContentScale.Crop,
                         onState = { state ->
-                            when (state) {
-                                is AsyncImagePainter.State.Error -> {
-                                    isImageValid = false
-                                }
-                                is AsyncImagePainter.State.Success -> {
-                                    val size = state.painter.intrinsicSize
-                                    // Loại bỏ tracking pixel 1x1 hoặc ảnh rác siêu nhỏ (< 32px)
-                                    if (size.width < 32f || size.height < 32f) {
-                                        isImageValid = false
-                                    }
-                                }
-                                else -> {}
+                            if (state is AsyncImagePainter.State.Error) {
+                                isImageValid = false
                             }
                         },
                         modifier = Modifier
-                            .size(width = 104.dp, height = 82.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFFF3F4F6))
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
+                            .background(Color(0xFFE5E7EB))
+                    )
+
+                    // Overlay Badges & Menu 3 chấm trên đỉnh ảnh
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (!article.categoryName.isNullOrBlank()) {
+                            Surface(
+                                color = categoryBadgeBg,
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = article.categoryName,
+                                    fontSize = 11.5.sp,
+                                    color = categoryBadgeText,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+
+                        if (typeBadgeText != null) {
+                            Surface(
+                                color = typeBadgeBg,
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = typeBadgeText,
+                                    fontSize = 11.5.sp,
+                                    color = typeBadgeColor,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        // Nút 3 chấm trên nền tròn trắng mờ
+                        Box {
+                            IconButton(
+                                onClick = { showMenu = true },
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = 0.9f))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "Thao tác",
+                                    tint = Color(0xFF374151),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            ArticleActionDropdownMenu(
+                                expanded = showMenu,
+                                onDismiss = { showMenu = false },
+                                onEditTitle = onEditTitle,
+                                onChangeCategory = onChangeCategory,
+                                onOpenSource = onOpenSource,
+                                onShare = onShare,
+                                onDelete = onDelete
+                            )
+                        }
+                    }
+                }
+
+                // Phần nội dung bên dưới Hero Image
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                    Text(
+                        text = article.title,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 17.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            lineHeight = 23.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    if (!article.excerpt.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = article.excerpt,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 13.5.sp,
+                                lineHeight = 19.sp
+                            ),
+                            color = Color(0xFF6B7280),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    ArticleCardFooter(
+                        readingMinutes = article.readingMinutes,
+                        readProgress = article.readProgress,
+                        isFavorite = article.isFavorite,
+                        onToggleFavorite = onToggleFavorite
                     )
                 }
             }
+        } else {
+            // KIỂU 2: CARD NỘI DUNG CHUẨN (VỚI THUMBNAIL BÊN PHẢI - Đúng như Card 2 & 3)
+            Column(modifier = Modifier.padding(16.dp)) {
+                // Header: Badges + Tên nguồn + Nút 3 chấm
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (!article.categoryName.isNullOrBlank()) {
+                        Surface(
+                            color = categoryBadgeBg,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = article.categoryName,
+                                fontSize = 11.5.sp,
+                                color = categoryBadgeText,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
 
-            Spacer(modifier = Modifier.height(12.dp))
+                    if (typeBadgeText != null) {
+                        Surface(
+                            color = typeBadgeBg,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = typeBadgeText,
+                                fontSize = 11.5.sp,
+                                color = typeBadgeColor,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
 
-            ArticleCardFooter(
-                readingMinutes = article.readingMinutes,
-                readProgress = article.readProgress,
-                isFavorite = article.isFavorite,
-                onToggleFavorite = onToggleFavorite
-            )
+                    val sourceLabel = article.siteName ?: if (article.sourceType == "FILE") "File máy" else "Web"
+                    Text(
+                        text = sourceLabel,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                        color = Color(0xFF6B7280),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Box {
+                        IconButton(
+                            onClick = { showMenu = true },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "Thao tác",
+                                tint = Color(0xFF6B7280),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        ArticleActionDropdownMenu(
+                            expanded = showMenu,
+                            onDismiss = { showMenu = false },
+                            onEditTitle = onEditTitle,
+                            onChangeCategory = onChangeCategory,
+                            onOpenSource = onOpenSource,
+                            onShare = onShare,
+                            onDelete = onDelete
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Body: Bên trái là Tiêu đề + Trích dẫn, Bên phải là Thumbnail chuẩn thiết kế
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = article.title,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 16.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                lineHeight = 22.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        if (!article.excerpt.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = article.excerpt,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontSize = 13.sp,
+                                    lineHeight = 18.5.sp
+                                ),
+                                color = Color(0xFF6B7280),
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    // Thumbnail bên phải sắc nét (104dp x 82dp, bo góc 14dp, tỉ lệ Crop)
+                    if (!article.imageUrl.isNullOrBlank() && isImageValid) {
+                        Spacer(modifier = Modifier.width(12.dp))
+                        AsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(article.imageUrl)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = article.title,
+                            contentScale = ContentScale.Crop,
+                            onState = { state ->
+                                when (state) {
+                                    is AsyncImagePainter.State.Error -> {
+                                        isImageValid = false
+                                    }
+                                    is AsyncImagePainter.State.Success -> {
+                                        val size = state.painter.intrinsicSize
+                                        // Loại bỏ tracking pixel 1x1 hoặc ảnh rác siêu nhỏ (< 32px)
+                                        if (size.width < 32f || size.height < 32f) {
+                                            isImageValid = false
+                                        }
+                                    }
+                                    else -> {}
+                                }
+                            },
+                            modifier = Modifier
+                                .size(width = 104.dp, height = 82.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color(0xFFF3F4F6))
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                ArticleCardFooter(
+                    readingMinutes = article.readingMinutes,
+                    readProgress = article.readProgress,
+                    isFavorite = article.isFavorite,
+                    onToggleFavorite = onToggleFavorite
+                )
+            }
         }
     }
 }

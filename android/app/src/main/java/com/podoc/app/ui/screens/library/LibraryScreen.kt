@@ -6,7 +6,13 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -23,10 +29,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.podoc.app.R
 import com.podoc.app.data.model.ArticleListItem
 import com.podoc.app.ui.components.ArticleCard
@@ -41,6 +50,8 @@ fun LibraryScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val listState = rememberLazyListState()
+    val gridState = rememberLazyGridState()
+    val isMediaGrid = uiState.selectedContentType in listOf("image", "video")
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Dialog state
@@ -76,11 +87,21 @@ fun LibraryScreen(
         }
     }
 
-    // Tải thêm trang tiếp theo khi cuộn gần cuối
+    // Tải thêm trang tiếp theo khi cuộn gần cuối trong Danh sách
     LaunchedEffect(listState) {
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
             .collect { lastIndex ->
                 if (lastIndex != null && lastIndex >= uiState.articles.size - 3 && uiState.hasMore && !uiState.isLoading) {
+                    viewModel.loadArticles(refresh = false)
+                }
+            }
+    }
+
+    // Tải thêm trang tiếp theo khi cuộn gần cuối trong Lưới Hình ảnh/Video
+    LaunchedEffect(gridState) {
+        snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+            .collect { lastIndex ->
+                if (lastIndex != null && lastIndex >= uiState.articles.size - 10 && uiState.hasMore && !uiState.isLoading) {
                     viewModel.loadArticles(refresh = false)
                 }
             }
@@ -179,7 +200,7 @@ fun LibraryScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Dòng Filter Chips (Yêu thích, Bài viết, Hình ảnh, Video, Tệp tin)
+                // Dòng Filter Chips (Tất cả, Yêu thích, Bài viết, Hình ảnh, Video, Tệp tin, Danh mục...)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -193,7 +214,19 @@ fun LibraryScreen(
                         selectedLeadingIconColor = Color.White
                     )
 
-                    // Chip Yêu thích
+                    // 1. Chip Tất cả (Chứa tất cả bài viết, hình ảnh, video, file)
+                    val isAllSelected = uiState.selectedContentType == null && !uiState.onlyFavorites && uiState.selectedCategoryId == null
+                    FilterChip(
+                        selected = isAllSelected,
+                        onClick = { viewModel.onSelectAll() },
+                        label = { Text("Tất cả", fontWeight = if (isAllSelected) FontWeight.Bold else FontWeight.Medium) },
+                        colors = activeChipColors,
+                        shape = chipShape
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    // 2. Chip Yêu thích
                     FilterChip(
                         selected = uiState.onlyFavorites,
                         onClick = { viewModel.onToggleFavoritesFilter() },
@@ -211,7 +244,7 @@ fun LibraryScreen(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    // Chip Bài viết
+                    // 3. Chip Bài viết (Chỉ chứa bài viết)
                     FilterChip(
                         selected = uiState.selectedContentType == "article",
                         onClick = { viewModel.onContentTypeFilterChange("article") },
@@ -229,7 +262,7 @@ fun LibraryScreen(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    // Chip Hình ảnh
+                    // 4. Chip Hình ảnh (Hiển thị dạng lưới 5 ảnh/hàng, page size 80)
                     FilterChip(
                         selected = uiState.selectedContentType == "image",
                         onClick = { viewModel.onContentTypeFilterChange("image") },
@@ -247,7 +280,7 @@ fun LibraryScreen(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    // Chip Video
+                    // 5. Chip Video (Hiển thị dạng lưới 5 video/hàng, page size 80)
                     FilterChip(
                         selected = uiState.selectedContentType == "video",
                         onClick = { viewModel.onContentTypeFilterChange("video") },
@@ -265,7 +298,7 @@ fun LibraryScreen(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    // Chip Tệp tin
+                    // 6. Chip Tệp tin (Hiển thị dạng khối thẻ như bình thường, page size 20)
                     FilterChip(
                         selected = uiState.selectedContentType == "file",
                         onClick = { viewModel.onContentTypeFilterChange("file") },
@@ -361,62 +394,96 @@ fun LibraryScreen(
                                 )
                             }
                         }
-                else -> {
-                    LazyColumn(
-                        state = listState,
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        itemsIndexed(uiState.articles, key = { _, it -> it.id }) { _, article ->
-                            ArticleCard(
-                                article = article,
-                                onClick = { onArticleClick(article.id) },
-                                onToggleFavorite = { viewModel.toggleFavorite(article) },
-                                onDelete = { viewModel.deleteArticle(article) },
-                                onOpenSource = {
-                                    val url = article.sourceUrl
-                                    if (!url.isNullOrBlank()) {
-                                        try {
-                                            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                            context.startActivity(browserIntent)
-                                        } catch (e: Exception) {
-                                            // Handle no browser
+                        isMediaGrid -> {
+                            // DẠNG LƯỚI CHO HÌNH ẢNH & VIDEO (1 hàng 5 item, cuộn trang phân trang 80 item)
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(5),
+                                state = gridState,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                itemsIndexed(uiState.articles, key = { _, it -> it.id }) { _, article ->
+                                    MediaGridItem(
+                                        article = article,
+                                        isVideo = uiState.selectedContentType == "video",
+                                        onClick = { onArticleClick(article.id) }
+                                    )
+                                }
+
+                                if (uiState.isLoading && uiState.articles.isNotEmpty()) {
+                                    item(span = { GridItemSpan(5) }) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(16.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
                                         }
                                     }
-                                },
-                                onShare = {
-                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(Intent.EXTRA_SUBJECT, article.title)
-                                        putExtra(Intent.EXTRA_TEXT, "${article.title}\n${article.sourceUrl ?: ""}")
-                                    }
-                                    context.startActivity(Intent.createChooser(shareIntent, "Chia sẻ bài viết"))
-                                },
-                                onChangeCategory = {
-                                    changingCategoryArticle = article
-                                },
-                                onEditTitle = {
-                                    editingArticle = article
-                                    newTitleInput = article.title
-                                }
-                            )
-                        }
-
-                        if (uiState.isLoading && uiState.articles.isNotEmpty()) {
-                            item {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
                                 }
                             }
                         }
-                    }
-                }
+                        else -> {
+                            // DẠNG KHỐI THẺ CHO TẤT CẢ, BÀI VIẾT, TỆP TIN (Đúng thiết kế từng khối)
+                            LazyColumn(
+                                state = listState,
+                                contentPadding = PaddingValues(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                itemsIndexed(uiState.articles, key = { _, it -> it.id }) { index, article ->
+                                    ArticleCard(
+                                        article = article,
+                                        isHeroBanner = (index == 0 && !article.imageUrl.isNullOrBlank()),
+                                        onClick = { onArticleClick(article.id) },
+                                        onToggleFavorite = { viewModel.toggleFavorite(article) },
+                                        onDelete = { viewModel.deleteArticle(article) },
+                                        onOpenSource = {
+                                            val url = article.sourceUrl
+                                            if (!url.isNullOrBlank()) {
+                                                try {
+                                                    val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                                    context.startActivity(browserIntent)
+                                                } catch (e: Exception) {
+                                                    // Handle no browser
+                                                }
+                                            }
+                                        },
+                                        onShare = {
+                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_SUBJECT, article.title)
+                                                putExtra(Intent.EXTRA_TEXT, "${article.title}\n${article.sourceUrl ?: ""}")
+                                            }
+                                            context.startActivity(Intent.createChooser(shareIntent, "Chia sẻ bài viết"))
+                                        },
+                                        onChangeCategory = {
+                                            changingCategoryArticle = article
+                                        },
+                                        onEditTitle = {
+                                            editingArticle = article
+                                            newTitleInput = article.title
+                                        }
+                                    )
+                                }
+
+                                if (uiState.isLoading && uiState.articles.isNotEmpty()) {
+                                    item {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(16.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
             }
         }
     }
@@ -533,5 +600,63 @@ fun LibraryScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun MediaGridItem(
+    article: ArticleListItem,
+    isVideo: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color(0xFFF3F4F6))
+            .clickable(onClick = onClick)
+    ) {
+        if (!article.imageUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(article.imageUrl)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = article.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (isVideo) Icons.Default.Videocam else Icons.Default.Image,
+                    contentDescription = null,
+                    tint = Color(0xFF9CA3AF),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
+
+        if (isVideo) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Video",
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
     }
 }

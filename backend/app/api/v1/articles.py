@@ -37,7 +37,7 @@ async def list_articles(
     favorite: Optional[bool] = Query(None, description="Lọc bài viết yêu thích"),
     sort: Optional[str] = Query("newest", description="Sắp xếp: newest, oldest, reading_time, title"),
     page: int = Query(1, ge=1, description="Số trang"),
-    page_size: int = Query(20, ge=1, le=100, description="Số bài mỗi trang"),
+    page_size: int = Query(20, ge=1, le=150, description="Số bài mỗi trang"),
 ):
     """
     Lấy danh sách bài viết (chỉ trả về excerpt, không trả full content để tối ưu băng thông).
@@ -79,23 +79,42 @@ async def list_articles(
 
     if content_type and content_type.lower() != "all":
         ct = content_type.lower().strip()
+        image_exts = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"]
+        video_exts = [".mp4", ".mkv", ".mov", ".webm", ".avi", ".flv", ".3gp"]
+
         if ct in ("article", "url", "link", "web"):
             stmt = stmt.where(Article.source_type == "URL")
         elif ct in ("image", "photo", "anh"):
             stmt = stmt.where(
                 Article.source_type == "FILE",
-                Article.mime_type.ilike("image/%"),
+                or_(
+                    Article.mime_type.ilike("image/%"),
+                    or_(*[Article.file_name.ilike(f"%{ext}") for ext in image_exts])
+                ),
             )
         elif ct in ("video", "clip"):
             stmt = stmt.where(
                 Article.source_type == "FILE",
-                Article.mime_type.ilike("video/%"),
+                or_(
+                    Article.mime_type.ilike("video/%"),
+                    or_(*[Article.file_name.ilike(f"%{ext}") for ext in video_exts])
+                ),
             )
         elif ct in ("file", "document", "doc", "tep"):
             stmt = stmt.where(
                 Article.source_type == "FILE",
-                not_(Article.mime_type.ilike("image/%")),
-                not_(Article.mime_type.ilike("video/%")),
+                not_(
+                    or_(
+                        Article.mime_type.ilike("image/%"),
+                        or_(*[Article.file_name.ilike(f"%{ext}") for ext in image_exts])
+                    )
+                ),
+                not_(
+                    or_(
+                        Article.mime_type.ilike("video/%"),
+                        or_(*[Article.file_name.ilike(f"%{ext}") for ext in video_exts])
+                    )
+                ),
             )
 
     if favorite is not None:

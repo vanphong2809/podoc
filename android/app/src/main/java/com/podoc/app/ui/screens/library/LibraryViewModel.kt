@@ -68,6 +68,8 @@ class LibraryViewModel(
     fun loadArticles(refresh: Boolean = false) {
         val currentState = _uiState.value
         val targetPage = if (refresh) 1 else currentState.page
+        val isMediaGrid = currentState.selectedContentType in listOf("image", "video")
+        val targetPageSize = if (isMediaGrid) 80 else 20
 
         if (refresh) {
             _uiState.value = currentState.copy(isRefreshing = true, errorMessage = null)
@@ -85,7 +87,7 @@ class LibraryViewModel(
                 favorite = if (currentState.onlyFavorites) true else null,
                 sort = currentState.selectedSort,
                 page = targetPage,
-                pageSize = 20
+                pageSize = targetPageSize
             )
 
             result.fold(
@@ -94,7 +96,7 @@ class LibraryViewModel(
                     _uiState.value = _uiState.value.copy(
                         articles = updatedList,
                         page = targetPage + 1,
-                        hasMore = newItems.size >= 20,
+                        hasMore = newItems.size >= targetPageSize,
                         isLoading = false,
                         isRefreshing = false
                     )
@@ -108,6 +110,15 @@ class LibraryViewModel(
                 }
             )
         }
+    }
+
+    fun onSelectAll() {
+        _uiState.value = _uiState.value.copy(
+            selectedContentType = null,
+            onlyFavorites = false,
+            selectedCategoryId = null
+        )
+        loadArticles(refresh = true)
     }
 
     fun onSearchQueryChange(query: String) {
