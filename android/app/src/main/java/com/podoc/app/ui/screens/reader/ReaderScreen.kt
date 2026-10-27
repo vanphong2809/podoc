@@ -12,6 +12,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -988,58 +989,70 @@ private fun InAppWebViewer(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // Thanh TopBar hiện đại, mỏng gọn có nút Back ra ngoài
+        // Thanh TopBar hiện đại, siêu mỏng gọn chuẩn thiết kế
         Surface(
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 2.dp,
-            shadowElevation = 3.dp,
+            tonalElevation = 0.dp,
+            shadowElevation = 1.dp,
+            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .statusBarsPadding()
-                        .height(52.dp)
+                        .height(46.dp)
                         .padding(horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = {
-                        if (webView?.canGoBack() == true) {
-                            webView?.goBack()
-                        } else {
-                            onNavigateBack()
-                        }
-                    }) {
+                    IconButton(
+                        onClick = {
+                            if (webView?.canGoBack() == true) {
+                                webView?.goBack()
+                            } else {
+                                onNavigateBack()
+                            }
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Quay lại"
+                            contentDescription = "Quay lại",
+                            modifier = Modifier.size(22.dp)
                         )
                     }
 
                     Column(
                         modifier = Modifier
                             .weight(1f)
-                            .padding(horizontal = 6.dp)
+                            .padding(horizontal = 6.dp),
+                        verticalArrangement = Arrangement.Center
                     ) {
                         Text(
                             text = currentTitle,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                fontSize = 14.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         val host = try { Uri.parse(url).host ?: url } catch (_: Exception) { url }
                         Text(
                             text = host,
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 11.5.sp
+                            ),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
 
-                    IconButton(onClick = { webView?.reload() }) {
+                    IconButton(
+                        onClick = { webView?.reload() },
+                        modifier = Modifier.size(36.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Tải lại trang",
@@ -1047,12 +1060,15 @@ private fun InAppWebViewer(
                         )
                     }
 
-                    IconButton(onClick = {
-                        try {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                            context.startActivity(intent)
-                        } catch (_: Exception) {}
-                    }) {
+                    IconButton(
+                        onClick = {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                context.startActivity(intent)
+                            } catch (_: Exception) {}
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.OpenInNew,
                             contentDescription = "Mở bằng trình duyệt ngoài",
@@ -1066,7 +1082,7 @@ private fun InAppWebViewer(
                         progress = { pageProgress / 100f },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(2.5.dp),
+                            .height(2.dp),
                         color = MaterialTheme.colorScheme.primary,
                         trackColor = MaterialTheme.colorScheme.surfaceVariant
                     )
