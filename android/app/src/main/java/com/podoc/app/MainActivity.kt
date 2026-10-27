@@ -269,7 +269,14 @@ class MainActivity : ComponentActivity() {
                         // Màn hình Cài đặt
                         composable(Screen.Settings.route) {
                             SettingsScreen(
-                                viewModel = settingsViewModel
+                                viewModel = settingsViewModel,
+                                onNavigateBack = {
+                                    if (!navController.popBackStack()) {
+                                        navController.navigate(Screen.Library.route) {
+                                            launchSingleTop = true
+                                        }
+                                    }
+                                }
                             )
                         }
                     }
