@@ -368,10 +368,9 @@ fun LibraryScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        itemsIndexed(uiState.articles, key = { _, it -> it.id }) { index, article ->
+                        itemsIndexed(uiState.articles, key = { _, it -> it.id }) { _, article ->
                             ArticleCard(
                                 article = article,
-                                isHeroBanner = (index == 0 && !article.imageUrl.isNullOrBlank()),
                                 onClick = { onArticleClick(article.id) },
                                 onToggleFavorite = { viewModel.toggleFavorite(article) },
                                 onDelete = { viewModel.deleteArticle(article) },

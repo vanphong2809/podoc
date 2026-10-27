@@ -138,12 +138,10 @@ class WebExtractor(BaseExtractor):
         # Loại bỏ các định dạng icon hoặc vector không phù hợp làm thumbnail
         if any(url_lower.endswith(ext) for ext in (".ico", ".svg")):
             return False
-        # Loại bỏ các từ khóa biểu thị icon, logo, badge, avatar, ảnh cực nhỏ
+        # Loại bỏ các từ khóa biểu thị icon cực nhỏ, tracking pixel
         bad_words = [
-            "favicon", "apple-touch-icon", "logo", "icon", "badge", "avatar",
-            "pixel", "spinner", "loading", "blank.gif", "spacer", "16x16", "32x32",
-            "48x48", "64x64", "72x72", "96x96", "128x128", "emoji", "btn_", "button",
-            "header-logo", "site-logo", "brand", "gravatar", "user-photo", "placeholder"
+            "favicon", "apple-touch-icon", "pixel", "spinner", "loading",
+            "blank.gif", "spacer", "16x16", "32x32", "emoji", "gravatar"
         ]
         if any(bw in url_lower for bw in bad_words):
             return False
@@ -152,18 +150,18 @@ class WebExtractor(BaseExtractor):
     def _extract_image_url(self, soup: BeautifulSoup, base_url: str) -> str | None:
         """
         Trích xuất thumbnail ảnh đại diện chất lượng cao của trang web:
-        1. OpenGraph / Twitter Cards / Meta tags (chỉ lấy ảnh kích thước lớn)
+        1. OpenGraph / Twitter Cards / Meta tags
         2. Schema JSON-LD
         3. Link rel=image_src (bỏ apple-touch-icon, favicon)
-        4. Thẻ img tiêu biểu trong bài viết (kích thước lớn > 250px)
+        4. Thẻ img tiêu biểu trong bài viết
         """
-        # Kiểm tra nếu có kích thước trong meta og:image:width
+        # Kiểm tra nếu có kích thước trong meta og:image:width (chỉ bỏ nếu quá nhỏ < 50px)
         meta_w_str = self._extract_meta(soup, ["og:image:width", "twitter:image:width"])
         meta_h_str = self._extract_meta(soup, ["og:image:height", "twitter:image:height"])
         try:
-            if meta_w_str and int(re.sub(r"\D", "", meta_w_str)) < 250:
+            if meta_w_str and int(re.sub(r"\D", "", meta_w_str)) < 50:
                 return None
-            if meta_h_str and int(re.sub(r"\D", "", meta_h_str)) < 150:
+            if meta_h_str and int(re.sub(r"\D", "", meta_h_str)) < 50:
                 return None
         except Exception:
             pass
@@ -216,7 +214,7 @@ class WebExtractor(BaseExtractor):
             except Exception:
                 continue
 
-        # 4. Thẻ img đầu tiên trong article hoặc main hoặc class featured/thumb (kích thước lớn)
+        # 4. Thẻ img đầu tiên trong article hoặc main hoặc class featured/thumb
         container = (
             soup.find("article")
             or soup.find("main")
@@ -228,9 +226,9 @@ class WebExtractor(BaseExtractor):
             w_attr = img.get("width")
             h_attr = img.get("height")
             try:
-                if w_attr and int(re.sub(r"\D", "", str(w_attr))) < 250:
+                if w_attr and int(re.sub(r"\D", "", str(w_attr))) < 80:
                     continue
-                if h_attr and int(re.sub(r"\D", "", str(h_attr))) < 150:
+                if h_attr and int(re.sub(r"\D", "", str(h_attr))) < 60:
                     continue
             except Exception:
                 pass
