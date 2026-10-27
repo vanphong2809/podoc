@@ -4,14 +4,15 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -22,7 +23,7 @@ import com.podoc.app.R
 @Composable
 fun AddOptionBottomSheet(
     onDismiss: () -> Unit,
-    onPasteLink: (String) -> Unit,
+    onPasteLink: (url: String, asWebFormat: Boolean) -> Unit,
     onPickFiles: () -> Unit,
     onPickImages: () -> Unit = {},
     onPickVideos: () -> Unit = {}
@@ -30,6 +31,7 @@ fun AddOptionBottomSheet(
     val context = LocalContext.current
     var urlInput by remember { mutableStateOf("") }
     var clipboardSuggestion by remember { mutableStateOf<String?>(null) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Kiểm tra clipboard khi mở
     LaunchedEffect(Unit) {
@@ -45,14 +47,16 @@ fun AddOptionBottomSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         containerColor = MaterialTheme.colorScheme.surface
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp)
+                .padding(bottom = 36.dp)
         ) {
             Text(
                 text = stringResource(R.string.add_menu_title),
@@ -70,8 +74,7 @@ fun AddOptionBottomSheet(
                         .fillMaxWidth()
                         .padding(bottom = 16.dp)
                         .clickable {
-                            onPasteLink(clipboardSuggestion!!)
-                            onDismiss()
+                            urlInput = clipboardSuggestion!!
                         }
                 ) {
                     Row(
@@ -86,7 +89,7 @@ fun AddOptionBottomSheet(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = stringResource(R.string.clipboard_suggest),
+                                text = "${stringResource(R.string.clipboard_suggest)} (chạm để điền)",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.Bold
@@ -115,25 +118,59 @@ fun AddOptionBottomSheet(
                 }
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
+            // Nút 1: Trích xuất nội dung
             Button(
                 onClick = {
                     if (urlInput.isNotBlank()) {
-                        onPasteLink(urlInput.trim())
+                        onPasteLink(urlInput.trim(), false)
                         onDismiss()
                     }
                 },
                 enabled = urlInput.isNotBlank(),
                 shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.fillMaxWidth()
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
             ) {
-                Text(stringResource(R.string.action_extract))
+                Icon(imageVector = Icons.Default.Description, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.action_extract),
+                    fontWeight = FontWeight.Bold
+                )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Nút 2: Lưu giữ nguyên định dạng web (Cùng màn hình & cùng màu với nút Trích xuất nội dung)
+            Button(
+                onClick = {
+                    if (urlInput.isNotBlank()) {
+                        onPasteLink(urlInput.trim(), true)
+                        onDismiss()
+                    }
+                },
+                enabled = urlInput.isNotBlank(),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+            ) {
+                Icon(imageVector = Icons.Default.Language, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Lưu giữ nguyên định dạng web",
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
             HorizontalDivider()
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
             // Tuỳ chọn Chọn Video (tối đa 10 MB)
             OutlinedButton(

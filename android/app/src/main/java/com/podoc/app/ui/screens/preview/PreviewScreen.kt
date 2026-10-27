@@ -517,28 +517,12 @@ fun PreviewScreen(
                         Spacer(modifier = Modifier.height(32.dp))
 
                         // Hai lựa chọn lưu bài viết: Chế độ đọc sạch trích xuất HOẶC Giữ nguyên định dạng web gốc
-                        Button(
-                            onClick = { viewModel.saveArticle() },
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(52.dp)
-                        ) {
-                            Icon(imageVector = Icons.Default.Description, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Lưu trích xuất (Đọc sạch)",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        // Lựa chọn: Giữ nguyên định dạng web gốc (Full Web View) khi người dùng thêm qua link
-                        if (draft.fileName == null && !draft.sourceUrl.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            FilledTonalButton(
+                        if (uiState.isWebFormatMode && draft.fileName == null && !draft.sourceUrl.isNullOrBlank()) {
+                            // Người dùng chọn Lưu giữ nguyên định dạng web từ màn hình trước
+                            Button(
                                 onClick = { viewModel.saveAsWebFormat() },
                                 shape = RoundedCornerShape(16.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(52.dp)
@@ -550,6 +534,62 @@ fun PreviewScreen(
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold
                                 )
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Button(
+                                onClick = { viewModel.saveArticle() },
+                                shape = RoundedCornerShape(16.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(52.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Description, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Lưu trích xuất (Đọc sạch)",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        } else {
+                            Button(
+                                onClick = { viewModel.saveArticle() },
+                                shape = RoundedCornerShape(16.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(52.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Description, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Lưu trích xuất (Đọc sạch)",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            if (draft.fileName == null && !draft.sourceUrl.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Button(
+                                    onClick = { viewModel.saveAsWebFormat() },
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(52.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.Language, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Lưu giữ nguyên định dạng web",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
 

@@ -26,7 +26,8 @@ data class PreviewUiState(
     val batchCurrentIndex: Int = 0,
     val batchTotalCount: Int = 0,
     val isUploadingFile: Boolean = false,
-    val uploadProgressMessage: String? = null
+    val uploadProgressMessage: String? = null,
+    val isWebFormatMode: Boolean = false
 )
 
 class PreviewViewModel(
@@ -93,7 +94,7 @@ class PreviewViewModel(
         lastUri = null
     }
 
-    fun extractUrl(url: String, initialCategoryId: Int? = null) {
+    fun extractUrl(url: String, initialCategoryId: Int? = null, asWebFormat: Boolean = false) {
         lastUrl = url
         lastUri = null
         val cats = _uiState.value.categories
@@ -114,7 +115,8 @@ class PreviewViewModel(
             errorMessage = null,
             isBatchMode = false,
             batchCurrentIndex = 0,
-            batchTotalCount = 0
+            batchTotalCount = 0,
+            isWebFormatMode = asWebFormat
         )
         loadCategories(targetCategoryId = defaultCat)
 

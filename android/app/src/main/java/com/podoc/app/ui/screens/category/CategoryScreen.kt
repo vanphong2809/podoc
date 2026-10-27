@@ -40,25 +40,48 @@ fun CategoryScreen(
 
     Scaffold(
         topBar = {
-            PoDocTopAppBar(
-                title = stringResource(R.string.categories_management),
-                actions = {
-                    IconButton(onClick = {
-                        categoryNameInput = ""
-                        categoryColorInput = "#4F46E5"
-                        showCreateDialog = true
-                    }) {
-                        Icon(imageVector = Icons.Default.Add, contentDescription = "Thêm danh mục")
+            Surface(
+                color = MaterialTheme.colorScheme.background,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .height(48.dp)
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.categories_management),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = {
+                            categoryNameInput = ""
+                            categoryColorInput = "#4F46E5"
+                            showCreateDialog = true
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Thêm danh mục",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
-            )
+            }
         }
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(uiState.categories, key = { it.id }) { cat ->

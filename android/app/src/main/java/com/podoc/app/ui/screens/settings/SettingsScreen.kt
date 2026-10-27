@@ -41,11 +41,16 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    val isDark = isSystemInDarkTheme()
+    val systemDark = isSystemInDarkTheme()
+    val isDark = when (uiState.themeMode) {
+        "light" -> false
+        "dark" -> true
+        else -> systemDark
+    }
     var showServerDialog by remember { mutableStateOf(false) }
     var editingServerUrl by remember { mutableStateOf("") }
 
-    // Màu sắc theo thiết kế chuẩn
+    // Màu sắc theo thiết kế chuẩn và hỗ trợ toàn diện chế độ tối
     val brandBlue = Color(0xFF0B57D0)
     val selectedSegmentBg = if (isDark) Color(0xFF1E3A8A) else Color(0xFFDCE4FD)
     val selectedSegmentText = if (isDark) Color(0xFFBFDBFE) else Color(0xFF041E49)
@@ -72,53 +77,49 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 32.dp)
         ) {
-            // Thanh tiêu đề phía trên: Icon back + Icon bánh răng cài đặt
-            Column(
+            // Thanh tiêu đề phía trên thu gọn: Nút Back + Bánh răng + Tiêu đề Cài đặt hệ thống
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
                     .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
+                IconButton(
+                    onClick = onNavigateBack,
+                    modifier = Modifier.size(36.dp)
                 ) {
-                    IconButton(
-                        onClick = onNavigateBack,
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Quay lại",
-                            tint = MaterialTheme.colorScheme.onBackground,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
                     Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = null,
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Quay lại",
                         tint = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(22.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.width(6.dp))
 
-                // Tiêu đề lớn "Cài đặt hệ thống"
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = null,
+                    tint = brandBlue,
+                    modifier = Modifier.size(22.dp)
+                )
+
+                Spacer(modifier = Modifier.width(10.dp))
+
                 Text(
                     text = stringResource(R.string.settings_title),
-                    style = MaterialTheme.typography.headlineMedium.copy(
+                    style = MaterialTheme.typography.titleLarge.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 28.sp
+                        fontSize = 20.sp
                     ),
-                    color = MaterialTheme.colorScheme.onBackground
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.weight(1f)
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             // Danh sách các Cards cài đặt
             Column(

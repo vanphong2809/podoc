@@ -41,7 +41,7 @@ fun CategoryDetailScreen(
     viewModel: CategoryDetailViewModel,
     onNavigateBack: () -> Unit,
     onArticleClick: (Int) -> Unit,
-    onPasteLink: (String) -> Unit
+    onPasteLink: (url: String, asWebFormat: Boolean) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -328,8 +328,8 @@ fun CategoryDetailScreen(
     if (showAddSheet) {
         AddOptionBottomSheet(
             onDismiss = { showAddSheet = false },
-            onPasteLink = { url ->
-                onPasteLink(url)
+            onPasteLink = { url, asWebFormat ->
+                onPasteLink(url, asWebFormat)
             },
             onPickFiles = {
                 filePickerLauncher.launch(arrayOf("*/*"))

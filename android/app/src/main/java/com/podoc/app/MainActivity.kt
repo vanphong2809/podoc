@@ -257,8 +257,8 @@ class MainActivity : ComponentActivity() {
                                 onArticleClick = { articleId ->
                                     navController.navigate(Screen.Reader.createRoute(articleId))
                                 },
-                                onPasteLink = { url ->
-                                    previewViewModel.extractUrl(url, initialCategoryId = catId)
+                                onPasteLink = { url, asWebFormat ->
+                                    previewViewModel.extractUrl(url, initialCategoryId = catId, asWebFormat = asWebFormat)
                                     navController.navigate(Screen.Preview.route) {
                                         launchSingleTop = true
                                     }
@@ -285,8 +285,8 @@ class MainActivity : ComponentActivity() {
                     if (showAddSheet) {
                         AddOptionBottomSheet(
                             onDismiss = { showAddSheet = false },
-                            onPasteLink = { url ->
-                                previewViewModel.extractUrl(url)
+                            onPasteLink = { url, asWebFormat ->
+                                previewViewModel.extractUrl(url, asWebFormat = asWebFormat)
                                 navController.navigate(Screen.Preview.route) {
                                     launchSingleTop = true
                                 }
