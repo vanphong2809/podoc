@@ -182,3 +182,36 @@ cd /opt/podoc/deploy
 docker compose up -d --build
 ```
 Hệ thống sẽ tự động cập nhật code mới, chạy migration Alembic mà không làm mất bất kỳ bài viết hay dữ liệu nào của bạn.
+
+---
+
+## 10. Mẹo Giữ Server Render 24/7 Không Bị "Ngủ Đông" (Keep-Alive Với UptimeRobot)
+
+Nếu bạn chọn triển khai Backend trên dịch vụ đám mây miễn phí **Render.com** (thay vì tự thuê VPS riêng), bạn sẽ gặp hiện tượng **Cold Start (Khởi động nguội)**:
+- **Cơ chế của Render Free**: Nếu không có request nào trong vòng **15 phút**, Render sẽ tự động đưa container vào trạng thái "ngủ đông" (spin-down). Lần đầu mở lại app sẽ mất từ **30 - 50 giây** để server thức giấc.
+- **Giải pháp**: Gói Free của Render cung cấp tới **750 giờ hoạt động/tháng** (trong khi 1 tháng 31 ngày chỉ có tối đa 744 giờ). Bạn hoàn toàn có thể dùng công cụ ping tự động miễn phí [UptimeRobot.com](https://uptimerobot.com) để gọi định kỳ vào server, giúp server **luôn thức 24/7 và phản hồi tức thì**.
+
+### Các bước thiết lập UptimeRobot (Hoàn toàn miễn phí - Chỉ mất 2 phút):
+
+1. **Đăng ký tài khoản**:
+   - Truy cập [uptimerobot.com](https://uptimerobot.com) và đăng ký tài khoản miễn phí (Gói Free hỗ trợ tới 50 monitors).
+
+2. **Tạo Monitor giám sát**:
+   - Sau khi đăng nhập, tại màn hình Dashboard nhấn nút **+ Add New Monitor** (ở góc trái phía trên).
+   - Điền các thông tin sau:
+     - **Monitor Type**: Chọn `HTTP(s)`
+     - **Friendly Name**: Đặt tên gợi nhớ, ví dụ: `PoDoc Backend Render`
+     - **URL (or IP)**: Điền đường dẫn API health check của bạn trên Render:
+       ```text
+       https://<ten-service-cua-ban>.onrender.com/health
+       ```
+       *(Ví dụ: `https://podoc-api.onrender.com/health`)*
+     - **Monitoring Interval**: Chọn **10 minutes** hoặc **14 minutes** *(Quan trọng: Render tự động ngủ sau 15 phút không có hoạt động, chọn 10-14 phút sẽ đảm bảo server không bao giờ bị đưa vào chế độ ngủ)*.
+     - **Monitor Timeout**: Để mặc định 30 giây.
+   - Nhấn **Create Monitor**.
+
+3. **Kiểm tra kết quả**:
+   - UptimeRobot sẽ ngay lập tức gửi một request HTTP GET tới `/health`.
+   - Trạng thái monitor chuyển sang **Up (Màu xanh)** nghĩa là đã hoạt động thành công.
+   - Từ nay về sau, server Render của bạn sẽ luôn trong trạng thái sẵn sàng, mở app PoDoc trên điện thoại lúc nào cũng tải dữ liệu ngay tức khắc mà không bị độ trễ khởi động lại.
+

@@ -34,9 +34,19 @@ Nếu chưa đưa thư mục PoDoc lên GitHub:
 
 ### Bước 3: Kiểm Tra Server & Lấy Mật Khẩu Admin
 - Truy cập vào đường dẫn: `https://podoc-api-xxxx.onrender.com/health`
-- Khi thấy hiển thị: `{"status":"ok","database":"connected","version":"1.0.0"}` là backend đã online thành công!
+- Khi thấy hiển thị: `{"status":"ok","database":"connected","version":"1.2.0"}` là backend đã online thành công!
 - Tại Dashboard Render -> click vào service `podoc-api` -> tab **Environment**:
   - Xem giá trị `ADMIN_PASSWORD` (Render tự sinh ngẫu nhiên) hoặc bạn có thể đổi thành mật khẩu bạn muốn (ví dụ: `12345678aA@`) rồi ấn **Save Changes**.
+
+### Bước 4: Giữ Server 24/7 Không Bị "Ngủ Đông" (Keep-Alive Bằng UptimeRobot)
+Render Free sẽ tự động tạm dừng container nếu không có truy cập trong 15 phút (gây ra độ trễ 30-50s khi mở app lần đầu). Để server luôn thức 24/7:
+1. Đăng ký tài khoản miễn phí tại [uptimerobot.com](https://uptimerobot.com).
+2. Nhấn **+ Add New Monitor**:
+   - **Monitor Type**: `HTTP(s)`
+   - **Friendly Name**: `PoDoc Backend`
+   - **URL (or IP)**: `https://podoc-api-xxxx.onrender.com/health`
+   - **Monitoring Interval**: Chọn **10 minutes** hoặc **14 minutes**.
+3. Nhấn **Create Monitor**. UptimeRobot sẽ tự động ping định kỳ, giúp server luôn sẵn sàng phản hồi ngay lập tức cho ứng dụng di động.
 
 ---
 
