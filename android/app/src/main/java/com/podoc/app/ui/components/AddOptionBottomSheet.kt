@@ -6,9 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,7 +24,8 @@ fun AddOptionBottomSheet(
     onDismiss: () -> Unit,
     onPasteLink: (String) -> Unit,
     onPickFiles: () -> Unit,
-    onPickImages: () -> Unit = {}
+    onPickImages: () -> Unit = {},
+    onPickVideos: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var urlInput by remember { mutableStateOf("") }
@@ -136,7 +135,23 @@ fun AddOptionBottomSheet(
             HorizontalDivider()
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Tuỳ chọn Chọn hình ảnh từ thiết bị
+            // Tuỳ chọn Chọn Video (tối đa 10 MB)
+            OutlinedButton(
+                onClick = {
+                    onPickVideos()
+                    onDismiss()
+                },
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(imageVector = Icons.Default.Videocam, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.action_import_video))
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Tuỳ chọn Chọn hình ảnh từ thiết bị (tối đa 5 MB)
             OutlinedButton(
                 onClick = {
                     onPickImages()
@@ -147,12 +162,12 @@ fun AddOptionBottomSheet(
             ) {
                 Icon(imageVector = Icons.Default.Image, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(stringResource(R.string.action_import_image))
+                Text(stringResource(R.string.action_import_image_limit))
             }
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Tuỳ chọn Nhập tệp tin từ máy (Phase 2)
+            // Tuỳ chọn Nhập tệp tin từ máy (tối đa 10 MB)
             OutlinedButton(
                 onClick = {
                     onPickFiles()
@@ -163,7 +178,7 @@ fun AddOptionBottomSheet(
             ) {
                 Icon(imageVector = Icons.Default.Description, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(stringResource(R.string.action_import_file))
+                Text(stringResource(R.string.action_import_file_limit))
             }
         }
     }

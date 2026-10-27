@@ -18,6 +18,7 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY . .
+RUN mkdir -p /data/files && chmod 777 /data/files
 
 EXPOSE 8000
 

@@ -19,6 +19,8 @@ import androidx.navigation.navArgument
 import com.podoc.app.ui.components.AddOptionBottomSheet
 import com.podoc.app.ui.components.PoDocBottomBar
 import com.podoc.app.ui.navigation.Screen
+import com.podoc.app.ui.screens.category.CategoryDetailScreen
+import com.podoc.app.ui.screens.category.CategoryDetailViewModel
 import com.podoc.app.ui.screens.category.CategoryScreen
 import com.podoc.app.ui.screens.category.CategoryViewModel
 import com.podoc.app.ui.screens.library.LibraryScreen
@@ -89,6 +91,20 @@ class MainActivity : ComponentActivity() {
 
             // Launcher chọn 1 hoặc nhiều ảnh trực tiếp từ thư viện ảnh
             val imagePickerLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.GetMultipleContents()
+            ) { uris: List<Uri> ->
+                if (uris.isNotEmpty()) {
+                    libraryViewModel.uploadFiles(uris)
+                    if (currentRoute != Screen.Library.route) {
+                        navController.navigate(Screen.Library.route) {
+                            popUpTo(Screen.Library.route) { inclusive = true }
+                        }
+                    }
+                }
+            }
+
+            // Launcher chọn 1 hoặc nhiều video trực tiếp từ máy (tối đa 10 MB)
+            val videoPickerLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.GetMultipleContents()
             ) { uris: List<Uri> ->
                 if (uris.isNotEmpty()) {
@@ -198,7 +214,56 @@ class MainActivity : ComponentActivity() {
 
                         // Màn hình Quản lý Danh mục
                         composable(Screen.Categories.route) {
-                            CategoryScreen(viewModel = categoryViewModel)
+                            CategoryScreen(
+                                viewModel = categoryViewModel,
+                                onCategoryClick = { cat ->
+                                    navController.navigate(Screen.CategoryDetail.createRoute(cat.id, cat.name, cat.color))
+                                }
+                            )
+                        }
+
+                        // Màn hình Chi tiết Danh mục (danh sách bài viết/file theo danh mục, tìm kiếm, lọc content_type)
+                        composable(
+                            route = Screen.CategoryDetail.route,
+                            arguments = listOf(
+                                navArgument("categoryId") { type = NavType.IntType },
+                                navArgument("name") { type = NavType.StringType; defaultValue = "Danh mục" },
+                                navArgument("color") { type = NavType.StringType; defaultValue = "#4F46E5" }
+                            )
+                        ) { backStackEntry ->
+                            val catId = backStackEntry.arguments?.getInt("categoryId") ?: return@composable
+                            val rawName = backStackEntry.arguments?.getString("name") ?: "Danh mục"
+                            val rawColor = backStackEntry.arguments?.getString("color") ?: "#4F46E5"
+                            val catName = try { java.net.URLDecoder.decode(rawName, "UTF-8") } catch (_: Exception) { rawName }
+                            val catColor = try { java.net.URLDecoder.decode(rawColor, "UTF-8") } catch (_: Exception) { rawColor }
+
+                            val detailViewModel = remember(catId) {
+                                CategoryDetailViewModel(
+                                    categoryId = catId,
+                                    categoryName = catName,
+                                    categoryColor = catColor,
+                                    articleRepository = container.articleRepository,
+                                    categoryRepository = container.categoryRepository
+                                )
+                            }
+
+                            CategoryDetailScreen(
+                                viewModel = detailViewModel,
+                                onNavigateBack = {
+                                    categoryViewModel.loadCategories()
+                                    libraryViewModel.loadArticles(refresh = true)
+                                    navController.popBackStack()
+                                },
+                                onArticleClick = { articleId ->
+                                    navController.navigate(Screen.Reader.createRoute(articleId))
+                                },
+                                onPasteLink = { url ->
+                                    previewViewModel.extractUrl(url)
+                                    navController.navigate(Screen.Preview.route) {
+                                        launchSingleTop = true
+                                    }
+                                }
+                            )
                         }
 
                         // Màn hình Cài đặt
@@ -226,6 +291,10 @@ class MainActivity : ComponentActivity() {
                             onPickImages = {
                                 // Mở trình chọn ảnh từ máy (PNG, JPG, WEBP, GIF, SVG...)
                                 imagePickerLauncher.launch("image/*")
+                            },
+                            onPickVideos = {
+                                // Mở trình chọn video từ máy (MP4, MKV, MOV, WEBM...)
+                                videoPickerLauncher.launch("video/*")
                             }
                         )
                     }

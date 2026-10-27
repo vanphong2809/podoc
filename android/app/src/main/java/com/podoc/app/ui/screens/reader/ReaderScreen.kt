@@ -90,7 +90,13 @@ fun ReaderScreen(
                 article?.mimeType == "text/markdown" -> "md"
                 article?.mimeType == "text/html" -> "html"
                 article?.mimeType?.contains("wordprocessingml") == true -> "docx"
-                article?.mimeType?.contains("msword") == true -> "doc"
+                article?.mimeType == "video/mp4" -> "mp4"
+                article?.mimeType == "video/webm" -> "webm"
+                article?.mimeType == "video/x-matroska" -> "mkv"
+                article?.mimeType == "video/quicktime" -> "mov"
+                article?.mimeType == "video/x-msvideo" -> "avi"
+                article?.mimeType == "video/3gpp" -> "3gp"
+                article?.mimeType?.startsWith("video/") == true -> "mp4"
                 article?.mimeType?.startsWith("image/") == true -> "jpg"
                 else -> ""
             }
@@ -332,11 +338,24 @@ private fun InAppFileContent(
         return
     }
 
+    val isVideo = fileExt in listOf("mp4", "mkv", "mov", "webm", "avi", "3gp", "ts") || article.mimeType?.startsWith("video/") == true
     val isImage = fileExt in listOf("png", "svg", "jpg", "jpeg", "webp", "gif") || article.mimeType?.startsWith("image/") == true
     val isSvg = fileExt == "svg" || article.mimeType == "image/svg+xml"
 
     when {
-        // 1. Xem file PDF bằng PdfRenderer tích hợp sẵn
+        // 1. Xem Video trực tiếp bằng VideoView và MediaController native
+        isVideo -> {
+            val file = uiState.localFile
+            if (file != null && file.exists()) {
+                InAppVideoViewer(file = file, onOpenExternal = onOpenExternal)
+            } else {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
+        }
+
+        // 2. Xem file PDF bằng PdfRenderer tích hợp sẵn
         fileExt == "pdf" || article.mimeType == "application/pdf" -> {
             val file = uiState.localFile
             if (file != null && file.exists()) {
@@ -847,3 +866,75 @@ private fun splitMarkdownIntoBlocks(markdown: String): List<String> {
 
     return blocks
 }
+
+/**
+ * Trình phát Video mượt mà bằng VideoView tích hợp Android SDK kèm MediaController
+ */
+@Composable
+private fun InAppVideoViewer(
+    file: File,
+    onOpenExternal: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            contentAlignment = Alignment.Center
+        ) {
+            AndroidView(
+                factory = { ctx ->
+                    android.widget.VideoView(ctx).apply {
+                        val controller = android.widget.MediaController(ctx)
+                        controller.setAnchorView(this)
+                        setMediaController(controller)
+                        setVideoPath(file.absolutePath)
+                        setOnPreparedListener { mp ->
+                            mp.isLooping = true
+                            start()
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        Surface(
+            color = Color.Black.copy(alpha = 0.9f),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = file.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                OutlinedButton(
+                    onClick = onOpenExternal,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Mở app khác")
+                }
+            }
+        }
+    }
+}
+

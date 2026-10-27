@@ -176,21 +176,41 @@ fun LibraryScreen(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    // Chip Nguồn Link
+                    // Chip Bài viết (URL)
                     FilterChip(
-                        selected = uiState.selectedSourceType == "URL",
-                        onClick = { viewModel.onSourceTypeFilterChange("URL") },
-                        label = { Text(stringResource(R.string.filter_link)) },
+                        selected = uiState.selectedContentType == "article",
+                        onClick = { viewModel.onContentTypeFilterChange("article") },
+                        label = { Text(stringResource(R.string.filter_content_article)) },
                         shape = RoundedCornerShape(12.dp)
                     )
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    // Chip Nguồn File (Phase 2)
+                    // Chip Hình ảnh
                     FilterChip(
-                        selected = uiState.selectedSourceType == "FILE",
-                        onClick = { viewModel.onSourceTypeFilterChange("FILE") },
-                        label = { Text(stringResource(R.string.filter_file)) },
+                        selected = uiState.selectedContentType == "image",
+                        onClick = { viewModel.onContentTypeFilterChange("image") },
+                        label = { Text(stringResource(R.string.filter_content_image)) },
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    // Chip Video
+                    FilterChip(
+                        selected = uiState.selectedContentType == "video",
+                        onClick = { viewModel.onContentTypeFilterChange("video") },
+                        label = { Text(stringResource(R.string.filter_content_video)) },
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    // Chip Tệp tin
+                    FilterChip(
+                        selected = uiState.selectedContentType == "file",
+                        onClick = { viewModel.onContentTypeFilterChange("file") },
+                        label = { Text(stringResource(R.string.filter_content_file)) },
                         shape = RoundedCornerShape(12.dp)
                     )
 

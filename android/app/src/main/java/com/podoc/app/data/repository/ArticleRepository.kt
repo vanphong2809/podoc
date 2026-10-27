@@ -30,6 +30,7 @@ class ArticleRepository(
         query: String? = null,
         categoryId: Int? = null,
         sourceType: String? = null,
+        contentType: String? = null,
         favorite: Boolean? = null,
         sort: String? = null,
         page: Int = 1,
@@ -40,6 +41,7 @@ class ArticleRepository(
                 query = query?.ifBlank { null },
                 categoryId = categoryId,
                 sourceType = sourceType?.ifBlank { null },
+                contentType = contentType?.ifBlank { null },
                 favorite = favorite,
                 sort = sort,
                 page = page,
@@ -102,7 +104,7 @@ class ArticleRepository(
     ): Result<ArticleDetail> {
         return try {
             val contentResolver = context.contentResolver
-            var fileName = queryFileName(uri) ?: "image_${System.currentTimeMillis()}"
+            var fileName = queryFileName(uri) ?: "file_${System.currentTimeMillis()}"
             val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
 
             // Đảm bảo tên file luôn có phần mở rộng nếu ContentResolver trả về tên không đuôi
@@ -120,11 +122,53 @@ class ArticleRepository(
                         else -> "jpg"
                     }
                     fileName = "$fileName.$fallbackExt"
+                } else if (mimeType.startsWith("video/")) {
+                    val fallbackExt = when (mimeType) {
+                        "video/mp4" -> "mp4"
+                        "video/webm" -> "webm"
+                        "video/x-matroska" -> "mkv"
+                        "video/quicktime" -> "mov"
+                        "video/x-msvideo" -> "avi"
+                        "video/3gpp" -> "3gp"
+                        else -> "mp4"
+                    }
+                    fileName = "$fileName.$fallbackExt"
                 }
             }
 
             val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 ?: return Result.failure(IllegalStateException("Không thể đọc tệp tin"))
+
+            // Kiểm tra dung lượng theo yêu cầu:
+            // - Hình ảnh: tối đa 5 MB
+            // - Video: tối đa 10 MB
+            // - Tệp tin: tối đa 10 MB
+            val lowerName = fileName.lowercase()
+            val isImage = mimeType.startsWith("image/") || lowerName.endsWith(".jpg") ||
+                    lowerName.endsWith(".jpeg") || lowerName.endsWith(".png") ||
+                    lowerName.endsWith(".webp") || lowerName.endsWith(".gif") || lowerName.endsWith(".svg")
+
+            val isVideo = mimeType.startsWith("video/") || lowerName.endsWith(".mp4") ||
+                    lowerName.endsWith(".mkv") || lowerName.endsWith(".mov") ||
+                    lowerName.endsWith(".webm") || lowerName.endsWith(".avi") ||
+                    lowerName.endsWith(".3gp") || lowerName.endsWith(".ts")
+
+            val fileSizeMb = bytes.size.toDouble() / (1024 * 1024)
+            if (isImage && bytes.size > 5 * 1024 * 1024) {
+                return Result.failure(
+                    IllegalArgumentException("Hình ảnh '${fileName}' (${String.format("%.1f", fileSizeMb)} MB) vượt quá giới hạn 5 MB.")
+                )
+            }
+            if (isVideo && bytes.size > 10 * 1024 * 1024) {
+                return Result.failure(
+                    IllegalArgumentException("Video '${fileName}' (${String.format("%.1f", fileSizeMb)} MB) vượt quá giới hạn 10 MB.")
+                )
+            }
+            if (!isImage && !isVideo && bytes.size > 10 * 1024 * 1024) {
+                return Result.failure(
+                    IllegalArgumentException("Tệp tin '${fileName}' (${String.format("%.1f", fileSizeMb)} MB) vượt quá giới hạn 10 MB.")
+                )
+            }
 
             val requestFile = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
             val filePart = MultipartBody.Part.createFormData("file", fileName, requestFile)
@@ -135,7 +179,16 @@ class ArticleRepository(
             val article = try {
                 getApi().uploadArticleFile(filePart, catBody, titleBody)
             } catch (e: retrofit2.HttpException) {
-                if (e.code() == 405 || e.code() == 404) {
+                if (e.code() == 413) {
+                    val errDetail = try {
+                        val body = e.response()?.errorBody()?.string()
+                        if (!body.isNullOrBlank() && body.contains("detail")) {
+                            org.json.JSONObject(body).optString("detail", "")
+                        } else ""
+                    } catch (_: Exception) { "" }
+                    val msg = if (errDetail.isNotBlank()) errDetail else "Dung lượng tệp vượt quá giới hạn cho phép."
+                    throw IllegalArgumentException(msg)
+                } else if (e.code() == 405 || e.code() == 404) {
                     // Fallback cho backend chưa cập nhật route /api/articles/upload
                     val fallbackFilePart = MultipartBody.Part.createFormData("file", fileName, requestFile)
                     val draft = getApi().extractFile(fallbackFilePart)

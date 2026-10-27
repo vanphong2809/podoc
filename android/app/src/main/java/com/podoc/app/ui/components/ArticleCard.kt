@@ -71,16 +71,33 @@ fun ArticleCard(
                     Spacer(modifier = Modifier.width(8.dp))
                 }
 
-                // Badge File (PDF, DOCX, TXT...) nếu là file
+                // Badge phân loại (Video, Hình ảnh, Tệp tin) nếu là file
                 if (article.sourceType == "FILE") {
+                    val lowerName = (article.fileName ?: "").lowercase()
+                    val isVideo = article.mimeType?.startsWith("video/") == true ||
+                            lowerName.endsWith(".mp4") || lowerName.endsWith(".mkv") ||
+                            lowerName.endsWith(".mov") || lowerName.endsWith(".webm") ||
+                            lowerName.endsWith(".avi") || lowerName.endsWith(".3gp")
+
+                    val isImage = article.mimeType?.startsWith("image/") == true ||
+                            lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg") ||
+                            lowerName.endsWith(".png") || lowerName.endsWith(".webp") ||
+                            lowerName.endsWith(".gif") || lowerName.endsWith(".svg")
+
+                    val (badgeText, badgeContainer, badgeOn) = when {
+                        isVideo -> Triple("VIDEO", MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer)
+                        isImage -> Triple("HÌNH ẢNH", MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer)
+                        else -> Triple("TỆP TIN", MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
+                    }
+
                     Surface(
-                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        color = badgeContainer,
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Text(
-                            text = "TẬP TIN",
+                            text = badgeText,
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            color = badgeOn,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
                         )

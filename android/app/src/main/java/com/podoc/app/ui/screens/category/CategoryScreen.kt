@@ -26,7 +26,8 @@ import com.podoc.app.ui.theme.parseHexColor
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CategoryScreen(
-    viewModel: CategoryViewModel
+    viewModel: CategoryViewModel,
+    onCategoryClick: (Category) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
@@ -61,25 +62,38 @@ fun CategoryScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(uiState.categories, key = { it.id }) { cat ->
+                var showItemMenu by remember { mutableStateOf(false) }
+
                 Card(
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.5.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { onCategoryClick(cat) }
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // Vòng tròn màu danh mục
                         Box(
                             modifier = Modifier
-                                .size(24.dp)
+                                .size(28.dp)
                                 .clip(CircleShape)
-                                .background(parseHexColor(cat.color))
-                        )
+                                .background(parseHexColor(cat.color)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = cat.name.take(1).uppercase(),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.surface
+                            )
+                        }
 
                         Spacer(modifier = Modifier.width(16.dp))
 
@@ -113,32 +127,74 @@ fun CategoryScreen(
                             )
                         }
 
-                        // Thao tác sửa / xoá (nếu không phải danh mục hệ thống)
-                        IconButton(onClick = {
-                            editingCategory = cat
-                            categoryNameInput = cat.name
-                            categoryColorInput = cat.color
-                        }) {
-                            Icon(imageVector = Icons.Default.Edit, contentDescription = "Sửa", modifier = Modifier.size(20.dp))
-                        }
-
-                        if (!cat.isSystem) {
-                            IconButton(onClick = { deletingCategory = cat }) {
+                        // Menu thao tác sửa / xoá thiết kế lại gọn gàng và đẹp mắt
+                        Box {
+                            IconButton(
+                                onClick = { showItemMenu = true },
+                                modifier = Modifier.size(32.dp)
+                            ) {
                                 Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Xoá",
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(20.dp)
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "Tuỳ chọn",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
+
+                            DropdownMenu(
+                                expanded = showItemMenu,
+                                onDismissRequest = { showItemMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.action_edit_category)) },
+                                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                                    onClick = {
+                                        showItemMenu = false
+                                        editingCategory = cat
+                                        categoryNameInput = cat.name
+                                        categoryColorInput = cat.color
+                                    }
+                                )
+                                if (!cat.isSystem) {
+                                    HorizontalDivider()
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                stringResource(R.string.action_delete_category),
+                                                color = MaterialTheme.colorScheme.error
+                                            )
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Default.Delete,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.error
+                                            )
+                                        },
+                                        onClick = {
+                                            showItemMenu = false
+                                            deletingCategory = cat
+                                        }
+                                    )
+                                }
+                            }
                         }
+
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        // Mũi tên chỉ dẫn bấm vào xem nội dung
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = "Xem bài viết",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
             }
         }
     }
 
-    // Dialog Tạo / Sửa Danh Mục
+    // Dialog Thiết kế mới: Tạo / Sửa Danh Mục với Live Preview
     if (showCreateDialog || editingCategory != null) {
         val isEditing = editingCategory != null
         AlertDialog(
@@ -147,16 +203,47 @@ fun CategoryScreen(
                 editingCategory = null
             },
             title = {
-                Text(if (isEditing) stringResource(R.string.edit_category_title) else stringResource(R.string.create_category_title))
+                Text(
+                    text = if (isEditing) stringResource(R.string.edit_category_title) else stringResource(R.string.create_category_title),
+                    fontWeight = FontWeight.Bold
+                )
             },
             text = {
                 Column {
+                    // Xem trước (Live Preview Card)
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(parseHexColor(categoryColorInput))
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = if (categoryNameInput.isNotBlank()) categoryNameInput else "Xem trước danh mục",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
                     OutlinedTextField(
                         value = categoryNameInput,
                         onValueChange = { categoryNameInput = it },
                         label = { Text(stringResource(R.string.category_name_label)) },
                         singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -165,10 +252,10 @@ fun CategoryScreen(
                     Text(
                         text = stringResource(R.string.category_color_label),
                         style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.SemiBold
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -220,7 +307,8 @@ fun CategoryScreen(
                             showCreateDialog = false
                             editingCategory = null
                         }
-                    }
+                    },
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(stringResource(R.string.btn_save))
                 }
@@ -236,12 +324,24 @@ fun CategoryScreen(
         )
     }
 
-    // Dialog Xác nhận Xoá Danh Mục
+    // Dialog Xác nhận Xoá Danh Mục thiết kế lại an toàn và rõ ràng
     if (deletingCategory != null) {
         AlertDialog(
             onDismissRequest = { deletingCategory = null },
-            icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("Xoá danh mục '${deletingCategory!!.name}'?") },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Xoá danh mục '${deletingCategory!!.name}'?",
+                    fontWeight = FontWeight.Bold
+                )
+            },
             text = {
                 Text(stringResource(R.string.delete_category_confirm))
             },
@@ -251,7 +351,8 @@ fun CategoryScreen(
                         viewModel.deleteCategory(deletingCategory!!.id)
                         deletingCategory = null
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(stringResource(R.string.action_delete))
                 }

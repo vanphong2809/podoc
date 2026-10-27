@@ -46,6 +46,7 @@ interface PoDocApiService {
         @Query("q") query: String? = null,
         @Query("category_id") categoryId: Int? = null,
         @Query("source_type") sourceType: String? = null,
+        @Query("content_type") contentType: String? = null,
         @Query("favorite") favorite: Boolean? = null,
         @Query("sort") sort: String? = null,
         @Query("page") page: Int = 1,

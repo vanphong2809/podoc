@@ -3,7 +3,7 @@ import uuid
 from typing import Annotated, List, Optional
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, File, status
 from fastapi.responses import FileResponse
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import func, or_, select, text, not_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -33,6 +33,7 @@ async def list_articles(
     q: Optional[str] = Query(None, description="Từ khoá tìm kiếm toàn văn tiếng Việt không dấu"),
     category_id: Optional[int] = Query(None, description="Lọc theo ID danh mục"),
     source_type: Optional[str] = Query(None, description="Lọc theo nguồn (URL hoặc FILE)"),
+    content_type: Optional[str] = Query(None, description="Lọc theo loại: all, article, image, video, file"),
     favorite: Optional[bool] = Query(None, description="Lọc bài viết yêu thích"),
     sort: Optional[str] = Query("newest", description="Sắp xếp: newest, oldest, reading_time, title"),
     page: int = Query(1, ge=1, description="Số trang"),
@@ -41,6 +42,7 @@ async def list_articles(
     """
     Lấy danh sách bài viết (chỉ trả về excerpt, không trả full content để tối ưu băng thông).
     Hỗ trợ tìm kiếm toàn văn tiếng Việt không dấu (gõ 'suc khoe' tìm ra 'sức khoẻ').
+    Hỗ trợ lọc theo loại nội dung (bài viết, hình ảnh, video, tệp tin).
     """
     stmt = select(Article).options(selectinload(Article.category))
 
@@ -74,6 +76,27 @@ async def list_articles(
 
     if source_type:
         stmt = stmt.where(Article.source_type == source_type.upper())
+
+    if content_type and content_type.lower() != "all":
+        ct = content_type.lower().strip()
+        if ct in ("article", "url", "link", "web"):
+            stmt = stmt.where(Article.source_type == "URL")
+        elif ct in ("image", "photo", "anh"):
+            stmt = stmt.where(
+                Article.source_type == "FILE",
+                Article.mime_type.ilike("image/%"),
+            )
+        elif ct in ("video", "clip"):
+            stmt = stmt.where(
+                Article.source_type == "FILE",
+                Article.mime_type.ilike("video/%"),
+            )
+        elif ct in ("file", "document", "doc", "tep"):
+            stmt = stmt.where(
+                Article.source_type == "FILE",
+                not_(Article.mime_type.ilike("image/%")),
+                not_(Article.mime_type.ilike("video/%")),
+            )
 
     if favorite is not None:
         stmt = stmt.where(Article.is_favorite == favorite)
@@ -133,24 +156,46 @@ async def upload_article_file(
     title: Optional[str] = Form(None),
 ):
     """
-    Tải lên và lưu trực tiếp tệp tin (PDF, DOCX, DOC, HTML, PNG, SVG, JPG, JPEG, WEBP, TXT, MD, MDF...)
+    Tải lên và lưu trực tiếp tệp tin (Video, Ảnh, PDF, DOCX, DOC, HTML, TXT, MD...)
     vào thư viện để mở xem sau mà KHÔNG qua bước trích xuất text.
+    Giới hạn dung lượng:
+    - Ảnh: 5 MB
+    - Video: 10 MB
+    - Tệp tin khác: 10 MB
     """
     orig_name = file.filename or "uploaded_file"
     orig_ext = os.path.splitext(orig_name)[1].lower()
 
-    # 1. Đọc nội dung file & kiểm tra dung lượng tối đa
+    # 1. Đọc nội dung file & xác định loại để áp dụng hạn mức dung lượng
     file_bytes = await file.read()
-    max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
-    if len(file_bytes) > max_bytes:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Dung lượng tệp tin ({len(file_bytes) / 1024 / 1024:.1f} MB) vượt quá giới hạn cho phép ({settings.MAX_UPLOAD_SIZE_MB} MB)",
-        )
 
-    # 2. Nhận diện MIME type thực tế và phần mở rộng chuẩn xác
+    # Nhận diện MIME type thực tế và phần mở rộng chuẩn xác
     real_mime = extractor_registry.detect_real_mime_type(file_bytes, orig_name)
     mime_type = real_mime or file.content_type or "application/octet-stream"
+
+    # Hạn mức dung lượng theo yêu cầu:
+    # - Ảnh: 5 MB
+    # - Video: 10 MB
+    # - File khác: 10 MB
+    is_image = mime_type.startswith("image/") or orig_ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg")
+    is_video = mime_type.startswith("video/") or orig_ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts")
+
+    if is_image:
+        max_bytes = 5 * 1024 * 1024
+        type_str = "hình ảnh (tối đa 5 MB)"
+    elif is_video:
+        max_bytes = 10 * 1024 * 1024
+        type_str = "video (tối đa 10 MB)"
+    else:
+        max_bytes = 10 * 1024 * 1024
+        type_str = "tệp tin (tối đa 10 MB)"
+
+    if len(file_bytes) > max_bytes:
+        file_mb = len(file_bytes) / (1024 * 1024)
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Dung lượng {type_str} vượt quá giới hạn cho phép. Tệp của bạn: {file_mb:.1f} MB",
+        )
 
     mime_to_ext = {
         "image/jpeg": ".jpg",
@@ -158,6 +203,12 @@ async def upload_article_file(
         "image/webp": ".webp",
         "image/gif": ".gif",
         "image/svg+xml": ".svg",
+        "video/mp4": ".mp4",
+        "video/webm": ".webm",
+        "video/x-matroska": ".mkv",
+        "video/quicktime": ".mov",
+        "video/x-msvideo": ".avi",
+        "video/3gpp": ".3gp",
         "application/pdf": ".pdf",
         "text/plain": ".txt",
         "text/markdown": ".md",
@@ -214,7 +265,12 @@ async def upload_article_file(
             size_str = f"{file_size_mb:.1f} MB"
         else:
             size_str = f"{len(file_bytes) / 1024:.1f} KB"
-        content_text = f"Tệp tin đính kèm: {orig_name} ({size_str})"
+        if is_video:
+            content_text = f"Tệp video đính kèm: {orig_name} ({size_str})"
+        elif is_image:
+            content_text = f"Tệp hình ảnh đính kèm: {orig_name} ({size_str})"
+        else:
+            content_text = f"Tệp tin đính kèm: {orig_name} ({size_str})"
 
     excerpt = generate_excerpt(content_text) if content_text else f"Tệp tin đính kèm: {orig_name}"
     reading_mins = max(1, len(content_text.split()) // 200) if content_text else 1

@@ -20,6 +20,7 @@ data class LibraryUiState(
     val searchQuery: String = "",
     val selectedCategoryId: Int? = null,
     val selectedSourceType: String? = null, // null (Tất cả), "URL", "FILE"
+    val selectedContentType: String? = null, // null (Tất cả), "article", "file", "image", "video"
     val onlyFavorites: Boolean = false,
     val selectedSort: String = "newest",
     val isLoading: Boolean = false,
@@ -72,6 +73,7 @@ class LibraryViewModel(
                 query = currentState.searchQuery,
                 categoryId = currentState.selectedCategoryId,
                 sourceType = currentState.selectedSourceType,
+                contentType = currentState.selectedContentType,
                 favorite = if (currentState.onlyFavorites) true else null,
                 sort = currentState.selectedSort,
                 page = targetPage,
@@ -123,6 +125,15 @@ class LibraryViewModel(
             _uiState.value = _uiState.value.copy(selectedSourceType = null)
         } else {
             _uiState.value = _uiState.value.copy(selectedSourceType = sourceType)
+        }
+        loadArticles(refresh = true)
+    }
+
+    fun onContentTypeFilterChange(contentType: String?) {
+        if (_uiState.value.selectedContentType == contentType) {
+            _uiState.value = _uiState.value.copy(selectedContentType = null)
+        } else {
+            _uiState.value = _uiState.value.copy(selectedContentType = contentType)
         }
         loadArticles(refresh = true)
     }

@@ -90,11 +90,26 @@
     <string name="create_category_title">Tạo danh mục mới</string>
     <string name="edit_category_title">Sửa danh mục</string>
     <string name="category_name_label">Tên danh mục</string>
-    <string name="category_color_label">Màu sắc</string>
+    <string name="category_color_label">Màu sắc hiển thị</string>
     <string name="category_icon_label">Biểu tượng</string>
-    <string name="delete_category_confirm">Khi xoá danh mục này, toàn bộ bài viết bên trong sẽ tự động chuyển về mục "Chưa phân loại".</string>
+    <string name="delete_category_confirm">Khi xoá danh mục này, toàn bộ bài viết và tệp tin bên trong sẽ tự động chuyển về mục "Chưa phân loại" và không bị mất.</string>
     <string name="system_category_protected">Danh mục hệ thống này không thể bị xoá.</string>
-    <string name="article_count_format">%d bài viết</string>
+    <string name="article_count_format">%d mục</string>
+    <string name="action_edit_category">Sửa danh mục</string>
+    <string name="action_delete_category">Xoá danh mục</string>
+
+    <!-- Content Type Filters & Video Upload -->
+    <string name="action_import_video">Tải lên Video (tối đa 10 MB)</string>
+    <string name="action_import_image_limit">Tải lên Hình ảnh (tối đa 5 MB)</string>
+    <string name="action_import_file_limit">Tải lên Tệp tin (tối đa 10 MB)</string>
+    <string name="filter_content_all">Tất cả</string>
+    <string name="filter_content_article">Bài viết</string>
+    <string name="filter_content_file">Tệp tin</string>
+    <string name="filter_content_image">Hình ảnh</string>
+    <string name="filter_content_video">Video</string>
+    <string name="search_in_category_hint">Tìm kiếm trong danh mục...</string>
+    <string name="empty_category_title">Chưa có nội dung trong danh mục</string>
+    <string name="empty_category_desc">Nhấn vào biểu tượng dấu cộng để thêm bài viết, ảnh, video hoặc tệp tin vào danh mục này.</string>
 
     <!-- Settings Screen -->
     <string name="settings_title">Cài đặt hệ thống</string>
