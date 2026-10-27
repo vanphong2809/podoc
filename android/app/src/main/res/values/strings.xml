@@ -114,7 +114,7 @@
     <!-- Settings Screen -->
     <string name="settings_title">Cài đặt hệ thống</string>
     <string name="section_appearance">Giao diện</string>
-    <string name="theme_label">Chủ đề hiển thị</string>
+    <string name="theme_label">Chủ đề hiển thị:</string>
     <string name="theme_system">Theo hệ thống</string>
     <string name="theme_light">Chế độ Sáng</string>
     <string name="theme_dark">Chế độ Tối</string>
@@ -132,7 +132,7 @@
     <string name="logged_in_as">Tài khoản: %s</string>
 
     <string name="section_about">Về ứng dụng</string>
-    <string name="app_version">Phiên bản: 1.2.4</string>
+    <string name="app_version">Phiên bản: 1.2.5</string>
     <string name="app_description">PoDoc là ứng dụng lưu trữ và quản lý tài liệu cá nhân độc lập, tự chủ hoàn toàn trên máy chủ riêng của bạn.</string>
 
     <!-- General -->

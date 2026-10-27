@@ -82,8 +82,7 @@ fun SettingsScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .padding(start = 8.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)
             ) {
                 IconButton(
                     onClick = onNavigateBack,
@@ -93,11 +92,11 @@ fun SettingsScreen(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Quay lại",
                         tint = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(24.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(4.dp))
 
                 Icon(
                     imageVector = Icons.Default.Settings,
@@ -119,7 +118,7 @@ fun SettingsScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Danh sách các Cards cài đặt
             Column(
