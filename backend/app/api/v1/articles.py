@@ -120,6 +120,21 @@ async def list_articles(
 
     response_items = []
     for art in articles:
+        resolved_img = art.image_url
+        if not resolved_img:
+            # 1. Nếu là file ảnh, tự động trỏ tới endpoint file inline
+            if art.source_type == "FILE" and (
+                (art.mime_type and art.mime_type.startswith("image/"))
+                or (art.file_name and any(art.file_name.lower().endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg")))
+            ):
+                resolved_img = f"/api/articles/{art.id}/file?inline=true"
+            # 2. Nếu là bài viết có ảnh trong nội dung markdown
+            elif art.content_markdown:
+                import re
+                m = re.search(r'!\[.*?\]\((https?://[^\s\)]+)\)', art.content_markdown)
+                if m:
+                    resolved_img = m.group(1)
+
         response_items.append(
             ArticleListResponse(
                 id=art.id,
@@ -132,7 +147,7 @@ async def list_articles(
                 excerpt=art.excerpt,
                 author=art.author,
                 site_name=art.site_name,
-                image_url=art.image_url,
+                image_url=resolved_img,
                 reading_minutes=art.reading_minutes,
                 category_id=art.category_id,
                 category_name=art.category.name if art.category else None,
@@ -314,6 +329,19 @@ async def get_article(
     if not art:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
 
+    resolved_img = art.image_url
+    if not resolved_img:
+        if art.source_type == "FILE" and (
+            (art.mime_type and art.mime_type.startswith("image/"))
+            or (art.file_name and any(art.file_name.lower().endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg")))
+        ):
+            resolved_img = f"/api/articles/{art.id}/file?inline=true"
+        elif art.content_markdown:
+            import re
+            m = re.search(r'!\[.*?\]\((https?://[^\s\)]+)\)', art.content_markdown)
+            if m:
+                resolved_img = m.group(1)
+
     return ArticleDetailResponse(
         id=art.id,
         title=art.title,
@@ -327,7 +355,7 @@ async def get_article(
         excerpt=art.excerpt,
         author=art.author,
         site_name=art.site_name,
-        image_url=art.image_url,
+        image_url=resolved_img,
         language=art.language,
         reading_minutes=art.reading_minutes,
         category_id=art.category_id,

@@ -8,6 +8,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -21,6 +22,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -92,22 +94,41 @@ fun LibraryScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                // Ô tìm kiếm hiện đại bo góc lớn
+                // Ô tìm kiếm hiện đại bo góc lớn hình viên thuốc
                 OutlinedTextField(
                     value = uiState.searchQuery,
                     onValueChange = { viewModel.onSearchQueryChange(it) },
-                    placeholder = { Text(stringResource(R.string.search_hint)) },
+                    placeholder = {
+                        Text(
+                            text = "Tìm kiếm bài viết, tài liệu...",
+                            color = Color(0xFF6B7280)
+                        )
+                    },
                     leadingIcon = {
-                        Icon(imageVector = Icons.Default.Search, contentDescription = null)
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            tint = Color(0xFF374151),
+                            modifier = Modifier.size(22.dp)
+                        )
                     },
                     trailingIcon = {
                         if (uiState.searchQuery.isNotEmpty()) {
                             IconButton(onClick = { viewModel.onSearchQueryChange("") }) {
-                                Icon(imageVector = Icons.Default.Close, contentDescription = "Xoá tìm kiếm")
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Xoá tìm kiếm",
+                                    tint = Color(0xFF6B7280)
+                                )
                             }
                         } else {
                             IconButton(onClick = { showSortMenu = true }) {
-                                Icon(imageVector = Icons.Default.Sort, contentDescription = "Sắp xếp")
+                                Icon(
+                                    imageVector = Icons.Default.Tune,
+                                    contentDescription = "Bộ lọc & Sắp xếp",
+                                    tint = Color(0xFF374151),
+                                    modifier = Modifier.size(22.dp)
+                                )
                             }
                         }
 
@@ -146,28 +167,37 @@ fun LibraryScreen(
                         }
                     },
                     singleLine = true,
-                    shape = RoundedCornerShape(24.dp),
+                    shape = RoundedCornerShape(28.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedBorderColor = Color(0xFFD1D5DB),
+                        unfocusedBorderColor = Color(0xFFE5E7EB)
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Dòng Filter Chips (Tất cả, Yêu thích, Link, File, Danh mục)
+                // Dòng Filter Chips (Yêu thích, Bài viết, Hình ảnh, Video, Tệp tin)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val chipShape = RoundedCornerShape(20.dp)
+                    val activeChipColors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Color(0xFF2563EB),
+                        selectedLabelColor = Color.White,
+                        selectedLeadingIconColor = Color.White
+                    )
+
                     // Chip Yêu thích
                     FilterChip(
                         selected = uiState.onlyFavorites,
                         onClick = { viewModel.onToggleFavoritesFilter() },
-                        label = { Text(stringResource(R.string.filter_favorites)) },
+                        label = { Text("Yêu thích", fontWeight = if (uiState.onlyFavorites) FontWeight.Bold else FontWeight.Medium) },
                         leadingIcon = {
                             Icon(
                                 imageVector = if (uiState.onlyFavorites) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
@@ -175,17 +205,26 @@ fun LibraryScreen(
                                 modifier = Modifier.size(16.dp)
                             )
                         },
-                        shape = RoundedCornerShape(12.dp)
+                        colors = activeChipColors,
+                        shape = chipShape
                     )
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    // Chip Bài viết (URL)
+                    // Chip Bài viết
                     FilterChip(
                         selected = uiState.selectedContentType == "article",
                         onClick = { viewModel.onContentTypeFilterChange("article") },
-                        label = { Text(stringResource(R.string.filter_content_article)) },
-                        shape = RoundedCornerShape(12.dp)
+                        label = { Text("Bài viết", fontWeight = if (uiState.selectedContentType == "article") FontWeight.Bold else FontWeight.Medium) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Article,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        colors = activeChipColors,
+                        shape = chipShape
                     )
 
                     Spacer(modifier = Modifier.width(8.dp))
@@ -194,8 +233,16 @@ fun LibraryScreen(
                     FilterChip(
                         selected = uiState.selectedContentType == "image",
                         onClick = { viewModel.onContentTypeFilterChange("image") },
-                        label = { Text(stringResource(R.string.filter_content_image)) },
-                        shape = RoundedCornerShape(12.dp)
+                        label = { Text("Hình ảnh", fontWeight = if (uiState.selectedContentType == "image") FontWeight.Bold else FontWeight.Medium) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Image,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        colors = activeChipColors,
+                        shape = chipShape
                     )
 
                     Spacer(modifier = Modifier.width(8.dp))
@@ -204,8 +251,16 @@ fun LibraryScreen(
                     FilterChip(
                         selected = uiState.selectedContentType == "video",
                         onClick = { viewModel.onContentTypeFilterChange("video") },
-                        label = { Text(stringResource(R.string.filter_content_video)) },
-                        shape = RoundedCornerShape(12.dp)
+                        label = { Text("Video", fontWeight = if (uiState.selectedContentType == "video") FontWeight.Bold else FontWeight.Medium) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Videocam,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        colors = activeChipColors,
+                        shape = chipShape
                     )
 
                     Spacer(modifier = Modifier.width(8.dp))
@@ -214,8 +269,16 @@ fun LibraryScreen(
                     FilterChip(
                         selected = uiState.selectedContentType == "file",
                         onClick = { viewModel.onContentTypeFilterChange("file") },
-                        label = { Text(stringResource(R.string.filter_content_file)) },
-                        shape = RoundedCornerShape(12.dp)
+                        label = { Text("Tệp tin", fontWeight = if (uiState.selectedContentType == "file") FontWeight.Bold else FontWeight.Medium) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.InsertDriveFile,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        colors = activeChipColors,
+                        shape = chipShape
                     )
 
                     Spacer(modifier = Modifier.width(8.dp))
@@ -226,7 +289,8 @@ fun LibraryScreen(
                             selected = uiState.selectedCategoryId == cat.id,
                             onClick = { viewModel.onCategoryFilterChange(cat.id) },
                             label = { Text(cat.name) },
-                            shape = RoundedCornerShape(12.dp)
+                            colors = activeChipColors,
+                            shape = chipShape
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                     }
@@ -304,9 +368,10 @@ fun LibraryScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        items(uiState.articles, key = { it.id }) { article ->
+                        itemsIndexed(uiState.articles, key = { _, it -> it.id }) { index, article ->
                             ArticleCard(
                                 article = article,
+                                isHeroBanner = (index == 0 && !article.imageUrl.isNullOrBlank()),
                                 onClick = { onArticleClick(article.id) },
                                 onToggleFavorite = { viewModel.toggleFavorite(article) },
                                 onDelete = { viewModel.deleteArticle(article) },
