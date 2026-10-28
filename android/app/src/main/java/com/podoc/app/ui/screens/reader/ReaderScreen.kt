@@ -977,6 +977,8 @@ private fun InAppVideoViewer(
 ) {
     val context = LocalContext.current
     val isPlaying by MediaPlaybackManager.isPlaying.collectAsState()
+    val isRepeatMode by MediaPlaybackManager.isRepeatMode.collectAsState()
+    val isCompleted by MediaPlaybackManager.isCompleted.collectAsState()
     val currentPosition by MediaPlaybackManager.currentPosition.collectAsState()
     val duration by MediaPlaybackManager.duration.collectAsState()
     var showControls by remember { mutableStateOf(true) }
@@ -994,9 +996,16 @@ private fun InAppVideoViewer(
         }
     }
 
+    // Luôn hiện thanh điều khiển khi phát xong video
+    LaunchedEffect(isCompleted) {
+        if (isCompleted) {
+            showControls = true
+        }
+    }
+
     // Tự động ẩn thanh điều khiển sau 3.5 giây khi đang phát
-    LaunchedEffect(showControls, isPlaying) {
-        if (showControls && isPlaying) {
+    LaunchedEffect(showControls, isPlaying, isCompleted) {
+        if (showControls && isPlaying && !isCompleted) {
             kotlinx.coroutines.delay(3500)
             showControls = false
         }
@@ -1082,6 +1091,25 @@ private fun InAppVideoViewer(
                     )
 
                     IconButton(
+                        onClick = { MediaPlaybackManager.toggleRepeatMode() },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(
+                                if (isRepeatMode) Color(0xFF3B82F6).copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.55f),
+                                CircleShape
+                            )
+                    ) {
+                        Icon(
+                            imageVector = if (isRepeatMode) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                            contentDescription = if (isRepeatMode) "Tắt lặp lại video" else "Bật lặp lại video",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    IconButton(
                         onClick = onOpenExternal,
                         modifier = Modifier
                             .size(40.dp)
@@ -1119,20 +1147,77 @@ private fun InAppVideoViewer(
                     }
                 }
 
-                // 2. NÚT PLAY / PAUSE CHÍNH GIỮA MÀN HÌNH
-                IconButton(
-                    onClick = { MediaPlaybackManager.togglePlayPause(context) },
-                    modifier = Modifier
-                        .size(68.dp)
-                        .align(Alignment.Center)
-                        .background(Color.Black.copy(alpha = 0.65f), CircleShape)
+                // 2. BỘ NÚT ĐIỀU KHIỂN CHÍNH GIỮA MÀN HÌNH (Lùi 10s, Play/Pause/Replay, Tiến 10s)
+                Row(
+                    modifier = Modifier.align(Alignment.Center),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(28.dp)
                 ) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlaying) "Tạm dừng" else "Phát",
-                        tint = Color.White,
-                        modifier = Modifier.size(38.dp)
-                    )
+                    // Lùi 10s
+                    IconButton(
+                        onClick = {
+                            MediaPlaybackManager.seekTo(context, (currentPosition - 10000).coerceAtLeast(0))
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Replay10,
+                            contentDescription = "Lùi 10 giây",
+                            tint = Color.White,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+
+                    // Nút Play / Pause / Replay chính giữa
+                    IconButton(
+                        onClick = {
+                            if (isCompleted) {
+                                MediaPlaybackManager.replay(context)
+                            } else {
+                                MediaPlaybackManager.togglePlayPause(context)
+                            }
+                        },
+                        modifier = Modifier
+                            .size(68.dp)
+                            .background(
+                                if (isCompleted) Color(0xFF3B82F6).copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.65f),
+                                CircleShape
+                            )
+                    ) {
+                        Icon(
+                            imageVector = when {
+                                isCompleted -> Icons.Default.Replay
+                                isPlaying -> Icons.Default.Pause
+                                else -> Icons.Default.PlayArrow
+                            },
+                            contentDescription = when {
+                                isCompleted -> "Phát lại video"
+                                isPlaying -> "Tạm dừng"
+                                else -> "Phát"
+                            },
+                            tint = Color.White,
+                            modifier = Modifier.size(38.dp)
+                        )
+                    }
+
+                    // Tiến 10s
+                    IconButton(
+                        onClick = {
+                            MediaPlaybackManager.seekTo(context, (currentPosition + 10000).coerceAtMost(duration))
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Forward10,
+                            contentDescription = "Tiến 10 giây",
+                            tint = Color.White,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
                 }
 
                 // 3. THANH ĐIỀU KHIỂN THỜI GIAN & TUA Ở ĐÁY MÀN HÌNH
@@ -1194,6 +1279,8 @@ private fun InAppAudioViewer(
 ) {
     val context = LocalContext.current
     val isPlaying by MediaPlaybackManager.isPlaying.collectAsState()
+    val isRepeatMode by MediaPlaybackManager.isRepeatMode.collectAsState()
+    val isCompleted by MediaPlaybackManager.isCompleted.collectAsState()
     val currentPosition by MediaPlaybackManager.currentPosition.collectAsState()
     val duration by MediaPlaybackManager.duration.collectAsState()
 
@@ -1246,7 +1333,7 @@ private fun InAppAudioViewer(
                         )
                     )
                 )
-                .graphicsLayer(rotationZ = if (isPlaying) rotation else 0f)
+                .graphicsLayer(rotationZ = if (isPlaying && !isCompleted) rotation else 0f)
         ) {
             // Vòng tròn vân đĩa vinyl
             Box(
@@ -1346,17 +1433,36 @@ private fun InAppAudioViewer(
             }
         }
 
-        // 4. Các nút điều khiển phát nhạc (Lùi 10s, Phát/Dừng, Tiến 10s)
+        // 4. Các nút điều khiển phát nhạc (Lặp lại, Lùi 10s, Phát/Dừng/Phát lại, Tiến 10s, Tua về đầu)
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
+            horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Nút Lặp lại (Repeat / Loop bài hát như Zing MP3)
+            IconButton(
+                onClick = { MediaPlaybackManager.toggleRepeatMode() },
+                modifier = Modifier
+                    .size(46.dp)
+                    .then(
+                        if (isRepeatMode) Modifier.background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+                        else Modifier
+                    )
+            ) {
+                Icon(
+                    imageVector = if (isRepeatMode) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                    contentDescription = if (isRepeatMode) "Tắt lặp lại" else "Bật lặp lại bài hát",
+                    tint = if (isRepeatMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            // Tua lùi 10s
             IconButton(
                 onClick = {
                     MediaPlaybackManager.seekTo(context, (currentPosition - 10000).coerceAtLeast(0))
                 },
-                modifier = Modifier.size(52.dp)
+                modifier = Modifier.size(48.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Replay10,
@@ -1366,10 +1472,15 @@ private fun InAppAudioViewer(
                 )
             }
 
-            Spacer(modifier = Modifier.width(20.dp))
-
+            // Nút trung tâm: Phát / Tạm dừng / Phát lại (Replay khi phát hết)
             Surface(
-                onClick = { MediaPlaybackManager.togglePlayPause(context) },
+                onClick = {
+                    if (isCompleted) {
+                        MediaPlaybackManager.replay(context)
+                    } else {
+                        MediaPlaybackManager.togglePlayPause(context)
+                    }
+                },
                 shape = CircleShape,
                 color = MaterialTheme.colorScheme.primary,
                 shadowElevation = 4.dp,
@@ -1377,27 +1488,49 @@ private fun InAppAudioViewer(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlaying) "Tạm dừng" else "Phát",
+                        imageVector = when {
+                            isCompleted -> Icons.Default.Replay
+                            isPlaying -> Icons.Default.Pause
+                            else -> Icons.Default.PlayArrow
+                        },
+                        contentDescription = when {
+                            isCompleted -> "Phát lại từ đầu"
+                            isPlaying -> "Tạm dừng"
+                            else -> "Phát"
+                        },
                         tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(36.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.width(20.dp))
-
+            // Tua tiến 10s
             IconButton(
                 onClick = {
                     MediaPlaybackManager.seekTo(context, (currentPosition + 10000).coerceAtMost(duration))
                 },
-                modifier = Modifier.size(52.dp)
+                modifier = Modifier.size(48.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Forward10,
                     contentDescription = "Tiến 10s",
                     tint = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.size(28.dp)
+                )
+            }
+
+            // Nút Replay về 00:00 bất kỳ lúc nào
+            IconButton(
+                onClick = {
+                    MediaPlaybackManager.replay(context)
+                },
+                modifier = Modifier.size(46.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Replay,
+                    contentDescription = "Phát lại từ đầu",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }

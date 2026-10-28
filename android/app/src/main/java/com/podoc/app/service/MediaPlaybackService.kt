@@ -55,12 +55,42 @@ object MediaPlaybackManager {
     internal val _isVideoMode = MutableStateFlow(false)
     val isVideoMode: StateFlow<Boolean> = _isVideoMode.asStateFlow()
 
+    internal val _isRepeatMode = MutableStateFlow(false)
+    val isRepeatMode: StateFlow<Boolean> = _isRepeatMode.asStateFlow()
+
+    internal val _isCompleted = MutableStateFlow(false)
+    val isCompleted: StateFlow<Boolean> = _isCompleted.asStateFlow()
+
     internal val _videoSize = MutableStateFlow(Pair(0, 0))
     val videoSize: StateFlow<Pair<Int, Int>> = _videoSize.asStateFlow()
 
     internal var currentHolder: SurfaceHolder? = null
     internal var mediaPlayer: MediaPlayer? = null
     internal var serviceInstance: MediaPlaybackService? = null
+
+    /**
+     * Bật / tắt chế độ lặp lại (Loop / Repeat)
+     */
+    fun toggleRepeatMode() {
+        val next = !_isRepeatMode.value
+        _isRepeatMode.value = next
+        try {
+            mediaPlayer?.isLooping = next
+        } catch (e: Exception) {
+            Log.w(TAG, "Lỗi toggle repeat: ${e.message}")
+        }
+    }
+
+    /**
+     * Phát lại từ đầu (Replay) khi tệp đã phát hết hoặc người dùng muốn nghe lại từ 00:00
+     */
+    fun replay(context: Context) {
+        _isCompleted.value = false
+        val intent = Intent(context, MediaPlaybackService::class.java).apply {
+            action = MediaPlaybackService.ACTION_REPLAY
+        }
+        context.startService(intent)
+    }
 
     /**
      * Gắn SurfaceHolder để MediaPlayer render khung hình video.
@@ -89,6 +119,7 @@ object MediaPlaybackManager {
     }
 
     fun startPlay(context: Context, filePath: String, title: String, articleId: Int, isVideo: Boolean) {
+        _isCompleted.value = false
         val intent = Intent(context, MediaPlaybackService::class.java).apply {
             action = MediaPlaybackService.ACTION_START
             putExtra(MediaPlaybackService.EXTRA_FILE_PATH, filePath)
@@ -104,6 +135,10 @@ object MediaPlaybackManager {
     }
 
     fun togglePlayPause(context: Context) {
+        if (_isCompleted.value) {
+            replay(context)
+            return
+        }
         val intent = Intent(context, MediaPlaybackService::class.java).apply {
             action = MediaPlaybackService.ACTION_TOGGLE
         }
@@ -111,6 +146,9 @@ object MediaPlaybackManager {
     }
 
     fun seekTo(context: Context, positionMs: Int) {
+        if (_isCompleted.value && positionMs < _duration.value) {
+            _isCompleted.value = false
+        }
         val intent = Intent(context, MediaPlaybackService::class.java).apply {
             action = MediaPlaybackService.ACTION_SEEK
             putExtra(MediaPlaybackService.EXTRA_SEEK_POS, positionMs)
@@ -141,6 +179,7 @@ class MediaPlaybackService : Service() {
         const val ACTION_TOGGLE = "com.podoc.app.action.TOGGLE"
         const val ACTION_SEEK = "com.podoc.app.action.SEEK"
         const val ACTION_STOP = "com.podoc.app.action.STOP"
+        const val ACTION_REPLAY = "com.podoc.app.action.REPLAY"
 
         const val EXTRA_FILE_PATH = "file_path"
         const val EXTRA_TITLE = "title"
@@ -170,23 +209,34 @@ class MediaPlaybackService : Service() {
     private fun initMediaSession() {
         try {
             mediaSession = MediaSessionCompat(this, "PoDocMediaSession").apply {
-                setFlags(
-                    MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
-                    MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
-                )
                 setCallback(object : MediaSessionCompat.Callback() {
                     override fun onPlay() {
-                        resumePlayback()
+                        if (MediaPlaybackManager._isCompleted.value) {
+                            replayPlayback()
+                        } else {
+                            resumePlayback()
+                        }
                     }
 
                     override fun onPause() {
                         pausePlayback()
                     }
 
+                    override fun onSetRepeatMode(repeatMode: Int) {
+                        val isLoop = repeatMode != PlaybackStateCompat.REPEAT_MODE_NONE
+                        MediaPlaybackManager._isRepeatMode.value = isLoop
+                        try {
+                            mediaPlayer?.isLooping = isLoop
+                        } catch (_: Exception) {}
+                    }
+
                     override fun onSeekTo(pos: Long) {
                         try {
                             mediaPlayer?.seekTo(pos.toInt())
                             MediaPlaybackManager._currentPosition.value = pos.toInt()
+                            if (pos < (mediaPlayer?.duration ?: 0)) {
+                                MediaPlaybackManager._isCompleted.value = false
+                            }
                             updatePlaybackState(pos.toInt(), MediaPlaybackManager._isPlaying.value)
                         } catch (e: Exception) {
                             Log.w(TAG, "Lỗi seekTo: ${e.message}")
@@ -199,6 +249,9 @@ class MediaPlaybackService : Service() {
                         val target = (cur + 10000).coerceAtMost(dur)
                         mediaPlayer?.seekTo(target)
                         MediaPlaybackManager._currentPosition.value = target
+                        if (target < dur) {
+                            MediaPlaybackManager._isCompleted.value = false
+                        }
                         updatePlaybackState(target, MediaPlaybackManager._isPlaying.value)
                     }
 
@@ -207,6 +260,7 @@ class MediaPlaybackService : Service() {
                         val target = (cur - 10000).coerceAtLeast(0)
                         mediaPlayer?.seekTo(target)
                         MediaPlaybackManager._currentPosition.value = target
+                        MediaPlaybackManager._isCompleted.value = false
                         updatePlaybackState(target, MediaPlaybackManager._isPlaying.value)
                     }
 
@@ -256,11 +310,19 @@ class MediaPlaybackService : Service() {
                 }
             }
 
+            ACTION_REPLAY -> {
+                replayPlayback()
+            }
+
             ACTION_SEEK -> {
                 val pos = intent.getIntExtra(EXTRA_SEEK_POS, 0)
                 try {
                     mediaPlayer?.seekTo(pos)
                     MediaPlaybackManager._currentPosition.value = pos
+                    val dur = mediaPlayer?.duration ?: 0
+                    if (pos < dur) {
+                        MediaPlaybackManager._isCompleted.value = false
+                    }
                     updatePlaybackState(pos, MediaPlaybackManager._isPlaying.value)
                 } catch (e: Exception) {
                     Log.w(TAG, "Lỗi seekTo: ${e.message}")
@@ -288,6 +350,7 @@ class MediaPlaybackService : Service() {
                 )
                 setDataSource(filePath)
                 setOnPreparedListener { mp ->
+                    mp.isLooping = MediaPlaybackManager._isRepeatMode.value
                     if (isVideo && MediaPlaybackManager.currentHolder != null) {
                         try {
                             mp.setDisplay(MediaPlaybackManager.currentHolder)
@@ -297,6 +360,7 @@ class MediaPlaybackService : Service() {
                     }
                     mp.start()
                     MediaPlaybackManager._isPlaying.value = true
+                    MediaPlaybackManager._isCompleted.value = false
                     MediaPlaybackManager._duration.value = mp.duration
 
                     updateMetadata(MediaPlaybackManager._currentTitle.value, mp.duration.toLong())
@@ -304,11 +368,27 @@ class MediaPlaybackService : Service() {
                     updateNotification(MediaPlaybackManager._currentTitle.value, true)
                     startProgressTracker()
                 }
-                setOnCompletionListener {
-                    MediaPlaybackManager._isPlaying.value = false
-                    MediaPlaybackManager._currentPosition.value = it.duration
-                    updatePlaybackState(it.duration, isPlaying = false)
-                    updateNotification(MediaPlaybackManager._currentTitle.value, false)
+                setOnCompletionListener { mp ->
+                    if (MediaPlaybackManager._isRepeatMode.value) {
+                        try {
+                            mp.seekTo(0)
+                            mp.start()
+                            MediaPlaybackManager._isPlaying.value = true
+                            MediaPlaybackManager._isCompleted.value = false
+                            MediaPlaybackManager._currentPosition.value = 0
+                            updatePlaybackState(0, isPlaying = true)
+                            updateNotification(MediaPlaybackManager._currentTitle.value, true)
+                            startProgressTracker()
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Lỗi loop media: ${e.message}")
+                        }
+                    } else {
+                        MediaPlaybackManager._isPlaying.value = false
+                        MediaPlaybackManager._isCompleted.value = true
+                        MediaPlaybackManager._currentPosition.value = mp.duration
+                        updatePlaybackState(mp.duration, isPlaying = false)
+                        updateNotification(MediaPlaybackManager._currentTitle.value, false)
+                    }
                 }
                 setOnVideoSizeChangedListener { _, width, height ->
                     MediaPlaybackManager._videoSize.value = Pair(width, height)
@@ -329,6 +409,10 @@ class MediaPlaybackService : Service() {
 
     private fun resumePlayback() {
         try {
+            if (MediaPlaybackManager._isCompleted.value) {
+                replayPlayback()
+                return
+            }
             mediaPlayer?.start()
             MediaPlaybackManager._isPlaying.value = true
             val pos = mediaPlayer?.currentPosition ?: 0
@@ -337,6 +421,21 @@ class MediaPlaybackService : Service() {
             startProgressTracker()
         } catch (e: Exception) {
             Log.w(TAG, "Lỗi resume: ${e.message}")
+        }
+    }
+
+    private fun replayPlayback() {
+        try {
+            MediaPlaybackManager._isCompleted.value = false
+            mediaPlayer?.seekTo(0)
+            mediaPlayer?.start()
+            MediaPlaybackManager._isPlaying.value = true
+            MediaPlaybackManager._currentPosition.value = 0
+            updatePlaybackState(0, isPlaying = true)
+            updateNotification(MediaPlaybackManager._currentTitle.value, true)
+            startProgressTracker()
+        } catch (e: Exception) {
+            Log.w(TAG, "Lỗi replay: ${e.message}")
         }
     }
 
@@ -361,6 +460,7 @@ class MediaPlaybackService : Service() {
         mediaPlayer = null
         MediaPlaybackManager.mediaPlayer = null
         MediaPlaybackManager._isPlaying.value = false
+        MediaPlaybackManager._isCompleted.value = false
         MediaPlaybackManager._currentArticleId.value = null
         MediaPlaybackManager._currentFilePath.value = null
         MediaPlaybackManager.currentHolder = null
@@ -475,7 +575,11 @@ class MediaPlaybackService : Service() {
         )
 
         val playPauseIcon = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
-        val playPauseText = if (isPlaying) "Tạm dừng" else "Tiếp tục"
+        val playPauseText = when {
+            isPlaying -> "Tạm dừng"
+            MediaPlaybackManager._isCompleted.value -> "Phát lại"
+            else -> "Tiếp tục"
+        }
 
         val mediaStyle = MediaStyle()
             .setShowActionsInCompactView(0, 1)
