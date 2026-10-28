@@ -14,8 +14,8 @@ android {
         applicationId = "com.podoc.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 22
-        versionName = "1.3.9"
+        versionCode = 23
+        versionName = "1.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -78,6 +78,9 @@ dependencies {
 
     // Preferences DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.2")
+
+    // Media & MediaSession support
+    implementation("androidx.media:media:1.7.0")
 
     // Markdown Renderer M3
     implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.16.0")

@@ -13,9 +13,13 @@ import android.media.MediaPlayer
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.support.v4.media.MediaMetadataCompat
+import android.support.v4.media.session.MediaSessionCompat
+import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
 import android.view.SurfaceHolder
 import androidx.core.app.NotificationCompat
+import androidx.media.app.NotificationCompat.MediaStyle
 import com.podoc.app.MainActivity
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -124,8 +128,9 @@ object MediaPlaybackManager {
 
 /**
  * Service phát âm thanh và video trong nền.
- * Duy trì WakeLock và Foreground Notification để đảm bảo khi tắt màn hình,
- * âm thanh từ file .mp3 và .mp4 vẫn phát không bị ngắt quãng.
+ * Tích hợp MediaSessionCompat để kết nối trực tiếp với Trung tâm điều khiển hệ thống
+ * (Quick Settings Media Player / HyperOS / One UI - ô "Đang không phát")
+ * và duy trì phát nền WakeLock khi tắt màn hình.
  */
 class MediaPlaybackService : Service() {
 
@@ -149,6 +154,7 @@ class MediaPlaybackService : Service() {
     }
 
     private var mediaPlayer: MediaPlayer? = null
+    private var mediaSession: MediaSessionCompat? = null
     private var progressJob: Job? = null
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
 
@@ -158,6 +164,61 @@ class MediaPlaybackService : Service() {
         super.onCreate()
         MediaPlaybackManager.serviceInstance = this
         createNotificationChannel()
+        initMediaSession()
+    }
+
+    private fun initMediaSession() {
+        try {
+            mediaSession = MediaSessionCompat(this, "PoDocMediaSession").apply {
+                setFlags(
+                    MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
+                    MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
+                )
+                setCallback(object : MediaSessionCompat.Callback() {
+                    override fun onPlay() {
+                        resumePlayback()
+                    }
+
+                    override fun onPause() {
+                        pausePlayback()
+                    }
+
+                    override fun onSeekTo(pos: Long) {
+                        try {
+                            mediaPlayer?.seekTo(pos.toInt())
+                            MediaPlaybackManager._currentPosition.value = pos.toInt()
+                            updatePlaybackState(pos.toInt(), MediaPlaybackManager._isPlaying.value)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Lỗi seekTo: ${e.message}")
+                        }
+                    }
+
+                    override fun onFastForward() {
+                        val cur = mediaPlayer?.currentPosition ?: 0
+                        val dur = mediaPlayer?.duration ?: 0
+                        val target = (cur + 10000).coerceAtMost(dur)
+                        mediaPlayer?.seekTo(target)
+                        MediaPlaybackManager._currentPosition.value = target
+                        updatePlaybackState(target, MediaPlaybackManager._isPlaying.value)
+                    }
+
+                    override fun onRewind() {
+                        val cur = mediaPlayer?.currentPosition ?: 0
+                        val target = (cur - 10000).coerceAtLeast(0)
+                        mediaPlayer?.seekTo(target)
+                        MediaPlaybackManager._currentPosition.value = target
+                        updatePlaybackState(target, MediaPlaybackManager._isPlaying.value)
+                    }
+
+                    override fun onStop() {
+                        stopPlayback()
+                    }
+                })
+                isActive = true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Lỗi khởi tạo MediaSessionCompat", e)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -200,6 +261,7 @@ class MediaPlaybackService : Service() {
                 try {
                     mediaPlayer?.seekTo(pos)
                     MediaPlaybackManager._currentPosition.value = pos
+                    updatePlaybackState(pos, MediaPlaybackManager._isPlaying.value)
                 } catch (e: Exception) {
                     Log.w(TAG, "Lỗi seekTo: ${e.message}")
                 }
@@ -236,12 +298,16 @@ class MediaPlaybackService : Service() {
                     mp.start()
                     MediaPlaybackManager._isPlaying.value = true
                     MediaPlaybackManager._duration.value = mp.duration
+
+                    updateMetadata(MediaPlaybackManager._currentTitle.value, mp.duration.toLong())
+                    updatePlaybackState(0, isPlaying = true)
                     updateNotification(MediaPlaybackManager._currentTitle.value, true)
                     startProgressTracker()
                 }
                 setOnCompletionListener {
                     MediaPlaybackManager._isPlaying.value = false
                     MediaPlaybackManager._currentPosition.value = it.duration
+                    updatePlaybackState(it.duration, isPlaying = false)
                     updateNotification(MediaPlaybackManager._currentTitle.value, false)
                 }
                 setOnVideoSizeChangedListener { _, width, height ->
@@ -250,6 +316,7 @@ class MediaPlaybackService : Service() {
                 setOnErrorListener { _, what, extra ->
                     Log.e(TAG, "MediaPlayer error: what=$what, extra=$extra")
                     MediaPlaybackManager._isPlaying.value = false
+                    updatePlaybackState(0, isPlaying = false)
                     false
                 }
                 prepareAsync()
@@ -264,6 +331,8 @@ class MediaPlaybackService : Service() {
         try {
             mediaPlayer?.start()
             MediaPlaybackManager._isPlaying.value = true
+            val pos = mediaPlayer?.currentPosition ?: 0
+            updatePlaybackState(pos, isPlaying = true)
             updateNotification(MediaPlaybackManager._currentTitle.value, true)
             startProgressTracker()
         } catch (e: Exception) {
@@ -275,6 +344,8 @@ class MediaPlaybackService : Service() {
         try {
             mediaPlayer?.pause()
             MediaPlaybackManager._isPlaying.value = false
+            val pos = mediaPlayer?.currentPosition ?: 0
+            updatePlaybackState(pos, isPlaying = false)
             updateNotification(MediaPlaybackManager._currentTitle.value, false)
         } catch (e: Exception) {
             Log.w(TAG, "Lỗi pause: ${e.message}")
@@ -294,8 +365,50 @@ class MediaPlaybackService : Service() {
         MediaPlaybackManager._currentFilePath.value = null
         MediaPlaybackManager.currentHolder = null
 
+        updatePlaybackState(0, isPlaying = false)
+        mediaSession?.isActive = false
+
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    private fun updateMetadata(title: String, durationMs: Long) {
+        try {
+            val metadata = MediaMetadataCompat.Builder()
+                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "PoDoc")
+                .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, "PoDoc Media")
+                .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, durationMs)
+                .build()
+            mediaSession?.setMetadata(metadata)
+            mediaSession?.isActive = true
+        } catch (e: Exception) {
+            Log.w(TAG, "Lỗi cập nhật MediaMetadata: ${e.message}")
+        }
+    }
+
+    private fun updatePlaybackState(positionMs: Int, isPlaying: Boolean) {
+        try {
+            val actions = PlaybackStateCompat.ACTION_PLAY or
+                    PlaybackStateCompat.ACTION_PAUSE or
+                    PlaybackStateCompat.ACTION_PLAY_PAUSE or
+                    PlaybackStateCompat.ACTION_SEEK_TO or
+                    PlaybackStateCompat.ACTION_FAST_FORWARD or
+                    PlaybackStateCompat.ACTION_REWIND or
+                    PlaybackStateCompat.ACTION_STOP
+
+            val state = if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
+            val speed = if (isPlaying) 1.0f else 0.0f
+
+            val playbackState = PlaybackStateCompat.Builder()
+                .setActions(actions)
+                .setState(state, positionMs.toLong(), speed)
+                .build()
+
+            mediaSession?.setPlaybackState(playbackState)
+        } catch (e: Exception) {
+            Log.w(TAG, "Lỗi cập nhật PlaybackState: ${e.message}")
+        }
     }
 
     private fun startProgressTracker() {
@@ -305,10 +418,12 @@ class MediaPlaybackService : Service() {
                 val mp = mediaPlayer
                 if (mp != null && MediaPlaybackManager._isPlaying.value) {
                     try {
-                        MediaPlaybackManager._currentPosition.value = mp.currentPosition
+                        val pos = mp.currentPosition
+                        MediaPlaybackManager._currentPosition.value = pos
+                        updatePlaybackState(pos, isPlaying = true)
                     } catch (_: Exception) {}
                 }
-                delay(500)
+                delay(1000)
             }
         }
     }
@@ -362,15 +477,24 @@ class MediaPlaybackService : Service() {
         val playPauseIcon = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
         val playPauseText = if (isPlaying) "Tạm dừng" else "Tiếp tục"
 
+        val mediaStyle = MediaStyle()
+            .setShowActionsInCompactView(0, 1)
+
+        mediaSession?.let {
+            mediaStyle.setMediaSession(it.sessionToken)
+        }
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(if (title.isNotBlank()) title else "PoDoc Media Player")
-            .setContentText(if (isPlaying) "Đang phát trong nền" else "Đang tạm dừng")
+            .setContentText("PoDoc")
             .setContentIntent(contentPendingIntent)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(isPlaying)
             .setOnlyAlertOnce(true)
             .addAction(playPauseIcon, playPauseText, togglePendingIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Dừng", stopPendingIntent)
+            .setStyle(mediaStyle)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
@@ -398,7 +522,9 @@ class MediaPlaybackService : Service() {
         MediaPlaybackManager.serviceInstance = null
         stopPlayback()
         serviceScope.cancel()
+        mediaSession?.isActive = false
+        mediaSession?.release()
+        mediaSession = null
         super.onDestroy()
     }
 }
-
