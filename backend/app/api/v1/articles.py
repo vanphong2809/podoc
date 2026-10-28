@@ -82,41 +82,36 @@ async def list_articles(
     if content_type and content_type.lower() != "all":
         ct = content_type.lower().strip()
         image_exts = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"]
-        video_exts = [".mp4", ".mkv", ".mov", ".webm", ".avi", ".flv", ".3gp"]
+        video_exts = [".mp4", ".mkv", ".mov", ".webm", ".avi", ".flv", ".3gp", ".ts"]
+
+        image_filter = or_(
+            Article.mime_type.ilike("image/%"),
+            or_(*[Article.file_name.ilike(f"%{ext}") for ext in image_exts]),
+            or_(*[Article.file_path.ilike(f"%{ext}") for ext in image_exts]),
+        )
+        video_filter = or_(
+            Article.mime_type.ilike("video/%"),
+            or_(*[Article.file_name.ilike(f"%{ext}") for ext in video_exts]),
+            or_(*[Article.file_path.ilike(f"%{ext}") for ext in video_exts]),
+        )
 
         if ct in ("article", "url", "link", "web"):
-            stmt = stmt.where(Article.source_type == "URL")
+            stmt = stmt.where(
+                or_(
+                    Article.source_type == "URL",
+                    Article.source_type.is_(None),
+                    Article.source_type != "FILE"
+                )
+            )
         elif ct in ("image", "photo", "anh"):
-            stmt = stmt.where(
-                Article.source_type == "FILE",
-                or_(
-                    Article.mime_type.ilike("image/%"),
-                    or_(*[Article.file_name.ilike(f"%{ext}") for ext in image_exts])
-                ),
-            )
+            stmt = stmt.where(Article.source_type == "FILE", image_filter)
         elif ct in ("video", "clip"):
-            stmt = stmt.where(
-                Article.source_type == "FILE",
-                or_(
-                    Article.mime_type.ilike("video/%"),
-                    or_(*[Article.file_name.ilike(f"%{ext}") for ext in video_exts])
-                ),
-            )
+            stmt = stmt.where(Article.source_type == "FILE", video_filter)
         elif ct in ("file", "document", "doc", "tep"):
             stmt = stmt.where(
                 Article.source_type == "FILE",
-                not_(
-                    or_(
-                        Article.mime_type.ilike("image/%"),
-                        or_(*[Article.file_name.ilike(f"%{ext}") for ext in image_exts])
-                    )
-                ),
-                not_(
-                    or_(
-                        Article.mime_type.ilike("video/%"),
-                        or_(*[Article.file_name.ilike(f"%{ext}") for ext in video_exts])
-                    )
-                ),
+                not_(image_filter),
+                not_(video_filter)
             )
 
     if favorite is not None:

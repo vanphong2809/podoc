@@ -47,6 +47,7 @@ class CategoryDetailViewModel(
     val uiState: StateFlow<CategoryDetailUiState> = _uiState.asStateFlow()
 
     private var searchJob: Job? = null
+    private var loadArticlesJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -69,19 +70,26 @@ class CategoryDetailViewModel(
     }
 
     fun loadArticles(refresh: Boolean = false) {
-        val currentState = _uiState.value
-        if (refresh) {
-            _uiState.value = currentState.copy(isRefreshing = true, errorMessage = null)
-        } else {
-            if (currentState.isLoading) return
+        if (!refresh) {
+            val currentState = _uiState.value
+            if (currentState.isLoading || currentState.isRefreshing) return
             _uiState.value = currentState.copy(isLoading = true, errorMessage = null)
+        } else {
+            loadArticlesJob?.cancel()
+            val currentArticles = _uiState.value.articles
+            if (currentArticles.isEmpty()) {
+                _uiState.value = _uiState.value.copy(isLoading = true, isRefreshing = false, errorMessage = null)
+            } else {
+                _uiState.value = _uiState.value.copy(isRefreshing = true, errorMessage = null)
+            }
         }
 
-        viewModelScope.launch {
+        val targetState = _uiState.value
+        loadArticlesJob = viewModelScope.launch {
             val result = articleRepository.getArticles(
-                query = currentState.searchQuery,
-                categoryId = currentState.categoryId,
-                contentType = currentState.selectedContentType,
+                query = targetState.searchQuery,
+                categoryId = targetState.categoryId,
+                contentType = targetState.selectedContentType,
                 page = 1,
                 pageSize = 100
             )
@@ -116,7 +124,13 @@ class CategoryDetailViewModel(
 
     fun onContentTypeChange(type: String?) {
         if (_uiState.value.selectedContentType == type) return
-        _uiState.value = _uiState.value.copy(selectedContentType = type)
+        loadArticlesJob?.cancel()
+        _uiState.value = _uiState.value.copy(
+            selectedContentType = type,
+            articles = emptyList(),
+            isLoading = true,
+            isRefreshing = false
+        )
         loadArticles(refresh = true)
     }
 
@@ -141,6 +155,7 @@ class CategoryDetailViewModel(
             result.fold(
                 onSuccess = {
                     _uiState.value = _uiState.value.copy(userMessage = "Đã xoá: ${article.title.take(25)}")
+                    categoryRepository.getCategories()
                 },
                 onFailure = {
                     loadArticles(refresh = true)
@@ -162,6 +177,7 @@ class CategoryDetailViewModel(
         viewModelScope.launch {
             articleRepository.updateArticle(articleId, categoryId = newCategoryId).onSuccess {
                 loadArticles(refresh = true)
+                categoryRepository.getCategories()
             }
         }
     }
@@ -192,6 +208,7 @@ class CategoryDetailViewModel(
                 }
             )
             loadArticles(refresh = true)
+            categoryRepository.getCategories()
         }
     }
 

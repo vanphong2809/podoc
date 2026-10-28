@@ -116,12 +116,14 @@ fun CategoryDetailScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.width(8.dp))
+                        val currentCat = uiState.categories.find { it.id == uiState.categoryId }
+                        val displayCount = currentCat?.articleCount ?: uiState.articles.size
                         Surface(
                             color = MaterialTheme.colorScheme.surfaceVariant,
                             shape = RoundedCornerShape(10.dp)
                         ) {
                             Text(
-                                text = "${uiState.articles.size}",
+                                text = "$displayCount",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,

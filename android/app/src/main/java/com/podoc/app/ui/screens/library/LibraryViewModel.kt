@@ -46,6 +46,7 @@ class LibraryViewModel(
     val uiState: StateFlow<LibraryUiState> = _uiState.asStateFlow()
 
     private var searchJob: Job? = null
+    private var loadArticlesJob: Job? = null
 
     init {
         // Lắng nghe cập nhật danh mục từ CategoryRepository theo thời gian thực
@@ -69,33 +70,51 @@ class LibraryViewModel(
     }
 
     fun loadArticles(refresh: Boolean = false) {
-        val currentState = _uiState.value
-        val targetPage = if (refresh) 1 else currentState.page
-        val isMediaGrid = currentState.selectedContentType in listOf("image", "video")
-        val targetPageSize = if (isMediaGrid) 80 else 20
-
-        if (refresh) {
-            _uiState.value = currentState.copy(isRefreshing = true, errorMessage = null)
-        } else {
-            if (currentState.isLoading || !currentState.hasMore) return
+        if (!refresh) {
+            val currentState = _uiState.value
+            if (currentState.isLoading || currentState.isRefreshing || !currentState.hasMore) return
             _uiState.value = currentState.copy(isLoading = true, errorMessage = null)
+        } else {
+            loadArticlesJob?.cancel()
+            val currentArticles = _uiState.value.articles
+            if (currentArticles.isEmpty()) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = true,
+                    isRefreshing = false,
+                    page = 1,
+                    hasMore = true,
+                    errorMessage = null
+                )
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    isRefreshing = true,
+                    page = 1,
+                    errorMessage = null
+                )
+            }
         }
 
-        viewModelScope.launch {
+        val targetState = _uiState.value
+        val targetPage = if (refresh) 1 else targetState.page
+        val isMediaGrid = targetState.selectedContentType in listOf("image", "video")
+        val targetPageSize = if (isMediaGrid) 80 else 20
+
+        loadArticlesJob = viewModelScope.launch {
             val result = articleRepository.getArticles(
-                query = currentState.searchQuery,
-                categoryId = currentState.selectedCategoryId,
-                sourceType = currentState.selectedSourceType,
-                contentType = currentState.selectedContentType,
-                favorite = if (currentState.onlyFavorites) true else null,
-                sort = currentState.selectedSort,
+                query = targetState.searchQuery,
+                categoryId = targetState.selectedCategoryId,
+                sourceType = targetState.selectedSourceType,
+                contentType = targetState.selectedContentType,
+                favorite = if (targetState.onlyFavorites) true else null,
+                sort = targetState.selectedSort,
                 page = targetPage,
                 pageSize = targetPageSize
             )
 
             result.fold(
                 onSuccess = { newItems ->
-                    val updatedList = if (refresh) newItems else currentState.articles + newItems
+                    val currentList = _uiState.value.articles
+                    val updatedList = if (refresh) newItems else currentList + newItems
                     _uiState.value = _uiState.value.copy(
                         articles = updatedList,
                         page = targetPage + 1,
@@ -116,10 +135,18 @@ class LibraryViewModel(
     }
 
     fun onSelectAll() {
+        loadArticlesJob?.cancel()
         _uiState.value = _uiState.value.copy(
             selectedContentType = null,
             onlyFavorites = false,
-            selectedCategoryId = null
+            selectedCategoryId = null,
+            articles = emptyList(),
+            isLoading = true,
+            isRefreshing = false,
+            page = 1,
+            hasMore = true,
+            isSelectionMode = false,
+            selectedMediaIds = emptySet()
         )
         loadArticles(refresh = true)
     }
@@ -134,27 +161,43 @@ class LibraryViewModel(
     }
 
     fun onCategoryFilterChange(categoryId: Int?) {
-        if (_uiState.value.selectedCategoryId == categoryId) {
-            _uiState.value = _uiState.value.copy(selectedCategoryId = null)
-        } else {
-            _uiState.value = _uiState.value.copy(selectedCategoryId = categoryId)
-        }
+        loadArticlesJob?.cancel()
+        val newCatId = if (_uiState.value.selectedCategoryId == categoryId) null else categoryId
+        _uiState.value = _uiState.value.copy(
+            selectedCategoryId = newCatId,
+            articles = emptyList(),
+            isLoading = true,
+            isRefreshing = false,
+            page = 1,
+            hasMore = true
+        )
         loadArticles(refresh = true)
     }
 
     fun onSourceTypeFilterChange(sourceType: String?) {
-        if (_uiState.value.selectedSourceType == sourceType) {
-            _uiState.value = _uiState.value.copy(selectedSourceType = null)
-        } else {
-            _uiState.value = _uiState.value.copy(selectedSourceType = sourceType)
-        }
+        loadArticlesJob?.cancel()
+        val newSource = if (_uiState.value.selectedSourceType == sourceType) null else sourceType
+        _uiState.value = _uiState.value.copy(
+            selectedSourceType = newSource,
+            articles = emptyList(),
+            isLoading = true,
+            isRefreshing = false,
+            page = 1,
+            hasMore = true
+        )
         loadArticles(refresh = true)
     }
 
     fun onContentTypeFilterChange(contentType: String?) {
+        loadArticlesJob?.cancel()
         val newType = if (_uiState.value.selectedContentType == contentType) null else contentType
         _uiState.value = _uiState.value.copy(
             selectedContentType = newType,
+            articles = emptyList(),
+            isLoading = true,
+            isRefreshing = false,
+            page = 1,
+            hasMore = true,
             isSelectionMode = false,
             selectedMediaIds = emptySet()
         )
@@ -162,18 +205,34 @@ class LibraryViewModel(
     }
 
     fun onToggleFavoritesFilter() {
-        _uiState.value = _uiState.value.copy(onlyFavorites = !_uiState.value.onlyFavorites)
+        loadArticlesJob?.cancel()
+        val newFav = !_uiState.value.onlyFavorites
+        _uiState.value = _uiState.value.copy(
+            onlyFavorites = newFav,
+            articles = emptyList(),
+            isLoading = true,
+            isRefreshing = false,
+            page = 1,
+            hasMore = true
+        )
         loadArticles(refresh = true)
     }
 
     fun onSortChange(sort: String) {
-        _uiState.value = _uiState.value.copy(selectedSort = sort)
+        loadArticlesJob?.cancel()
+        _uiState.value = _uiState.value.copy(
+            selectedSort = sort,
+            articles = emptyList(),
+            isLoading = true,
+            isRefreshing = false,
+            page = 1,
+            hasMore = true
+        )
         loadArticles(refresh = true)
     }
 
     fun toggleFavorite(article: ArticleListItem) {
         val newFav = !article.isFavorite
-        // Cập nhật lạc quan trên UI
         _uiState.value = _uiState.value.copy(
             articles = _uiState.value.articles.map {
                 if (it.id == article.id) it.copy(isFavorite = newFav) else it
@@ -182,7 +241,6 @@ class LibraryViewModel(
 
         viewModelScope.launch {
             articleRepository.updateArticle(article.id, isFavorite = newFav).onFailure {
-                // Hoàn lại nếu lỗi
                 _uiState.value = _uiState.value.copy(
                     articles = _uiState.value.articles.map {
                         if (it.id == article.id) it.copy(isFavorite = article.isFavorite) else it
@@ -215,6 +273,8 @@ class LibraryViewModel(
                         ) else it
                     }
                 )
+                // Đồng bộ lại số đếm bài viết trong từng danh mục
+                categoryRepository.getCategories()
             }
         }
     }
@@ -234,6 +294,8 @@ class LibraryViewModel(
                 // Người dùng không bấm Hoàn tác -> Gọi xoá thật trên server
                 articleRepository.deleteArticle(article.id)
                 _uiState.value = _uiState.value.copy(recentlyDeletedArticle = null)
+                // Cập nhật lại số đếm danh mục sau khi xoá
+                categoryRepository.getCategories()
             }
         }
     }
@@ -277,8 +339,9 @@ class LibraryViewModel(
                     lastErrorMessage ?: "Không thể lưu tệp tin"
                 }
             )
-            // Tải lại danh sách thư viện ngay lập tức để hiện các file vừa lưu
+            // Tải lại danh sách thư viện và số đếm danh mục ngay lập tức
             loadArticles(refresh = true)
+            categoryRepository.getCategories()
             onDone?.invoke(successCount)
         }
     }
@@ -340,6 +403,7 @@ class LibraryViewModel(
                         isDeletingMultiple = false,
                         userMessage = "Đã xoá $count hình ảnh thành công"
                     )
+                    categoryRepository.getCategories()
                     onDone?.invoke(count)
                 },
                 onFailure = { err ->

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +38,12 @@ fun CategoryScreen(
     onCategoryClick: (Category) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
+    // Tự động tải lại danh sách và số đếm mỗi khi mở màn hình Danh mục
+    LaunchedEffect(Unit) {
+        viewModel.loadCategories(refresh = false)
+    }
+
     val systemDark = isSystemInDarkTheme()
     val isDark = when (themeMode) {
         "light" -> false
@@ -162,134 +169,142 @@ fun CategoryScreen(
             Spacer(modifier = Modifier.height(6.dp))
 
             // Danh sách các Card danh mục bo tròn đẹp mắt
-            LazyColumn(
+            PullToRefreshBox(
+                isRefreshing = uiState.isRefreshing,
+                onRefresh = { viewModel.loadCategories(refresh = true) },
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 80.dp)
+                    .weight(1f)
             ) {
-                items(filteredCategories, key = { it.id }) { cat ->
-                    var showItemMenu by remember { mutableStateOf(false) }
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(bottom = 80.dp)
+                ) {
+                    items(filteredCategories, key = { it.id }) { cat ->
+                        var showItemMenu by remember { mutableStateOf(false) }
 
-                    Card(
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = cardBg),
-                        elevation = CardDefaults.cardElevation(defaultElevation = if (isDark) 0.dp else 0.5.dp),
-                        border = if (isDark) BorderStroke(1.dp, Color(0xFF334155)) else null,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(20.dp))
-                            .clickable { onCategoryClick(cat) }
-                    ) {
-                        Row(
+                        Card(
+                            shape = RoundedCornerShape(20.dp),
+                            colors = CardDefaults.cardColors(containerColor = cardBg),
+                            elevation = CardDefaults.cardElevation(defaultElevation = if (isDark) 0.dp else 0.5.dp),
+                            border = if (isDark) BorderStroke(1.dp, Color(0xFF334155)) else null,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .clip(RoundedCornerShape(20.dp))
+                                .clickable { onCategoryClick(cat) }
                         ) {
-                            // Huy hiệu hình tròn có icon và màu tương ứng theo thiết kế hình 1
-                            Box(
+                            Row(
                                 modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(CircleShape)
-                                    .background(parseHexColor(cat.color)),
-                                contentAlignment = Alignment.Center
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = getCategoryIcon(cat.name, cat.icon),
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(14.dp))
-
-                            // Tên danh mục và số lượng bài viết
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = cat.name,
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 16.sp
-                                    ),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-
-                                Spacer(modifier = Modifier.height(2.dp))
-
-                                val count = cat.articleCount ?: 0
-                                Text(
-                                    text = "$count mục",
-                                    style = MaterialTheme.typography.bodySmall.copy(
-                                        fontSize = 13.sp,
-                                        fontWeight = if (count > 0) FontWeight.Medium else FontWeight.Normal
-                                    ),
-                                    color = if (count > 0) (if (isDark) Color(0xFF60A5FA) else Color(0xFF2563EB)) else (if (isDark) Color(0xFF94A3B8) else Color(0xFF9CA3AF))
-                                )
-                            }
-
-                            // Menu tuỳ chọn 3 chấm dọc
-                            Box {
-                                IconButton(
-                                    onClick = { showItemMenu = true },
-                                    modifier = Modifier.size(32.dp)
+                                // Huy hiệu hình tròn có icon và màu tương ứng theo thiết kế hình 1
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .background(parseHexColor(cat.color)),
+                                    contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.MoreVert,
-                                        contentDescription = "Tuỳ chọn",
-                                        tint = if (isDark) Color(0xFF94A3B8) else Color(0xFF9CA3AF),
-                                        modifier = Modifier.size(20.dp)
+                                        imageVector = getCategoryIcon(cat.name, cat.icon),
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp)
                                     )
                                 }
 
-                                DropdownMenu(
-                                    expanded = showItemMenu,
-                                    onDismissRequest = { showItemMenu = false }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.action_edit_category)) },
-                                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
-                                        onClick = {
-                                             showItemMenu = false
-                                             editingCategory = cat
-                                             categoryNameInput = cat.name
-                                             categoryColorInput = cat.color
-                                        }
+                                Spacer(modifier = Modifier.width(14.dp))
+
+                                // Tên danh mục và số lượng bài viết
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = cat.name,
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 16.sp
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
-                                    if (!cat.isSystem) {
-                                        HorizontalDivider()
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(
-                                                    stringResource(R.string.action_delete_category),
-                                                    color = MaterialTheme.colorScheme.error
-                                                )
-                                            },
-                                            leadingIcon = {
-                                                Icon(
-                                                    Icons.Default.Delete,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.error
-                                                )
-                                            },
-                                            onClick = {
-                                                showItemMenu = false
-                                                deletingCategory = cat
-                                            }
+
+                                    Spacer(modifier = Modifier.height(2.dp))
+
+                                    val count = cat.articleCount ?: 0
+                                    Text(
+                                        text = "$count mục",
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontSize = 13.sp,
+                                            fontWeight = if (count > 0) FontWeight.Medium else FontWeight.Normal
+                                        ),
+                                        color = if (count > 0) (if (isDark) Color(0xFF60A5FA) else Color(0xFF2563EB)) else (if (isDark) Color(0xFF94A3B8) else Color(0xFF9CA3AF))
+                                    )
+                                }
+
+                                // Menu tuỳ chọn 3 chấm dọc
+                                Box {
+                                    IconButton(
+                                        onClick = { showItemMenu = true },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.MoreVert,
+                                            contentDescription = "Tuỳ chọn",
+                                            tint = if (isDark) Color(0xFF94A3B8) else Color(0xFF9CA3AF),
+                                            modifier = Modifier.size(20.dp)
                                         )
                                     }
-                                }
-                            }
 
-                            // Mũi tên chỉ dẫn bấm vào
-                            Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = "Xem danh mục",
-                                tint = if (isDark) Color(0xFF64748B) else Color(0xFFD1D5DB),
-                                modifier = Modifier.size(20.dp)
-                            )
+                                    DropdownMenu(
+                                        expanded = showItemMenu,
+                                        onDismissRequest = { showItemMenu = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.action_edit_category)) },
+                                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                                            onClick = {
+                                                 showItemMenu = false
+                                                 editingCategory = cat
+                                                 categoryNameInput = cat.name
+                                                 categoryColorInput = cat.color
+                                            }
+                                        )
+                                        if (!cat.isSystem) {
+                                            HorizontalDivider()
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        stringResource(R.string.action_delete_category),
+                                                        color = MaterialTheme.colorScheme.error
+                                                    )
+                                                },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        Icons.Default.Delete,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.error
+                                                    )
+                                                },
+                                                onClick = {
+                                                    showItemMenu = false
+                                                    deletingCategory = cat
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Mũi tên chỉ dẫn bấm vào
+                                Icon(
+                                    imageVector = Icons.Default.ChevronRight,
+                                    contentDescription = "Xem danh mục",
+                                    tint = if (isDark) Color(0xFF64748B) else Color(0xFFD1D5DB),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
                 }

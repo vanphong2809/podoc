@@ -19,6 +19,27 @@ async def list_categories(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Lấy danh sách toàn bộ danh mục, kèm số lượng bài viết trong mỗi danh mục, sắp xếp theo sort_order."""
+    # 1. Tự động khắc phục bài viết mồ côi (category_id null hoặc không hợp lệ) về danh mục mặc định
+    default_cat_stmt = select(Category).order_by(Category.is_system.desc(), Category.sort_order.asc(), Category.id.asc()).limit(1)
+    default_cat_res = await db.execute(default_cat_stmt)
+    default_cat = default_cat_res.scalar_one_or_none()
+
+    if default_cat:
+        cat_ids_stmt = select(Category.id)
+        from sqlalchemy import or_
+        await db.execute(
+            update(Article)
+            .where(
+                or_(
+                    Article.category_id.is_(None),
+                    Article.category_id.not_in(cat_ids_stmt)
+                )
+            )
+            .values(category_id=default_cat.id)
+        )
+        await db.commit()
+
+    # 2. Truy vấn danh mục kèm số lượng bài viết chuẩn xác
     stmt = (
         select(Category, func.count(Article.id).label("article_count"))
         .outerjoin(Article, Article.category_id == Category.id)

@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 data class CategoryUiState(
     val categories: List<Category> = emptyList(),
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val errorMessage: String? = null
 )
 
@@ -21,19 +22,36 @@ class CategoryViewModel(private val categoryRepository: CategoryRepository) : Vi
     val uiState: StateFlow<CategoryUiState> = _uiState.asStateFlow()
 
     init {
+        // Lắng nghe cập nhật danh mục từ CategoryRepository theo thời gian thực
+        viewModelScope.launch {
+            categoryRepository.categoriesFlow.collect { updatedList ->
+                if (updatedList.isNotEmpty()) {
+                    _uiState.value = _uiState.value.copy(categories = updatedList)
+                }
+            }
+        }
         loadCategories()
     }
 
-    fun loadCategories() {
-        _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+    fun loadCategories(refresh: Boolean = false) {
+        if (refresh) {
+            _uiState.value = _uiState.value.copy(isRefreshing = true, errorMessage = null)
+        } else {
+            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+        }
         viewModelScope.launch {
             categoryRepository.getCategories().fold(
                 onSuccess = { list ->
-                    _uiState.value = _uiState.value.copy(isLoading = false, categories = list)
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        categories = list
+                    )
                 },
                 onFailure = { error ->
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
+                        isRefreshing = false,
                         errorMessage = error.message ?: "Lỗi tải danh mục"
                     )
                 }

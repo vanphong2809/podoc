@@ -305,6 +305,7 @@ class PreviewViewModel(
                         isSaved = true,
                         savedArticleId = created.id
                     )
+                    categoryRepository.getCategories()
                 },
                 onFailure = { error ->
                     _uiState.value = _uiState.value.copy(
@@ -348,6 +349,7 @@ class PreviewViewModel(
                         isSaved = true,
                         savedArticleId = created.id
                     )
+                    categoryRepository.getCategories()
                 },
                 onFailure = { error ->
                     _uiState.value = _uiState.value.copy(

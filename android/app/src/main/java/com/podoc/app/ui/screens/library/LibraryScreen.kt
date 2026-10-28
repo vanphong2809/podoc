@@ -97,24 +97,34 @@ fun LibraryScreen(
         }
     }
 
+    // Cuộn về đầu danh sách mỗi khi chuyển bộ lọc hoặc chuyển tab
+    LaunchedEffect(uiState.selectedContentType, uiState.selectedCategoryId, uiState.onlyFavorites) {
+        listState.scrollToItem(0)
+        gridState.scrollToItem(0)
+    }
+
     // Tải thêm trang tiếp theo khi cuộn gần cuối trong Danh sách
-    LaunchedEffect(listState) {
-        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
-            .collect { lastIndex ->
-                if (lastIndex != null && lastIndex >= uiState.articles.size - 3 && uiState.hasMore && !uiState.isLoading) {
-                    viewModel.loadArticles(refresh = false)
+    LaunchedEffect(listState, isMediaGrid, uiState.isLoading, uiState.isRefreshing, uiState.hasMore, uiState.articles.size) {
+        if (!isMediaGrid && !uiState.isLoading && !uiState.isRefreshing && uiState.hasMore && uiState.articles.isNotEmpty()) {
+            snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+                .collect { lastIndex ->
+                    if (lastIndex != null && lastIndex >= uiState.articles.size - 3 && uiState.hasMore && !uiState.isLoading && !uiState.isRefreshing) {
+                        viewModel.loadArticles(refresh = false)
+                    }
                 }
-            }
+        }
     }
 
     // Tải thêm trang tiếp theo khi cuộn gần cuối trong Lưới Hình ảnh/Video
-    LaunchedEffect(gridState) {
-        snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
-            .collect { lastIndex ->
-                if (lastIndex != null && lastIndex >= uiState.articles.size - 10 && uiState.hasMore && !uiState.isLoading) {
-                    viewModel.loadArticles(refresh = false)
+    LaunchedEffect(gridState, isMediaGrid, uiState.isLoading, uiState.isRefreshing, uiState.hasMore, uiState.articles.size) {
+        if (isMediaGrid && !uiState.isLoading && !uiState.isRefreshing && uiState.hasMore && uiState.articles.isNotEmpty()) {
+            snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+                .collect { lastIndex ->
+                    if (lastIndex != null && lastIndex >= uiState.articles.size - 10 && uiState.hasMore && !uiState.isLoading && !uiState.isRefreshing) {
+                        viewModel.loadArticles(refresh = false)
+                    }
                 }
-            }
+        }
     }
 
     Scaffold(
