@@ -194,83 +194,7 @@ fun ReaderScreen(
 
     Scaffold(
         topBar = {
-            if (isVideo) {
-                // Thanh điều hướng thu gọn siêu mỏng (44dp) khi xem video để tối đa hoá diện tích màn hình
-                Surface(
-                    color = Color(0xFF0F172A),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
-                            .padding(horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(
-                            onClick = onNavigateBack,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Quay lại",
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        Text(
-                            text = article?.title ?: "Video",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold
-                            ),
-                            color = Color.White,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(horizontal = 8.dp)
-                        )
-                        IconButton(
-                            onClick = { viewModel.openOriginalFile(context) },
-                            enabled = !uiState.isDownloadingFile,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            if (uiState.isDownloadingFile) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.OpenInNew,
-                                    contentDescription = "Mở app khác",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                        IconButton(
-                            onClick = {
-                                val art = article ?: return@IconButton
-                                val intent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_SUBJECT, art.title)
-                                    putExtra(Intent.EXTRA_TEXT, "${art.title}\n\n${art.sourceUrl ?: ""}")
-                                }
-                                context.startActivity(Intent.createChooser(intent, "Chia sẻ"))
-                            },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Share,
-                                contentDescription = "Chia sẻ",
-                                tint = Color.White,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                }
-            } else {
+            if (!isVideo) {
                 Column {
                     PoDocTopAppBar(
                         title = article?.title?.take(25)?.let { "$it..." } ?: "Tài liệu",
@@ -359,7 +283,7 @@ fun ReaderScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(if (isVideo) PaddingValues(0.dp) else innerPadding)
         ) {
             when {
                 uiState.isLoading -> {
@@ -395,7 +319,8 @@ fun ReaderScreen(
                             cleanedMarkdown = cleanedMarkdown,
                             markdownBlocks = markdownBlocks,
                             onRetryLoad = { viewModel.loadFileForInApp(context, article) },
-                            onOpenExternal = { viewModel.openOriginalFile(context) }
+                            onOpenExternal = { viewModel.openOriginalFile(context) },
+                            onNavigateBack = onNavigateBack
                         )
                     } else {
                         // CHẾ ĐỘ ĐỌC BÀI VIẾT WEB (MARKDOWN 120 FPS)
@@ -425,7 +350,8 @@ private fun InAppFileContent(
     cleanedMarkdown: String,
     markdownBlocks: List<String>,
     onRetryLoad: () -> Unit,
-    onOpenExternal: () -> Unit
+    onOpenExternal: () -> Unit,
+    onNavigateBack: () -> Unit = {}
 ) {
     if (uiState.isFileLoading) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -473,7 +399,12 @@ private fun InAppFileContent(
         isVideo -> {
             val file = uiState.localFile
             if (file != null && file.exists()) {
-                InAppVideoViewer(file = file, article = article, onOpenExternal = onOpenExternal)
+                InAppVideoViewer(
+                    file = file,
+                    article = article,
+                    onOpenExternal = onOpenExternal,
+                    onNavigateBack = onNavigateBack
+                )
             } else {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
@@ -1033,14 +964,16 @@ private fun splitMarkdownIntoBlocks(markdown: String): List<String> {
 }
 
 /**
- * Trình phát Video tối ưu không gian hiển thị, gắn trực tiếp với MediaPlaybackManager
+ * Trình phát Video tối ưu không gian hiển thị tràn viền (0dp top bar), gắn trực tiếp với MediaPlaybackManager
  * Duy trì phát âm thanh liên tục trong nền ngay cả khi tắt màn hình điện thoại.
+ * Các nút điều khiển nổi (Back, Play/Pause, Tua, Mở ngoài) tự động biến mất khi đang xem video.
  */
 @Composable
 private fun InAppVideoViewer(
     file: File,
     article: ArticleDetail,
-    onOpenExternal: () -> Unit
+    onOpenExternal: () -> Unit,
+    onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
     val isPlaying by MediaPlaybackManager.isPlaying.collectAsState()
@@ -1069,6 +1002,11 @@ private fun InAppVideoViewer(
         }
     }
 
+    // Bắt phím Back của hệ thống
+    BackHandler(enabled = true) {
+        onNavigateBack()
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1094,7 +1032,7 @@ private fun InAppVideoViewer(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Overlay điều khiển khi chạm vào màn hình
+        // Overlay điều khiển khi chạm vào màn hình (tự biến mất sau 3.5s, không chiếm diện tích 0dp)
         AnimatedVisibility(
             visible = showControls,
             enter = fadeIn(),
@@ -1104,13 +1042,88 @@ private fun InAppVideoViewer(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.45f))
+                    .background(Color.Black.copy(alpha = 0.4f))
             ) {
-                // Nút Play / Pause chính giữa
+                // 1. THANH TOP OVERLAY NỔI TRỰC TIẾP TRÊN VIDEO (Bao gồm nút Back, Tiêu đề, Mở app ngoài, Chia sẻ)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                        .align(Alignment.TopCenter),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onNavigateBack,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Quay lại",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    Text(
+                        text = article.title,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 12.dp)
+                    )
+
+                    IconButton(
+                        onClick = onOpenExternal,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.OpenInNew,
+                            contentDescription = "Mở app khác",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    IconButton(
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, article.title)
+                                putExtra(Intent.EXTRA_TEXT, "${article.title}\n\n${article.sourceUrl ?: ""}")
+                            }
+                            context.startActivity(Intent.createChooser(intent, "Chia sẻ"))
+                        },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Chia sẻ",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                // 2. NÚT PLAY / PAUSE CHÍNH GIỮA MÀN HÌNH
                 IconButton(
                     onClick = { MediaPlaybackManager.togglePlayPause(context) },
                     modifier = Modifier
-                        .size(64.dp)
+                        .size(68.dp)
                         .align(Alignment.Center)
                         .background(Color.Black.copy(alpha = 0.65f), CircleShape)
                 ) {
@@ -1118,15 +1131,16 @@ private fun InAppVideoViewer(
                         imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                         contentDescription = if (isPlaying) "Tạm dừng" else "Phát",
                         tint = Color.White,
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(38.dp)
                     )
                 }
 
-                // Thanh điều khiển thời gian ở cạnh đáy
+                // 3. THANH ĐIỀU KHIỂN THỜI GIAN & TUA Ở ĐÁY MÀN HÌNH
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
                     Row(
