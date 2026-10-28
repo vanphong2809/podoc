@@ -103,7 +103,11 @@ class AppContainer(private val context: Context) {
         ArticleRepository(
             apiServiceProvider = { getApiService() },
             context = context,
-            serverUrlProvider = { currentServerUrl }
+            serverUrlProvider = {
+                currentServerUrl.ifBlank {
+                    runBlocking { dataStoreManager.serverUrlFlow.first() }
+                }
+            }
         )
     }
 }

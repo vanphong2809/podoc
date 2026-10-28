@@ -47,7 +47,19 @@ class ArticleRepository(
                 page = page,
                 pageSize = pageSize
             )
-            val mapped = list.map { it.copy(imageUrl = resolveImageUrl(it.imageUrl)) }
+            val mapped = list.map { item ->
+                val resolved = resolveImageUrl(item.imageUrl)
+                val finalUrl = if (!resolved.isNullOrBlank()) {
+                    resolved
+                } else if (item.sourceType == "FILE" || !item.filePath.isNullOrBlank() || item.mimeType?.startsWith("image/") == true || item.mimeType?.startsWith("video/") == true) {
+                    val lower = (item.fileName ?: item.filePath ?: "").lowercase()
+                    val isMedia = item.mimeType?.startsWith("image/") == true ||
+                            item.mimeType?.startsWith("video/") == true ||
+                            listOf(".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp", ".mp4", ".mov", ".mkv", ".webm", ".avi", ".3gp").any { lower.endsWith(it) }
+                    if (isMedia) resolveImageUrl("/api/articles/${item.id}/file?inline=true") else null
+                } else null
+                item.copy(imageUrl = finalUrl)
+            }
             Result.success(mapped)
         } catch (e: Exception) {
             Result.failure(e)
@@ -57,7 +69,17 @@ class ArticleRepository(
     suspend fun getArticleDetail(id: Int): Result<ArticleDetail> {
         return try {
             val detail = getApi().getArticleDetail(id)
-            Result.success(detail.copy(imageUrl = resolveImageUrl(detail.imageUrl)))
+            val resolved = resolveImageUrl(detail.imageUrl)
+            val finalUrl = if (!resolved.isNullOrBlank()) {
+                resolved
+            } else if (detail.sourceType == "FILE" || !detail.filePath.isNullOrBlank() || detail.mimeType?.startsWith("image/") == true || detail.mimeType?.startsWith("video/") == true) {
+                val lower = (detail.fileName ?: detail.filePath ?: "").lowercase()
+                val isMedia = detail.mimeType?.startsWith("image/") == true ||
+                        detail.mimeType?.startsWith("video/") == true ||
+                        listOf(".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp", ".mp4", ".mov", ".mkv", ".webm", ".avi", ".3gp").any { lower.endsWith(it) }
+                if (isMedia) resolveImageUrl("/api/articles/${detail.id}/file?inline=true") else null
+            } else null
+            Result.success(detail.copy(imageUrl = finalUrl))
         } catch (e: Exception) {
             Result.failure(e)
         }

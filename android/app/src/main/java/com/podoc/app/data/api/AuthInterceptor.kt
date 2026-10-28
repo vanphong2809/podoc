@@ -13,7 +13,12 @@ class AuthInterceptor(
         val token = tokenProvider()
 
         val requestBuilder = originalRequest.newBuilder()
-            .header("Accept", "application/json")
+        if (!token.isNullOrBlank()) {
+            requestBuilder.header("Authorization", "Bearer $token")
+        }
+        if (originalRequest.header("Accept") == null) {
+            requestBuilder.header("Accept", "application/json")
+        }
 
         return chain.proceed(requestBuilder.build())
     }

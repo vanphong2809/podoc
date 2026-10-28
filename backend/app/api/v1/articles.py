@@ -141,11 +141,20 @@ async def list_articles(
     for art in articles:
         resolved_img = art.image_url
         if not resolved_img:
-            # 1. Nếu là file ảnh, tự động trỏ tới endpoint file inline
-            if art.source_type == "FILE" and (
+            # 1. Nếu là file media (ảnh hoặc video), tự động trỏ tới endpoint file inline
+            lower_name = (art.file_name or "").lower()
+            lower_path = (art.file_path or "").lower()
+            is_image = (
                 (art.mime_type and art.mime_type.startswith("image/"))
-                or (art.file_name and any(art.file_name.lower().endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg")))
-            ):
+                or any(lower_name.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"))
+                or any(lower_path.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"))
+            )
+            is_video = (
+                (art.mime_type and art.mime_type.startswith("video/"))
+                or any(lower_name.endswith(ext) for ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts", ".flv"))
+                or any(lower_path.endswith(ext) for ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts", ".flv"))
+            )
+            if art.file_path and (is_image or is_video):
                 resolved_img = f"/api/articles/{art.id}/file?inline=true"
             # 2. Nếu là bài viết có ảnh trong nội dung markdown
             elif art.content_markdown:
@@ -324,8 +333,8 @@ async def upload_article_file(
     db.add(new_article)
     await db.flush()
 
-    # Nếu là ảnh, tự động cấu hình đường dẫn ảnh thumbnail inline
-    if mime_type.startswith("image/") or orig_ext in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"):
+    # Nếu là ảnh hoặc video, tự động cấu hình đường dẫn media thumbnail inline
+    if is_image or is_video:
         new_article.image_url = f"/api/articles/{new_article.id}/file?inline=true"
 
     await db.commit()
@@ -350,10 +359,19 @@ async def get_article(
 
     resolved_img = art.image_url
     if not resolved_img:
-        if art.source_type == "FILE" and (
+        lower_name = (art.file_name or "").lower()
+        lower_path = (art.file_path or "").lower()
+        is_image = (
             (art.mime_type and art.mime_type.startswith("image/"))
-            or (art.file_name and any(art.file_name.lower().endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg")))
-        ):
+            or any(lower_name.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"))
+            or any(lower_path.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"))
+        )
+        is_video = (
+            (art.mime_type and art.mime_type.startswith("video/"))
+            or any(lower_name.endswith(ext) for ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts", ".flv"))
+            or any(lower_path.endswith(ext) for ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts", ".flv"))
+        )
+        if art.file_path and (is_image or is_video):
             resolved_img = f"/api/articles/{art.id}/file?inline=true"
         elif art.content_markdown:
             import re

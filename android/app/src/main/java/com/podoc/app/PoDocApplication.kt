@@ -4,6 +4,7 @@ import android.app.Application
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.decode.SvgDecoder
+import coil.decode.VideoFrameDecoder
 import com.podoc.app.di.AppContainer
 
 class PoDocApplication : Application(), ImageLoaderFactory {
@@ -20,6 +21,7 @@ class PoDocApplication : Application(), ImageLoaderFactory {
             .okHttpClient { container.okHttpClient }
             .components {
                 add(SvgDecoder.Factory())
+                add(VideoFrameDecoder.Factory())
             }
             .crossfade(true)
             .build()

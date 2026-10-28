@@ -609,25 +609,33 @@ private fun MediaGridItem(
     isVideo: Boolean,
     onClick: () -> Unit
 ) {
+    val context = LocalContext.current
+    var isImageError by remember(article.imageUrl) { mutableStateOf(false) }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
             .clip(RoundedCornerShape(6.dp))
-            .background(Color(0xFFF3F4F6))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable(onClick = onClick)
     ) {
-        if (!article.imageUrl.isNullOrBlank()) {
+        if (!article.imageUrl.isNullOrBlank() && !isImageError) {
             AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
+                model = ImageRequest.Builder(context)
                     .data(article.imageUrl)
                     .crossfade(true)
                     .build(),
                 contentDescription = article.title,
                 contentScale = ContentScale.Crop,
+                onError = {
+                    isImageError = true
+                },
                 modifier = Modifier.fillMaxSize()
             )
-        } else {
+        }
+
+        if (article.imageUrl.isNullOrBlank() || isImageError) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -635,7 +643,7 @@ private fun MediaGridItem(
                 Icon(
                     imageVector = if (isVideo) Icons.Default.Videocam else Icons.Default.Image,
                     contentDescription = null,
-                    tint = Color(0xFF9CA3AF),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -645,7 +653,7 @@ private fun MediaGridItem(
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .size(26.dp)
+                    .size(28.dp)
                     .clip(CircleShape)
                     .background(Color.Black.copy(alpha = 0.55f)),
                 contentAlignment = Alignment.Center
@@ -654,7 +662,7 @@ private fun MediaGridItem(
                     imageVector = Icons.Default.PlayArrow,
                     contentDescription = "Video",
                     tint = Color.White,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
