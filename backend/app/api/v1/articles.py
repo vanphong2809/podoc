@@ -21,6 +21,7 @@ from app.schemas.article import (
 )
 from app.services.extractors.base import generate_excerpt
 from app.services.extractors.registry import extractor_registry
+from app.services.thumbnail import ensure_thumbnail
 from app.services.url_utils import normalize_url
 
 router = APIRouter(prefix="/articles", tags=["Articles"])
@@ -140,28 +141,26 @@ async def list_articles(
     response_items = []
     for art in articles:
         resolved_img = art.image_url
-        if not resolved_img:
-            # 1. Nếu là file media (ảnh hoặc video), tự động trỏ tới endpoint file inline
-            lower_name = (art.file_name or "").lower()
-            lower_path = (art.file_path or "").lower()
-            is_image = (
-                (art.mime_type and art.mime_type.startswith("image/"))
-                or any(lower_name.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"))
-                or any(lower_path.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"))
-            )
-            is_video = (
-                (art.mime_type and art.mime_type.startswith("video/"))
-                or any(lower_name.endswith(ext) for ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts", ".flv"))
-                or any(lower_path.endswith(ext) for ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts", ".flv"))
-            )
-            if art.file_path and (is_image or is_video):
-                resolved_img = f"/api/articles/{art.id}/file?inline=true"
-            # 2. Nếu là bài viết có ảnh trong nội dung markdown
-            elif art.content_markdown:
-                import re
-                m = re.search(r'!\[.*?\]\((https?://[^\s\)]+)\)', art.content_markdown)
-                if m:
-                    resolved_img = m.group(1)
+        lower_name = (art.file_name or "").lower()
+        lower_path = (art.file_path or "").lower()
+        is_image = (
+            (art.mime_type and art.mime_type.startswith("image/"))
+            or any(lower_name.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"))
+            or any(lower_path.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"))
+        )
+        is_video = (
+            (art.mime_type and art.mime_type.startswith("video/"))
+            or any(lower_name.endswith(ext) for ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts", ".flv"))
+            or any(lower_path.endswith(ext) for ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts", ".flv"))
+        )
+        # Nếu là tệp hình ảnh hoặc video đính kèm, luôn phân giải về endpoint thumbnail tối ưu băng thông
+        if art.file_path and (is_image or is_video):
+            resolved_img = f"/api/articles/{art.id}/thumbnail"
+        elif not resolved_img and art.content_markdown:
+            import re
+            m = re.search(r'!\[.*?\]\((https?://[^\s\)]+)\)', art.content_markdown)
+            if m:
+                resolved_img = m.group(1)
 
         response_items.append(
             ArticleListResponse(
@@ -195,6 +194,7 @@ async def upload_article_file(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     file: UploadFile = File(...),
+    thumbnail: Optional[UploadFile] = File(None),
     category_id: Optional[int] = Form(None),
     title: Optional[str] = Form(None),
 ):
@@ -333,9 +333,24 @@ async def upload_article_file(
     db.add(new_article)
     await db.flush()
 
-    # Nếu là ảnh hoặc video, tự động cấu hình đường dẫn media thumbnail inline
+    # 6. Nếu là ảnh hoặc video, lưu thumbnail hoặc tự động sinh thumbnail từ frame video / resize ảnh
     if is_image or is_video:
-        new_article.image_url = f"/api/articles/{new_article.id}/file?inline=true"
+        thumb_filename = f"thumb_{os.path.splitext(stored_filename)[0]}.jpg"
+        thumb_disk_path = os.path.join(settings.FILES_STORAGE_DIR, thumb_filename)
+        saved_thumb = False
+        if thumbnail is not None:
+            try:
+                thumb_bytes = await thumbnail.read()
+                if thumb_bytes and len(thumb_bytes) > 0:
+                    with open(thumb_disk_path, "wb") as f_thumb:
+                        f_thumb.write(thumb_bytes)
+                    saved_thumb = True
+            except Exception:
+                saved_thumb = False
+        if not saved_thumb:
+            ensure_thumbnail(stored_filename, settings.FILES_STORAGE_DIR, mime_type, orig_name)
+
+        new_article.image_url = f"/api/articles/{new_article.id}/thumbnail"
 
     await db.commit()
     await db.refresh(new_article)
@@ -358,26 +373,25 @@ async def get_article(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
 
     resolved_img = art.image_url
-    if not resolved_img:
-        lower_name = (art.file_name or "").lower()
-        lower_path = (art.file_path or "").lower()
-        is_image = (
-            (art.mime_type and art.mime_type.startswith("image/"))
-            or any(lower_name.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"))
-            or any(lower_path.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"))
-        )
-        is_video = (
-            (art.mime_type and art.mime_type.startswith("video/"))
-            or any(lower_name.endswith(ext) for ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts", ".flv"))
-            or any(lower_path.endswith(ext) for ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts", ".flv"))
-        )
-        if art.file_path and (is_image or is_video):
-            resolved_img = f"/api/articles/{art.id}/file?inline=true"
-        elif art.content_markdown:
-            import re
-            m = re.search(r'!\[.*?\]\((https?://[^\s\)]+)\)', art.content_markdown)
-            if m:
-                resolved_img = m.group(1)
+    lower_name = (art.file_name or "").lower()
+    lower_path = (art.file_path or "").lower()
+    is_image = (
+        (art.mime_type and art.mime_type.startswith("image/"))
+        or any(lower_name.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"))
+        or any(lower_path.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"))
+    )
+    is_video = (
+        (art.mime_type and art.mime_type.startswith("video/"))
+        or any(lower_name.endswith(ext) for ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts", ".flv"))
+        or any(lower_path.endswith(ext) for ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts", ".flv"))
+    )
+    if art.file_path and (is_image or is_video):
+        resolved_img = f"/api/articles/{art.id}/thumbnail"
+    elif not resolved_img and art.content_markdown:
+        import re
+        m = re.search(r'!\[.*?\]\((https?://[^\s\)]+)\)', art.content_markdown)
+        if m:
+            resolved_img = m.group(1)
 
     return ArticleDetailResponse(
         id=art.id,
@@ -496,7 +510,7 @@ async def delete_article(
     if not art:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
 
-    # Xoá file gốc nếu có
+    # Xoá file gốc và thumbnail nếu có
     if art.file_path:
         disk_path = os.path.join(settings.FILES_STORAGE_DIR, art.file_path)
         if os.path.exists(disk_path):
@@ -504,9 +518,77 @@ async def delete_article(
                 os.remove(disk_path)
             except OSError:
                 pass
+        thumb_filename = f"thumb_{os.path.splitext(art.file_path)[0]}.jpg"
+        thumb_path = os.path.join(settings.FILES_STORAGE_DIR, thumb_filename)
+        if os.path.exists(thumb_path):
+            try:
+                os.remove(thumb_path)
+            except OSError:
+                pass
 
     await db.delete(art)
     await db.commit()
+
+
+@router.get("/{id}/thumbnail")
+async def get_article_thumbnail(
+    id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Trả về ảnh thumbnail nhỏ gọn cho bài viết (dùng hiển thị lưới và thẻ bài viết).
+    Tự động trích xuất frame từ video hoặc resize ảnh nếu chưa có thumbnail sẵn.
+    """
+    stmt = select(Article).where(Article.id == id)
+    result = await db.execute(stmt)
+    art = result.scalar_one_or_none()
+
+    if not art:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
+
+    if not art.file_path:
+        if art.image_url and art.image_url.startswith("http"):
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url=art.image_url)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bài viết không có hình ảnh hoặc video")
+
+    # 1. Thử lấy thumbnail có sẵn hoặc tạo mới
+    thumb_name = ensure_thumbnail(
+        art.file_path,
+        settings.FILES_STORAGE_DIR,
+        art.mime_type,
+        art.file_name,
+    )
+
+    if thumb_name:
+        thumb_path = os.path.join(settings.FILES_STORAGE_DIR, thumb_name)
+        if os.path.exists(thumb_path) and os.path.getsize(thumb_path) > 0:
+            return FileResponse(
+                path=thumb_path,
+                media_type="image/jpeg",
+                filename=f"thumb_{art.id}.jpg",
+                content_disposition_type="inline",
+            )
+
+    # 2. Fallback: Nếu là ảnh và không tạo được thumbnail thì trả về ảnh gốc inline
+    raw_path = os.path.join(settings.FILES_STORAGE_DIR, art.file_path)
+    if os.path.exists(raw_path):
+        lower_name = (art.file_name or "").lower()
+        lower_path = (art.file_path or "").lower()
+        is_image = (
+            (art.mime_type and art.mime_type.startswith("image/"))
+            or any(lower_name.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"))
+            or any(lower_path.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"))
+        )
+        if is_image:
+            return FileResponse(
+                path=raw_path,
+                media_type=art.mime_type or "image/jpeg",
+                filename=art.file_name or f"thumb_{art.id}.jpg",
+                content_disposition_type="inline",
+            )
+
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không thể tạo hoặc tải thumbnail")
 
 
 @router.get("/{id}/file")

@@ -4,12 +4,16 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import com.podoc.app.data.api.PoDocApiService
 import com.podoc.app.data.model.*
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.ResponseBody
+import java.io.ByteArrayOutputStream
 
 class ArticleRepository(
     private val apiServiceProvider: () -> PoDocApiService?,
@@ -48,16 +52,15 @@ class ArticleRepository(
                 pageSize = pageSize
             )
             val mapped = list.map { item ->
-                val resolved = resolveImageUrl(item.imageUrl)
-                val finalUrl = if (!resolved.isNullOrBlank()) {
-                    resolved
-                } else if (item.sourceType == "FILE" || !item.filePath.isNullOrBlank() || item.mimeType?.startsWith("image/") == true || item.mimeType?.startsWith("video/") == true) {
-                    val lower = (item.fileName ?: item.filePath ?: "").lowercase()
-                    val isMedia = item.mimeType?.startsWith("image/") == true ||
-                            item.mimeType?.startsWith("video/") == true ||
-                            listOf(".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp", ".mp4", ".mov", ".mkv", ".webm", ".avi", ".3gp").any { lower.endsWith(it) }
-                    if (isMedia) resolveImageUrl("/api/articles/${item.id}/file?inline=true") else null
-                } else null
+                val lower = (item.fileName ?: item.filePath ?: "").lowercase()
+                val isMedia = item.mimeType?.startsWith("image/") == true ||
+                        item.mimeType?.startsWith("video/") == true ||
+                        listOf(".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp", ".mp4", ".mov", ".mkv", ".webm", ".avi", ".3gp").any { lower.endsWith(it) }
+                val finalUrl = if (item.sourceType == "FILE" && isMedia) {
+                    resolveImageUrl("/api/articles/${item.id}/thumbnail")
+                } else {
+                    resolveImageUrl(item.imageUrl)
+                }
                 item.copy(imageUrl = finalUrl)
             }
             Result.success(mapped)
@@ -69,16 +72,15 @@ class ArticleRepository(
     suspend fun getArticleDetail(id: Int): Result<ArticleDetail> {
         return try {
             val detail = getApi().getArticleDetail(id)
-            val resolved = resolveImageUrl(detail.imageUrl)
-            val finalUrl = if (!resolved.isNullOrBlank()) {
-                resolved
-            } else if (detail.sourceType == "FILE" || !detail.filePath.isNullOrBlank() || detail.mimeType?.startsWith("image/") == true || detail.mimeType?.startsWith("video/") == true) {
-                val lower = (detail.fileName ?: detail.filePath ?: "").lowercase()
-                val isMedia = detail.mimeType?.startsWith("image/") == true ||
-                        detail.mimeType?.startsWith("video/") == true ||
-                        listOf(".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp", ".mp4", ".mov", ".mkv", ".webm", ".avi", ".3gp").any { lower.endsWith(it) }
-                if (isMedia) resolveImageUrl("/api/articles/${detail.id}/file?inline=true") else null
-            } else null
+            val lower = (detail.fileName ?: detail.filePath ?: "").lowercase()
+            val isMedia = detail.mimeType?.startsWith("image/") == true ||
+                    detail.mimeType?.startsWith("video/") == true ||
+                    listOf(".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp", ".mp4", ".mov", ".mkv", ".webm", ".avi", ".3gp").any { lower.endsWith(it) }
+            val finalUrl = if (detail.sourceType == "FILE" && isMedia) {
+                resolveImageUrl("/api/articles/${detail.id}/thumbnail")
+            } else {
+                resolveImageUrl(detail.imageUrl)
+            }
             Result.success(detail.copy(imageUrl = finalUrl))
         } catch (e: Exception) {
             Result.failure(e)
@@ -192,6 +194,64 @@ class ArticleRepository(
                 )
             }
 
+            var thumbnailPart: MultipartBody.Part? = null
+            if (isVideo) {
+                try {
+                    val retriever = MediaMetadataRetriever()
+                    retriever.setDataSource(context, uri)
+                    val frame = retriever.getFrameAtTime(1000000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                        ?: retriever.frameAtTime
+                    if (frame != null) {
+                        val maxDim = 480
+                        val width = frame.width
+                        val height = frame.height
+                        val scale = if (width > maxDim || height > maxDim) {
+                            maxDim.toFloat() / maxOf(width, height)
+                        } else 1f
+                        val scaledBitmap = if (scale < 1f) {
+                            Bitmap.createScaledBitmap(frame, (width * scale).toInt(), (height * scale).toInt(), true)
+                        } else frame
+                        val baos = ByteArrayOutputStream()
+                        scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 80, baos)
+                        val thumbBytes = baos.toByteArray()
+                        val thumbBody = thumbBytes.toRequestBody("image/jpeg".toMediaTypeOrNull())
+                        thumbnailPart = MultipartBody.Part.createFormData("thumbnail", "thumb_${fileName}.jpg", thumbBody)
+                    }
+                    retriever.release()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            } else if (isImage) {
+                try {
+                    val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, boundsOptions)
+                    val origW = boundsOptions.outWidth
+                    val origH = boundsOptions.outHeight
+                    val maxDim = 480
+                    var sampleSize = 1
+                    while (origW / (sampleSize * 2) >= maxDim && origH / (sampleSize * 2) >= maxDim) {
+                        sampleSize *= 2
+                    }
+                    val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOptions)
+                    if (bitmap != null) {
+                        val scale = if (bitmap.width > maxDim || bitmap.height > maxDim) {
+                            maxDim.toFloat() / maxOf(bitmap.width, bitmap.height)
+                        } else 1f
+                        val scaledBitmap = if (scale < 1f) {
+                            Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt(), (bitmap.height * scale).toInt(), true)
+                        } else bitmap
+                        val baos = ByteArrayOutputStream()
+                        scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 80, baos)
+                        val thumbBytes = baos.toByteArray()
+                        val thumbBody = thumbBytes.toRequestBody("image/jpeg".toMediaTypeOrNull())
+                        thumbnailPart = MultipartBody.Part.createFormData("thumbnail", "thumb_${fileName}.jpg", thumbBody)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
             val requestFile = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
             val filePart = MultipartBody.Part.createFormData("file", fileName, requestFile)
 
@@ -199,7 +259,7 @@ class ArticleRepository(
             val titleBody = customTitle?.toRequestBody("text/plain".toMediaTypeOrNull())
 
             val article = try {
-                getApi().uploadArticleFile(filePart, catBody, titleBody)
+                getApi().uploadArticleFile(filePart, thumbnailPart, catBody, titleBody)
             } catch (e: retrofit2.HttpException) {
                 if (e.code() == 413) {
                     val errDetail = try {
@@ -233,7 +293,16 @@ class ArticleRepository(
                     throw e
                 }
             }
-            Result.success(article.copy(imageUrl = resolveImageUrl(article.imageUrl)))
+            val lower = (article.fileName ?: article.filePath ?: "").lowercase()
+            val isMedia = article.mimeType?.startsWith("image/") == true ||
+                    article.mimeType?.startsWith("video/") == true ||
+                    listOf(".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp", ".mp4", ".mov", ".mkv", ".webm", ".avi", ".3gp").any { lower.endsWith(it) }
+            val finalUrl = if (article.sourceType == "FILE" && isMedia) {
+                resolveImageUrl("/api/articles/${article.id}/thumbnail")
+            } else {
+                resolveImageUrl(article.imageUrl)
+            }
+            Result.success(article.copy(imageUrl = finalUrl))
         } catch (e: Exception) {
             Result.failure(e)
         }

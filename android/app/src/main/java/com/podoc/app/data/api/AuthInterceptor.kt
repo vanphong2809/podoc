@@ -16,7 +16,11 @@ class AuthInterceptor(
         if (!token.isNullOrBlank()) {
             requestBuilder.header("Authorization", "Bearer $token")
         }
-        if (originalRequest.header("Accept") == null) {
+        val path = originalRequest.url.encodedPath
+        val isMediaRequest = path.contains("/thumbnail") || path.contains("/file") ||
+                path.endsWith(".jpg") || path.endsWith(".jpeg") || path.endsWith(".png") ||
+                path.endsWith(".webp") || path.endsWith(".gif") || path.endsWith(".mp4")
+        if (originalRequest.header("Accept") == null && !isMediaRequest) {
             requestBuilder.header("Accept", "application/json")
         }
 

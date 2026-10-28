@@ -63,6 +63,7 @@ interface PoDocApiService {
     @POST("api/articles/upload")
     suspend fun uploadArticleFile(
         @Part file: MultipartBody.Part,
+        @Part thumbnail: MultipartBody.Part? = null,
         @Part("category_id") categoryId: RequestBody? = null,
         @Part("title") title: RequestBody? = null
     ): ArticleDetail
