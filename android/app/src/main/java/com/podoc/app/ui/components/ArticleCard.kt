@@ -216,6 +216,7 @@ fun ArticleCard(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     ArticleCardFooter(
+                        createdAt = article.createdAt,
                         readingMinutes = article.readingMinutes,
                         readProgress = article.readProgress,
                         isFavorite = article.isFavorite,
@@ -369,6 +370,7 @@ fun ArticleCard(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 ArticleCardFooter(
+                    createdAt = article.createdAt,
                     readingMinutes = article.readingMinutes,
                     readProgress = article.readProgress,
                     isFavorite = article.isFavorite,
@@ -381,32 +383,80 @@ fun ArticleCard(
 
 @Composable
 private fun ArticleCardFooter(
+    createdAt: String?,
     readingMinutes: Int,
     readProgress: Float,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit
 ) {
+    val formattedDate = remember(createdAt) { formatArticleDate(createdAt) }
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth()
     ) {
+        // Icon trái tim yêu thích đẩy sang BÊN TRÁI
+        IconButton(
+            onClick = onToggleFavorite,
+            modifier = Modifier.size(28.dp)
+        ) {
+            Icon(
+                imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
+                contentDescription = stringResource(if (isFavorite) R.string.action_unfavorite else R.string.action_favorite),
+                tint = if (isFavorite) Color(0xFFEF4444) else Color(0xFF9CA3AF),
+                modifier = Modifier.size(19.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(6.dp))
+
+        // Thời gian đăng Article
+        if (!formattedDate.isNullOrBlank()) {
+            Icon(
+                imageVector = Icons.Default.AccessTime,
+                contentDescription = null,
+                tint = Color(0xFF6B7280),
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = formattedDate,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 12.sp,
+                    color = Color(0xFF6B7280)
+                ),
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "•",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 12.sp,
+                    color = Color(0xFF9CA3AF)
+                )
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+        }
+
+        // Thời gian đọc
         Icon(
             imageVector = Icons.Default.Schedule,
             contentDescription = null,
             tint = Color(0xFF6B7280),
-            modifier = Modifier.size(16.dp)
+            modifier = Modifier.size(14.dp)
         )
-        Spacer(modifier = Modifier.width(5.dp))
+        Spacer(modifier = Modifier.width(4.dp))
         Text(
             text = stringResource(R.string.reading_time_format, readingMinutes),
             style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 12.5.sp,
+                fontSize = 12.sp,
                 color = Color(0xFF6B7280)
-            )
+            ),
+            maxLines = 1
         )
 
         if (readProgress > 0f) {
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(10.dp))
             LinearProgressIndicator(
                 progress = { readProgress },
                 modifier = Modifier
@@ -425,18 +475,6 @@ private fun ArticleCardFooter(
             )
         } else {
             Spacer(modifier = Modifier.weight(1f))
-        }
-
-        IconButton(
-            onClick = onToggleFavorite,
-            modifier = Modifier.size(32.dp)
-        ) {
-            Icon(
-                imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
-                contentDescription = stringResource(if (isFavorite) R.string.action_unfavorite else R.string.action_favorite),
-                tint = if (isFavorite) Color(0xFFEF4444) else Color(0xFF6B7280),
-                modifier = Modifier.size(20.dp)
-            )
         }
     }
 }
@@ -507,5 +545,48 @@ private fun ArticleActionDropdownMenu(
                 onDelete()
             }
         )
+    }
+}
+
+/**
+ * Định dạng thời gian đăng bài viết sang dạng đọc thân thiện tiếng Việt
+ */
+fun formatArticleDate(isoString: String?): String? {
+    if (isoString.isNullOrBlank()) return null
+    return try {
+        val instant = try {
+            java.time.OffsetDateTime.parse(isoString).toInstant()
+        } catch (_: Exception) {
+            try {
+                java.time.Instant.parse(isoString)
+            } catch (_: Exception) {
+                val cleaned = isoString.substringBefore(".").substringBefore("Z").substringBefore("+")
+                val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.getDefault())
+                sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+                sdf.parse(cleaned)?.toInstant()
+            }
+        } ?: return null
+
+        val now = java.time.Instant.now()
+        val diffSeconds = java.time.Duration.between(instant, now).seconds
+
+        when {
+            diffSeconds < 60 -> "Vừa xong"
+            diffSeconds < 3600 -> "${(diffSeconds / 60).coerceAtLeast(1)} phút trước"
+            diffSeconds < 86400 -> "${(diffSeconds / 3600).coerceAtLeast(1)} giờ trước"
+            diffSeconds < 86400 * 2 -> "Hôm qua"
+            diffSeconds < 86400 * 7 -> "${diffSeconds / 86400} ngày trước"
+            else -> {
+                val zdt = instant.atZone(java.time.ZoneId.systemDefault())
+                val currentYear = java.time.LocalDate.now().year
+                if (zdt.year == currentYear) {
+                    zdt.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM HH:mm"))
+                } else {
+                    zdt.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                }
+            }
+        }
+    } catch (_: Exception) {
+        null
     }
 }

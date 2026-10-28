@@ -348,7 +348,7 @@ fun CategoryScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    imageVector = getCategoryIcon(categoryNameInput, null),
+                                    imageVector = getCategoryIcon(categoryNameInput, if (isEditing) editingCategory?.icon else null),
                                     contentDescription = null,
                                     tint = Color.White,
                                     modifier = Modifier.size(22.dp)
@@ -362,8 +362,15 @@ fun CategoryScreen(
                                     style = MaterialTheme.typography.titleMedium,
                                     color = if (isDark) Color(0xFFF1F5F9) else parseHexColor(categoryColorInput)
                                 )
+                                val currentCount = if (isEditing) {
+                                    uiState.categories.find { it.id == editingCategory?.id }?.articleCount
+                                        ?: editingCategory?.articleCount
+                                        ?: 0
+                                } else {
+                                    0
+                                }
                                 Text(
-                                    text = "0 mục",
+                                    text = "$currentCount mục",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = if (isDark) Color(0xFF94A3B8) else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
