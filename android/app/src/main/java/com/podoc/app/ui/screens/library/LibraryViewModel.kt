@@ -31,7 +31,10 @@ data class LibraryUiState(
     val recentlyDeletedArticle: ArticleListItem? = null,
     val isUploading: Boolean = false,
     val uploadProgressMessage: String? = null,
-    val userMessage: String? = null
+    val userMessage: String? = null,
+    val isSelectionMode: Boolean = false,
+    val selectedMediaIds: Set<Int> = emptySet(),
+    val isDeletingMultiple: Boolean = false
 )
 
 class LibraryViewModel(
@@ -149,11 +152,12 @@ class LibraryViewModel(
     }
 
     fun onContentTypeFilterChange(contentType: String?) {
-        if (_uiState.value.selectedContentType == contentType) {
-            _uiState.value = _uiState.value.copy(selectedContentType = null)
-        } else {
-            _uiState.value = _uiState.value.copy(selectedContentType = contentType)
-        }
+        val newType = if (_uiState.value.selectedContentType == contentType) null else contentType
+        _uiState.value = _uiState.value.copy(
+            selectedContentType = newType,
+            isSelectionMode = false,
+            selectedMediaIds = emptySet()
+        )
         loadArticles(refresh = true)
     }
 
@@ -281,5 +285,70 @@ class LibraryViewModel(
 
     fun clearUserMessage() {
         _uiState.value = _uiState.value.copy(userMessage = null)
+    }
+
+    fun startSelectionMode(initialSelectedId: Int? = null) {
+        val newSelection = if (initialSelectedId != null) setOf(initialSelectedId) else emptySet()
+        _uiState.value = _uiState.value.copy(
+            isSelectionMode = true,
+            selectedMediaIds = newSelection
+        )
+    }
+
+    fun toggleSelectMedia(id: Int) {
+        val current = _uiState.value.selectedMediaIds
+        val next = if (current.contains(id)) {
+            current - id
+        } else {
+            current + id
+        }
+        _uiState.value = _uiState.value.copy(
+            isSelectionMode = true,
+            selectedMediaIds = next
+        )
+    }
+
+    fun selectAllMedia() {
+        val allIds = _uiState.value.articles.map { it.id }.toSet()
+        _uiState.value = _uiState.value.copy(
+            isSelectionMode = true,
+            selectedMediaIds = allIds
+        )
+    }
+
+    fun clearSelection() {
+        _uiState.value = _uiState.value.copy(
+            isSelectionMode = false,
+            selectedMediaIds = emptySet()
+        )
+    }
+
+    fun deleteSelectedMedia(onDone: ((count: Int) -> Unit)? = null) {
+        val idsToDelete = _uiState.value.selectedMediaIds.toList()
+        if (idsToDelete.isEmpty()) return
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isDeletingMultiple = true)
+            val result = articleRepository.deleteArticles(idsToDelete)
+            result.fold(
+                onSuccess = {
+                    val count = idsToDelete.size
+                    _uiState.value = _uiState.value.copy(
+                        articles = _uiState.value.articles.filterNot { it.id in idsToDelete },
+                        isSelectionMode = false,
+                        selectedMediaIds = emptySet(),
+                        isDeletingMultiple = false,
+                        userMessage = "Đã xoá $count hình ảnh thành công"
+                    )
+                    onDone?.invoke(count)
+                },
+                onFailure = { err ->
+                    _uiState.value = _uiState.value.copy(
+                        isDeletingMultiple = false,
+                        errorMessage = err.message ?: "Lỗi khi xoá các mục đã chọn"
+                    )
+                }
+            )
+        }
     }
 }

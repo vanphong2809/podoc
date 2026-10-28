@@ -2,8 +2,12 @@ package com.podoc.app.ui.screens.library
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
@@ -59,6 +63,12 @@ fun LibraryScreen(
     var changingCategoryArticle by remember { mutableStateOf<ArticleListItem?>(null) }
     var newTitleInput by remember { mutableStateOf("") }
     var showSortMenu by remember { mutableStateOf(false) }
+    var showDeleteMultipleConfirmDialog by remember { mutableStateOf(false) }
+
+    // Xử lý nút Back của điện thoại khi đang ở chế độ chọn nhiều
+    BackHandler(enabled = uiState.isSelectionMode) {
+        viewModel.clearSelection()
+    }
 
     // Xử lý Snackbar Hoàn tác
     LaunchedEffect(uiState.recentlyDeletedArticle) {
@@ -110,11 +120,74 @@ fun LibraryScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
+            if (uiState.isSelectionMode) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shadowElevation = 3.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { viewModel.clearSelection() }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Huỷ chọn",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+
+                        Text(
+                            text = "Đã chọn: ${uiState.selectedMediaIds.size}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.weight(1f).padding(start = 4.dp)
+                        )
+
+                        TextButton(onClick = {
+                            if (uiState.selectedMediaIds.size == uiState.articles.size && uiState.articles.isNotEmpty()) {
+                                viewModel.clearSelection()
+                            } else {
+                                viewModel.selectAllMedia()
+                            }
+                        }) {
+                            Text(
+                                text = if (uiState.selectedMediaIds.size == uiState.articles.size && uiState.articles.isNotEmpty()) "Bỏ chọn tất cả" else "Chọn tất cả",
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { showDeleteMultipleConfirmDialog = true },
+                            enabled = uiState.selectedMediaIds.isNotEmpty() && !uiState.isDeletingMultiple
+                        ) {
+                            if (uiState.isDeletingMultiple) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Xoá",
+                                    tint = if (uiState.selectedMediaIds.isNotEmpty()) MaterialTheme.colorScheme.error else Color.Gray
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
                 // Ô tìm kiếm hiện đại bo góc lớn hình viên thuốc
                 OutlinedTextField(
                     value = uiState.searchQuery,
@@ -328,8 +401,48 @@ fun LibraryScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                     }
                 }
+
+                // Dòng trạng thái số lượng & nút Chọn khi ở tab Hình ảnh / Video
+                if (isMediaGrid && uiState.articles.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${uiState.articles.size} ${if (uiState.selectedContentType == "video") "video" else "hình ảnh"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { viewModel.startSelectionMode() }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Checklist,
+                                contentDescription = "Chọn nhiều ảnh",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Chọn",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
             }
         }
+    }
     ) { innerPadding ->
         PullToRefreshBox(
             isRefreshing = uiState.isRefreshing,
@@ -408,7 +521,22 @@ fun LibraryScreen(
                                     MediaGridItem(
                                         article = article,
                                         isVideo = uiState.selectedContentType == "video",
-                                        onClick = { onArticleClick(article.id) }
+                                        isSelectionMode = uiState.isSelectionMode,
+                                        isSelected = uiState.selectedMediaIds.contains(article.id),
+                                        onClick = {
+                                            if (uiState.isSelectionMode) {
+                                                viewModel.toggleSelectMedia(article.id)
+                                            } else {
+                                                onArticleClick(article.id)
+                                            }
+                                        },
+                                        onLongClick = {
+                                            if (!uiState.isSelectionMode) {
+                                                viewModel.startSelectionMode(article.id)
+                                            } else {
+                                                viewModel.toggleSelectMedia(article.id)
+                                            }
+                                        }
                                     )
                                 }
 
@@ -484,11 +612,11 @@ fun LibraryScreen(
                                 }
                             }
                         }
+                    }
+                }
             }
         }
     }
-}
-}
 
     // Dialog Sửa Tiêu Đề
     if (editingArticle != null) {
@@ -601,13 +729,52 @@ fun LibraryScreen(
             }
         )
     }
+
+    // Dialog xác nhận xoá nhiều hình ảnh/video đã chọn
+    if (showDeleteMultipleConfirmDialog) {
+        val count = uiState.selectedMediaIds.size
+        val isVideoTab = uiState.selectedContentType == "video"
+        val itemTypeName = if (isVideoTab) "video" else "hình ảnh"
+        AlertDialog(
+            onDismissRequest = { showDeleteMultipleConfirmDialog = false },
+            title = {
+                Text(
+                    text = if (isVideoTab) "Xoá video" else "Xoá hình ảnh",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text("Bạn có chắc chắn muốn xoá $count $itemTypeName đã chọn không? Thao tác này sẽ xoá hoàn toàn các tệp tin này khỏi thư viện và máy chủ.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteMultipleConfirmDialog = false
+                        viewModel.deleteSelectedMedia()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Xoá ($count)", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteMultipleConfirmDialog = false }) {
+                    Text(stringResource(R.string.btn_cancel))
+                }
+            }
+        )
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MediaGridItem(
     article: ArticleListItem,
     isVideo: Boolean,
-    onClick: () -> Unit
+    isSelectionMode: Boolean,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
 ) {
     val context = LocalContext.current
     var isImageError by remember(article.imageUrl) { mutableStateOf(false) }
@@ -617,8 +784,18 @@ private fun MediaGridItem(
             .fillMaxWidth()
             .aspectRatio(1f)
             .clip(RoundedCornerShape(6.dp))
+            .then(
+                if (isSelected) {
+                    Modifier.border(2.5.dp, Color(0xFF2563EB), RoundedCornerShape(6.dp))
+                } else {
+                    Modifier
+                }
+            )
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
     ) {
         if (!article.imageUrl.isNullOrBlank() && !isImageError) {
             AsyncImage(
@@ -665,6 +842,41 @@ private fun MediaGridItem(
                     modifier = Modifier.size(18.dp)
                 )
             }
+        }
+
+        // Overlay và Check badge khi ở chế độ Selection Mode
+        if (isSelected) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF2563EB).copy(alpha = 0.25f))
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(4.dp)
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF2563EB)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Đã chọn",
+                    tint = Color.White,
+                    modifier = Modifier.size(15.dp)
+                )
+            }
+        } else if (isSelectionMode) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(4.dp)
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.35f))
+                    .border(1.5.dp, Color.White, CircleShape)
+            )
         }
     }
 }

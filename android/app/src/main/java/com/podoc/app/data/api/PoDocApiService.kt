@@ -77,6 +77,9 @@ interface PoDocApiService {
     @DELETE("api/articles/{id}")
     suspend fun deleteArticle(@Path("id") id: Int): Response<Unit>
 
+    @POST("api/articles/batch-delete")
+    suspend fun batchDeleteArticles(@Body request: BatchDeleteRequest): Response<Unit>
+
     // Export ZIP
     @Streaming
     @GET("api/export")

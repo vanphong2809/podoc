@@ -344,6 +344,26 @@ class ArticleRepository(
         }
     }
 
+    suspend fun deleteArticles(ids: List<Int>): Result<Unit> {
+        if (ids.isEmpty()) return Result.success(Unit)
+        return try {
+            val res = getApi().batchDeleteArticles(BatchDeleteRequest(ids))
+            if (res.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                ids.forEach { getApi().deleteArticle(it) }
+                Result.success(Unit)
+            }
+        } catch (e: Exception) {
+            try {
+                ids.forEach { getApi().deleteArticle(it) }
+                Result.success(Unit)
+            } catch (fallbackEx: Exception) {
+                Result.failure(fallbackEx)
+            }
+        }
+    }
+
     suspend fun exportData(): Result<ResponseBody> {
         return try {
             val body = getApi().exportData()

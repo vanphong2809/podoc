@@ -18,6 +18,7 @@ from app.schemas.article import (
     ArticleDetailResponse,
     ArticleListResponse,
     ArticleUpdate,
+    BatchDeleteRequest,
 )
 from app.services.extractors.base import generate_excerpt
 from app.services.extractors.registry import extractor_registry
@@ -528,6 +529,41 @@ async def delete_article(
 
     await db.delete(art)
     await db.commit()
+
+
+@router.post("/batch-delete")
+async def batch_delete_articles(
+    data: BatchDeleteRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Xoá hàng loạt bài viết / hình ảnh theo danh sách ID và dọn dẹp file, thumbnail vật lý."""
+    if not data.ids:
+        return {"deleted_count": 0}
+
+    stmt = select(Article).where(Article.id.in_(data.ids))
+    result = await db.execute(stmt)
+    articles = result.scalars().all()
+
+    for art in articles:
+        if art.file_path:
+            disk_path = os.path.join(settings.FILES_STORAGE_DIR, art.file_path)
+            if os.path.exists(disk_path):
+                try:
+                    os.remove(disk_path)
+                except OSError:
+                    pass
+            thumb_filename = f"thumb_{os.path.splitext(art.file_path)[0]}.jpg"
+            thumb_path = os.path.join(settings.FILES_STORAGE_DIR, thumb_filename)
+            if os.path.exists(thumb_path):
+                try:
+                    os.remove(thumb_path)
+                except OSError:
+                    pass
+        await db.delete(art)
+
+    await db.commit()
+    return {"deleted_count": len(articles)}
 
 
 @router.get("/{id}/thumbnail")

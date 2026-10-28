@@ -83,3 +83,8 @@ class ArticleDraft(BaseModel):
     existing_article_id: Optional[int] = None
     is_fallback_bookmark: bool = False
     error_message: Optional[str] = None
+
+
+class BatchDeleteRequest(BaseModel):
+    ids: list[int]
+
