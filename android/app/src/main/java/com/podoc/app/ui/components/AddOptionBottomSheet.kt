@@ -26,7 +26,8 @@ fun AddOptionBottomSheet(
     onPasteLink: (url: String, asWebFormat: Boolean) -> Unit,
     onPickFiles: () -> Unit,
     onPickImages: () -> Unit = {},
-    onPickVideos: () -> Unit = {}
+    onPickVideos: () -> Unit = {},
+    onPickAudios: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var urlInput by remember { mutableStateOf("") }
@@ -184,6 +185,22 @@ fun AddOptionBottomSheet(
                 Icon(imageVector = Icons.Default.Videocam, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(stringResource(R.string.action_import_video))
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Tuỳ chọn Chọn Âm thanh (.mp3, .wav... tối đa 50 MB)
+            OutlinedButton(
+                onClick = {
+                    onPickAudios()
+                    onDismiss()
+                },
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(imageVector = Icons.Default.Headphones, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Nhập tệp âm thanh (.mp3, .wav... tối đa 50 MB)")
             }
 
             Spacer(modifier = Modifier.height(10.dp))

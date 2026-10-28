@@ -53,6 +53,8 @@ fun ArticleCard(
     val imageBadgeText = Color(0xFF7E22CE)
     val videoBadgeBg = Color(0xFFFEE2E2)
     val videoBadgeText = Color(0xFFDC2626)
+    val audioBadgeBg = Color(0xFFCCFBF1)
+    val audioBadgeText = Color(0xFF0F766E)
     val fileBadgeBg = Color(0xFFE2E8F0)
     val fileBadgeText = Color(0xFF334155)
 
@@ -63,12 +65,18 @@ fun ArticleCard(
             val isVideo = article.mimeType?.startsWith("video/") == true ||
                     lowerName.endsWith(".mp4") || lowerName.endsWith(".mkv") ||
                     lowerName.endsWith(".mov") || lowerName.endsWith(".webm")
+            val isAudio = article.mimeType?.startsWith("audio/") == true ||
+                    lowerName.endsWith(".mp3") || lowerName.endsWith(".wav") ||
+                    lowerName.endsWith(".m4a") || lowerName.endsWith(".aac") ||
+                    lowerName.endsWith(".flac") || lowerName.endsWith(".ogg") ||
+                    lowerName.endsWith(".wma") || lowerName.endsWith(".opus")
             val isImage = article.mimeType?.startsWith("image/") == true ||
                     lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg") ||
                     lowerName.endsWith(".png") || lowerName.endsWith(".webp") ||
                     lowerName.endsWith(".gif") || lowerName.endsWith(".svg")
             when {
                 isVideo -> Triple("VIDEO", videoBadgeBg, videoBadgeText)
+                isAudio -> Triple("ÂM THANH", audioBadgeBg, audioBadgeText)
                 isImage -> Triple("HÌNH ẢNH", imageBadgeBg, imageBadgeText)
                 else -> Triple("TỆP TIN", fileBadgeBg, fileBadgeText)
             }

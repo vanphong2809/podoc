@@ -516,6 +516,7 @@ private fun getCategoryIcon(name: String, iconStr: String?): ImageVector {
         lower.contains("việc") || lower.contains("work") || lower.contains("công việc") || lower.contains("career") -> Icons.Default.Work
         lower.contains("giải trí") || lower.contains("game") || lower.contains("chơi") || lower.contains("play") -> Icons.Default.SportsEsports
         lower.contains("sách") || lower.contains("book") || lower.contains("đọc") -> Icons.Default.MenuBook
+        lower.contains("âm thanh") || lower.contains("audio") || lower.contains("music") || lower.contains("nhạc") || lower.contains("headphone") || lower.contains("tai nghe") -> Icons.Default.Headphones
         else -> Icons.Default.Folder
     }
 }

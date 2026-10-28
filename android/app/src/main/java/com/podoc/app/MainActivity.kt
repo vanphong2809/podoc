@@ -117,6 +117,20 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            // Launcher chọn 1 hoặc nhiều tệp âm thanh trực tiếp từ máy (.mp3, .wav, .m4a... tối đa 50 MB)
+            val audioPickerLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.GetMultipleContents()
+            ) { uris: List<Uri> ->
+                if (uris.isNotEmpty()) {
+                    libraryViewModel.uploadFiles(uris)
+                    if (currentRoute != Screen.Library.route) {
+                        navController.navigate(Screen.Library.route) {
+                            popUpTo(Screen.Library.route) { inclusive = true }
+                        }
+                    }
+                }
+            }
+
             // Mở trực tiếp bài viết nếu được chuyển sang từ ShareReceiveActivity
             LaunchedEffect(Unit) {
                 val openArticleId = intent?.getIntExtra("open_article_id", -1)?.takeIf { it > 0 }
@@ -303,6 +317,10 @@ class MainActivity : ComponentActivity() {
                             onPickVideos = {
                                 // Mở trình chọn video từ máy (MP4, MKV, MOV, WEBM...)
                                 videoPickerLauncher.launch("video/*")
+                            },
+                            onPickAudios = {
+                                // Mở trình chọn tệp âm thanh từ máy (MP3, WAV, M4A, FLAC...)
+                                audioPickerLauncher.launch("audio/*")
                             }
                         )
                     }

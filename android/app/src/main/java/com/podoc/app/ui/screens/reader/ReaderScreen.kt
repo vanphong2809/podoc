@@ -8,18 +8,23 @@ import android.graphics.Color as AndroidColor
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.view.SurfaceHolder
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -58,6 +63,7 @@ import com.mikepenz.markdown.model.MarkdownTypography
 import com.podoc.app.R
 import com.podoc.app.data.model.ArticleDetail
 import com.podoc.app.ui.components.PoDocTopAppBar
+import com.podoc.app.service.MediaPlaybackManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -105,8 +111,27 @@ fun ReaderScreen(
                 article?.mimeType == "video/3gpp" -> "3gp"
                 article?.mimeType?.startsWith("video/") == true -> "mp4"
                 article?.mimeType?.startsWith("image/") == true -> "jpg"
+                article?.mimeType == "audio/mpeg" -> "mp3"
+                article?.mimeType == "audio/mp3" -> "mp3"
+                article?.mimeType == "audio/wav" -> "wav"
+                article?.mimeType == "audio/x-wav" -> "wav"
+                article?.mimeType == "audio/x-m4a" -> "m4a"
+                article?.mimeType == "audio/aac" -> "aac"
+                article?.mimeType == "audio/flac" -> "flac"
+                article?.mimeType == "audio/ogg" -> "ogg"
+                article?.mimeType?.startsWith("audio/") == true -> "mp3"
                 else -> ""
             }
+        }
+    }
+
+    val isVideo = fileExt in listOf("mp4", "mkv", "mov", "webm", "avi", "3gp", "ts") || article?.mimeType?.startsWith("video/") == true
+    val isAudio = fileExt in listOf("mp3", "wav", "m4a", "aac", "flac", "ogg", "wma", "opus") || article?.mimeType?.startsWith("audio/") == true
+
+    // Dừng phát media nền khi người dùng thoát khỏi màn hình xem chi tiết
+    DisposableEffect(articleId) {
+        onDispose {
+            MediaPlaybackManager.stop(context)
         }
     }
 
@@ -169,60 +194,61 @@ fun ReaderScreen(
 
     Scaffold(
         topBar = {
-            Column {
-                PoDocTopAppBar(
-                    title = article?.title?.take(25)?.let { "$it..." } ?: "Tài liệu",
-                    onBackClick = onNavigateBack,
-                    actions = {
-                        // Nếu là dạng text/markdown thì hiện tuỳ chỉnh font
-                        if (!isFile || fileExt in listOf("txt", "md", "mdf")) {
-                            IconButton(onClick = { showFontMenu = true }) {
-                                Icon(imageVector = Icons.Default.FormatSize, contentDescription = "Cỡ chữ")
-                            }
-
-                            DropdownMenu(
-                                expanded = showFontMenu,
-                                onDismissRequest = { showFontMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Tăng cỡ chữ (+)") },
-                                    leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
-                                    onClick = { viewModel.increaseFontSize() }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Giảm cỡ chữ (-)") },
-                                    leadingIcon = { Icon(Icons.Default.Remove, contentDescription = null) },
-                                    onClick = { viewModel.decreaseFontSize() }
-                                )
-                                HorizontalDivider()
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            if (uiState.isSerif) stringResource(R.string.font_family_sans)
-                                            else stringResource(R.string.font_family_serif)
-                                        )
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.FontDownload, contentDescription = null) },
-                                    onClick = { viewModel.toggleSerif() }
+            if (isVideo) {
+                // Thanh điều hướng thu gọn siêu mỏng (44dp) khi xem video để tối đa hoá diện tích màn hình
+                Surface(
+                    color = Color(0xFF0F172A),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = onNavigateBack,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Quay lại",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Text(
+                            text = article?.title ?: "Video",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 8.dp)
+                        )
+                        IconButton(
+                            onClick = { viewModel.openOriginalFile(context) },
+                            enabled = !uiState.isDownloadingFile,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            if (uiState.isDownloadingFile) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.OpenInNew,
+                                    contentDescription = "Mở app khác",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
-
-                        // Nút Mở tệp tin bằng app ngoài (Word, WPS, v.v.)
-                        if (isFile) {
-                            IconButton(
-                                onClick = { viewModel.openOriginalFile(context) },
-                                enabled = !uiState.isDownloadingFile
-                            ) {
-                                if (uiState.isDownloadingFile) {
-                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                                } else {
-                                    Icon(imageVector = Icons.Default.OpenInNew, contentDescription = "Mở bằng ứng dụng khác")
-                                }
-                            }
-                        }
-
-                        // Nút Chia sẻ
                         IconButton(
                             onClick = {
                                 val art = article ?: return@IconButton
@@ -232,23 +258,100 @@ fun ReaderScreen(
                                     putExtra(Intent.EXTRA_TEXT, "${art.title}\n\n${art.sourceUrl ?: ""}")
                                 }
                                 context.startActivity(Intent.createChooser(intent, "Chia sẻ"))
-                            }
+                            },
+                            modifier = Modifier.size(36.dp)
                         ) {
-                            Icon(imageVector = Icons.Default.Share, contentDescription = "Chia sẻ")
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Chia sẻ",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
                     }
-                )
+                }
+            } else {
+                Column {
+                    PoDocTopAppBar(
+                        title = article?.title?.take(25)?.let { "$it..." } ?: "Tài liệu",
+                        onBackClick = onNavigateBack,
+                        actions = {
+                            // Nếu là dạng text/markdown thì hiện tuỳ chỉnh font
+                            if (!isFile || fileExt in listOf("txt", "md", "mdf")) {
+                                IconButton(onClick = { showFontMenu = true }) {
+                                    Icon(imageVector = Icons.Default.FormatSize, contentDescription = "Cỡ chữ")
+                                }
 
-                // Thanh tiến độ đọc mảnh
-                if (!isFile) {
-                    LinearProgressIndicator(
-                        progress = { currentProgress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(3.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                DropdownMenu(
+                                    expanded = showFontMenu,
+                                    onDismissRequest = { showFontMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Tăng cỡ chữ (+)") },
+                                        leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
+                                        onClick = { viewModel.increaseFontSize() }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Giảm cỡ chữ (-)") },
+                                        leadingIcon = { Icon(Icons.Default.Remove, contentDescription = null) },
+                                        onClick = { viewModel.decreaseFontSize() }
+                                    )
+                                    HorizontalDivider()
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                if (uiState.isSerif) stringResource(R.string.font_family_sans)
+                                                else stringResource(R.string.font_family_serif)
+                                            )
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.FontDownload, contentDescription = null) },
+                                        onClick = { viewModel.toggleSerif() }
+                                    )
+                                }
+                            }
+
+                            // Nút Mở tệp tin bằng app ngoài (Word, WPS, v.v.)
+                            if (isFile) {
+                                IconButton(
+                                    onClick = { viewModel.openOriginalFile(context) },
+                                    enabled = !uiState.isDownloadingFile
+                                ) {
+                                    if (uiState.isDownloadingFile) {
+                                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    } else {
+                                        Icon(imageVector = Icons.Default.OpenInNew, contentDescription = "Mở bằng ứng dụng khác")
+                                    }
+                                }
+                            }
+
+                            // Nút Chia sẻ
+                            IconButton(
+                                onClick = {
+                                    val art = article ?: return@IconButton
+                                    val intent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_SUBJECT, art.title)
+                                        putExtra(Intent.EXTRA_TEXT, "${art.title}\n\n${art.sourceUrl ?: ""}")
+                                    }
+                                    context.startActivity(Intent.createChooser(intent, "Chia sẻ"))
+                                }
+                            ) {
+                                Icon(imageVector = Icons.Default.Share, contentDescription = "Chia sẻ")
+                            }
+                        }
                     )
+
+                    // Thanh tiến độ đọc mảnh
+                    if (!isFile) {
+                        LinearProgressIndicator(
+                            progress = { currentProgress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(3.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                        )
+                    }
                 }
             }
         }
@@ -361,15 +464,28 @@ private fun InAppFileContent(
     }
 
     val isVideo = fileExt in listOf("mp4", "mkv", "mov", "webm", "avi", "3gp", "ts") || article.mimeType?.startsWith("video/") == true
+    val isAudio = fileExt in listOf("mp3", "wav", "m4a", "aac", "flac", "ogg", "wma", "opus") || article.mimeType?.startsWith("audio/") == true
     val isImage = fileExt in listOf("png", "svg", "jpg", "jpeg", "webp", "gif") || article.mimeType?.startsWith("image/") == true
     val isSvg = fileExt == "svg" || article.mimeType == "image/svg+xml"
 
     when {
-        // 1. Xem Video trực tiếp bằng VideoView và MediaController native
+        // 1. Xem Video trực tiếp hỗ trợ tiếp tục phát âm thanh khi tắt màn hình
         isVideo -> {
             val file = uiState.localFile
             if (file != null && file.exists()) {
-                InAppVideoViewer(file = file, onOpenExternal = onOpenExternal)
+                InAppVideoViewer(file = file, article = article, onOpenExternal = onOpenExternal)
+            } else {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
+        }
+
+        // 2. Nghe tệp Âm thanh (.mp3, .wav, .m4a...) trực tiếp trên app & phát nền khi tắt màn hình
+        isAudio -> {
+            val file = uiState.localFile
+            if (file != null && file.exists()) {
+                InAppAudioViewer(file = file, article = article, onOpenExternal = onOpenExternal)
             } else {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
@@ -917,73 +1033,386 @@ private fun splitMarkdownIntoBlocks(markdown: String): List<String> {
 }
 
 /**
- * Trình phát Video mượt mà bằng VideoView tích hợp Android SDK kèm MediaController
+ * Trình phát Video tối ưu không gian hiển thị, gắn trực tiếp với MediaPlaybackManager
+ * Duy trì phát âm thanh liên tục trong nền ngay cả khi tắt màn hình điện thoại.
  */
 @Composable
 private fun InAppVideoViewer(
     file: File,
+    article: ArticleDetail,
     onOpenExternal: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            contentAlignment = Alignment.Center
-        ) {
-            AndroidView(
-                factory = { ctx ->
-                    android.widget.VideoView(ctx).apply {
-                        val controller = android.widget.MediaController(ctx)
-                        controller.setAnchorView(this)
-                        setMediaController(controller)
-                        setVideoPath(file.absolutePath)
-                        setOnPreparedListener { mp ->
-                            mp.isLooping = true
-                            start()
-                        }
-                    }
-                },
-                modifier = Modifier.fillMaxSize()
+    val context = LocalContext.current
+    val isPlaying by MediaPlaybackManager.isPlaying.collectAsState()
+    val currentPosition by MediaPlaybackManager.currentPosition.collectAsState()
+    val duration by MediaPlaybackManager.duration.collectAsState()
+    var showControls by remember { mutableStateOf(true) }
+
+    // Tự động phát khi tải xong tệp video nếu chưa phát
+    LaunchedEffect(file.absolutePath) {
+        if (MediaPlaybackManager.currentFilePath.value != file.absolutePath) {
+            MediaPlaybackManager.startPlay(
+                context = context,
+                filePath = file.absolutePath,
+                title = article.title,
+                articleId = article.id,
+                isVideo = true
             )
         }
+    }
 
-        Surface(
-            color = Color.Black.copy(alpha = 0.9f),
-            modifier = Modifier.fillMaxWidth()
+    // Tự động ẩn thanh điều khiển sau 3.5 giây khi đang phát
+    LaunchedEffect(showControls, isPlaying) {
+        if (showControls && isPlaying) {
+            kotlinx.coroutines.delay(3500)
+            showControls = false
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .clickable { showControls = !showControls },
+        contentAlignment = Alignment.Center
+    ) {
+        // Khung SurfaceView native kết nối trực tiếp với MediaPlaybackManager
+        AndroidView(
+            factory = { ctx ->
+                android.view.SurfaceView(ctx).apply {
+                    holder.addCallback(object : SurfaceHolder.Callback {
+                        override fun surfaceCreated(holder: SurfaceHolder) {
+                            MediaPlaybackManager.attachSurface(holder)
+                        }
+                        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+                        override fun surfaceDestroyed(holder: SurfaceHolder) {
+                            MediaPlaybackManager.detachSurface()
+                        }
+                    })
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Overlay điều khiển khi chạm vào màn hình
+        AnimatedVisibility(
+            visible = showControls,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.fillMaxSize()
         ) {
-            Row(
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f))
             ) {
-                Text(
-                    text = file.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White,
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                OutlinedButton(
-                    onClick = onOpenExternal,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                    shape = RoundedCornerShape(10.dp)
+                // Nút Play / Pause chính giữa
+                IconButton(
+                    onClick = { MediaPlaybackManager.togglePlayPause(context) },
+                    modifier = Modifier
+                        .size(64.dp)
+                        .align(Alignment.Center)
+                        .background(Color.Black.copy(alpha = 0.65f), CircleShape)
                 ) {
-                    Icon(imageVector = Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Mở app khác")
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlaying) "Tạm dừng" else "Phát",
+                        tint = Color.White,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+
+                // Thanh điều khiển thời gian ở cạnh đáy
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = formatDurationMs(currentPosition),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = formatDurationMs(duration),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.8f),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    val maxDuration = duration.toFloat().coerceAtLeast(1f)
+                    Slider(
+                        value = currentPosition.toFloat().coerceIn(0f, maxDuration),
+                        onValueChange = { newPos ->
+                            MediaPlaybackManager.seekTo(context, newPos.toInt())
+                        },
+                        valueRange = 0f..maxDuration,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.White,
+                            activeTrackColor = Color(0xFF3B82F6),
+                            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
         }
+    }
+}
+
+/**
+ * Trình phát Âm thanh (.mp3, .wav, .m4a, ...) với giao diện máy hát đĩa hiện đại
+ * Duy trì phát nền Foreground Service liên tục khi tắt màn hình điện thoại.
+ */
+@Composable
+private fun InAppAudioViewer(
+    file: File,
+    article: ArticleDetail,
+    onOpenExternal: () -> Unit
+) {
+    val context = LocalContext.current
+    val isPlaying by MediaPlaybackManager.isPlaying.collectAsState()
+    val currentPosition by MediaPlaybackManager.currentPosition.collectAsState()
+    val duration by MediaPlaybackManager.duration.collectAsState()
+
+    // Bắt đầu phát khi tải xong tệp âm thanh nếu chưa phát
+    LaunchedEffect(file.absolutePath) {
+        if (MediaPlaybackManager.currentFilePath.value != file.absolutePath) {
+            MediaPlaybackManager.startPlay(
+                context = context,
+                filePath = file.absolutePath,
+                title = article.title,
+                articleId = article.id,
+                isVideo = false
+            )
+        }
+    }
+
+    // Hiệu ứng đĩa nhạc xoay nhịp nhàng khi đang phát nhạc
+    val infiniteTransition = rememberInfiniteTransition(label = "disc_rotation")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(12000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "disc_angle"
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp, vertical = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 1. Đĩa nhạc minh hoạ / Vinyl visualizer
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(220.dp)
+                .clip(CircleShape)
+                .background(
+                    brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFF1E293B),
+                            Color(0xFF0F172A),
+                            Color(0xFF020617)
+                        )
+                    )
+                )
+                .graphicsLayer(rotationZ = if (isPlaying) rotation else 0f)
+        ) {
+            // Vòng tròn vân đĩa vinyl
+            Box(
+                modifier = Modifier
+                    .size(190.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.05f))
+            )
+            Box(
+                modifier = Modifier
+                    .size(130.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.08f))
+            )
+            // Nhãn tròn tâm đĩa
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(70.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Headphones,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(34.dp)
+                )
+            }
+        }
+
+        // 2. Thông tin bài nhạc / tệp âm thanh
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = article.title,
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 19.sp
+                ),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(
+                    text = "Âm thanh • ${file.name}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        // 3. Thanh Seekbar & Thời lượng
+        Column(modifier = Modifier.fillMaxWidth()) {
+            val maxDur = duration.toFloat().coerceAtLeast(1f)
+            Slider(
+                value = currentPosition.toFloat().coerceIn(0f, maxDur),
+                onValueChange = { newPos ->
+                    MediaPlaybackManager.seekTo(context, newPos.toInt())
+                },
+                valueRange = 0f..maxDur,
+                colors = SliderDefaults.colors(
+                    thumbColor = MaterialTheme.colorScheme.primary,
+                    activeTrackColor = MaterialTheme.colorScheme.primary
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = formatDurationMs(currentPosition),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = formatDurationMs(duration),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // 4. Các nút điều khiển phát nhạc (Lùi 10s, Phát/Dừng, Tiến 10s)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = {
+                    MediaPlaybackManager.seekTo(context, (currentPosition - 10000).coerceAtLeast(0))
+                },
+                modifier = Modifier.size(52.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Replay10,
+                    contentDescription = "Lùi 10s",
+                    tint = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(20.dp))
+
+            Surface(
+                onClick = { MediaPlaybackManager.togglePlayPause(context) },
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primary,
+                shadowElevation = 4.dp,
+                modifier = Modifier.size(68.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlaying) "Tạm dừng" else "Phát",
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(20.dp))
+
+            IconButton(
+                onClick = {
+                    MediaPlaybackManager.seekTo(context, (currentPosition + 10000).coerceAtMost(duration))
+                },
+                modifier = Modifier.size(52.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Forward10,
+                    contentDescription = "Tiến 10s",
+                    tint = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        }
+
+        // 5. Nút mở ứng dụng ngoài
+        OutlinedButton(
+            onClick = onOpenExternal,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(imageVector = Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Mở bằng ứng dụng phát nhạc ngoài")
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+    }
+}
+
+private fun formatDurationMs(ms: Int): String {
+    if (ms <= 0) return "00:00"
+    val totalSeconds = ms / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    val hours = minutes / 60
+    return if (hours > 0) {
+        String.format(java.util.Locale.getDefault(), "%d:%02d:%02d", hours, minutes % 60, seconds)
+    } else {
+        String.format(java.util.Locale.getDefault(), "%02d:%02d", minutes, seconds)
     }
 }
 

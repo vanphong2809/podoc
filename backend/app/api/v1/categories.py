@@ -39,7 +39,21 @@ async def list_categories(
         )
         await db.commit()
 
-    # 2. Truy vấn danh mục kèm số lượng bài viết chuẩn xác
+    # 2. Tự động đảm bảo danh mục Âm thanh luôn tồn tại
+    audio_cat_stmt = select(Category).where(Category.name == "Âm thanh")
+    audio_cat_res = await db.execute(audio_cat_stmt)
+    if not audio_cat_res.scalar_one_or_none():
+        new_audio_cat = Category(
+            name="Âm thanh",
+            icon="headphones",
+            color="#14B8A6",
+            sort_order=7,
+            is_system=False,
+        )
+        db.add(new_audio_cat)
+        await db.commit()
+
+    # 3. Truy vấn danh mục kèm số lượng bài viết chuẩn xác
     stmt = (
         select(Category, func.count(Article.id).label("article_count"))
         .outerjoin(Article, Article.category_id == Category.id)

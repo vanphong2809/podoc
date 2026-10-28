@@ -83,6 +83,7 @@ async def list_articles(
         ct = content_type.lower().strip()
         image_exts = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"]
         video_exts = [".mp4", ".mkv", ".mov", ".webm", ".avi", ".flv", ".3gp", ".ts"]
+        audio_exts = [".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".wma", ".opus"]
 
         image_filter = or_(
             Article.mime_type.ilike("image/%"),
@@ -93,6 +94,11 @@ async def list_articles(
             Article.mime_type.ilike("video/%"),
             or_(*[Article.file_name.ilike(f"%{ext}") for ext in video_exts]),
             or_(*[Article.file_path.ilike(f"%{ext}") for ext in video_exts]),
+        )
+        audio_filter = or_(
+            Article.mime_type.ilike("audio/%"),
+            or_(*[Article.file_name.ilike(f"%{ext}") for ext in audio_exts]),
+            or_(*[Article.file_path.ilike(f"%{ext}") for ext in audio_exts]),
         )
 
         if ct in ("article", "url", "link", "web"):
@@ -107,11 +113,14 @@ async def list_articles(
             stmt = stmt.where(Article.source_type == "FILE", image_filter)
         elif ct in ("video", "clip"):
             stmt = stmt.where(Article.source_type == "FILE", video_filter)
+        elif ct in ("audio", "amthanh", "music", "sound"):
+            stmt = stmt.where(Article.source_type == "FILE", audio_filter)
         elif ct in ("file", "document", "doc", "tep"):
             stmt = stmt.where(
                 Article.source_type == "FILE",
                 not_(image_filter),
-                not_(video_filter)
+                not_(video_filter),
+                not_(audio_filter)
             )
 
     if favorite is not None:
@@ -215,9 +224,11 @@ async def upload_article_file(
     # Hạn mức dung lượng theo yêu cầu:
     # - Ảnh: 20 MB
     # - Video: 50 MB
+    # - Âm thanh: 50 MB
     # - File khác: 50 MB
     is_image = mime_type.startswith("image/") or orig_ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg")
     is_video = mime_type.startswith("video/") or orig_ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts")
+    is_audio = mime_type.startswith("audio/") or orig_ext in (".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".wma", ".opus")
 
     if is_image:
         max_bytes = 20 * 1024 * 1024
@@ -225,6 +236,9 @@ async def upload_article_file(
     elif is_video:
         max_bytes = 50 * 1024 * 1024
         type_str = "video (tối đa 50 MB)"
+    elif is_audio:
+        max_bytes = 50 * 1024 * 1024
+        type_str = "âm thanh (tối đa 50 MB)"
     else:
         max_bytes = 50 * 1024 * 1024
         type_str = "tệp tin (tối đa 50 MB)"
@@ -248,6 +262,17 @@ async def upload_article_file(
         "video/quicktime": ".mov",
         "video/x-msvideo": ".avi",
         "video/3gpp": ".3gp",
+        "audio/mpeg": ".mp3",
+        "audio/mp3": ".mp3",
+        "audio/wav": ".wav",
+        "audio/x-wav": ".wav",
+        "audio/mp4": ".m4a",
+        "audio/x-m4a": ".m4a",
+        "audio/aac": ".aac",
+        "audio/flac": ".flac",
+        "audio/ogg": ".ogg",
+        "audio/x-ms-wma": ".wma",
+        "audio/opus": ".opus",
         "application/pdf": ".pdf",
         "text/plain": ".txt",
         "text/markdown": ".md",
@@ -263,7 +288,7 @@ async def upload_article_file(
             if not orig_name.lower().endswith(deduced_ext):
                 orig_name = f"{orig_name}{deduced_ext}"
 
-    # 3. Xác định Danh mục (nếu không truyền thì lấy danh mục đầu tiên)
+    # 3. Xác định Danh mục (nếu không truyền thì lấy danh mục Âm thanh nếu là audio, hoặc danh mục đầu tiên)
     cat = None
     if category_id is not None:
         cat_stmt = select(Category).where(Category.id == category_id)
@@ -271,6 +296,11 @@ async def upload_article_file(
         cat = cat_res.scalar_one_or_none()
         if not cat:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Danh mục không tồn tại")
+
+    if not cat and is_audio:
+        audio_cat_stmt = select(Category).where(Category.name == "Âm thanh")
+        audio_cat_res = await db.execute(audio_cat_stmt)
+        cat = audio_cat_res.scalar_one_or_none()
     
     if not cat:
         first_cat_stmt = select(Category).order_by(Category.sort_order.asc(), Category.id.asc()).limit(1)
@@ -306,6 +336,8 @@ async def upload_article_file(
             size_str = f"{len(file_bytes) / 1024:.1f} KB"
         if is_video:
             content_text = f"Tệp video đính kèm: {orig_name} ({size_str})"
+        elif is_audio:
+            content_text = f"Tệp âm thanh đính kèm: {orig_name} ({size_str})"
         elif is_image:
             content_text = f"Tệp hình ảnh đính kèm: {orig_name} ({size_str})"
         else:

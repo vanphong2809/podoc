@@ -80,6 +80,15 @@ fun CategoryDetailScreen(
         }
     }
 
+    // Launcher chọn tệp Âm thanh từ máy (.mp3, .wav, .m4a...)
+    val audioPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            viewModel.uploadFiles(uris)
+        }
+    }
+
     // Hiển thị thông báo người dùng
     LaunchedEffect(uiState.userMessage) {
         val msg = uiState.userMessage
@@ -200,7 +209,8 @@ fun CategoryDetailScreen(
                 Pair("article", stringResource(R.string.filter_content_article)),
                 Pair("file", stringResource(R.string.filter_content_file)),
                 Pair("image", stringResource(R.string.filter_content_image)),
-                Pair("video", stringResource(R.string.filter_content_video))
+                Pair("video", stringResource(R.string.filter_content_video)),
+                Pair("audio", "Âm thanh")
             )
 
             Row(
@@ -341,6 +351,9 @@ fun CategoryDetailScreen(
             },
             onPickVideos = {
                 videoPickerLauncher.launch("video/*")
+            },
+            onPickAudios = {
+                audioPickerLauncher.launch("audio/*")
             }
         )
     }

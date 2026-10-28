@@ -33,6 +33,7 @@ DEFAULT_CATEGORIES = [
     {"name": "Học tập", "icon": "book", "color": "#8B5CF6", "sort_order": 4, "is_system": False},
     {"name": "Công việc", "icon": "briefcase", "color": "#EC4899", "sort_order": 5, "is_system": False},
     {"name": "Giải trí", "icon": "film", "color": "#06B6D4", "sort_order": 6, "is_system": False},
+    {"name": "Âm thanh", "icon": "headphones", "color": "#14B8A6", "sort_order": 7, "is_system": False},
     {"name": "Chưa phân loại", "icon": "folder", "color": "#64748B", "sort_order": 99, "is_system": True},
 ]
 

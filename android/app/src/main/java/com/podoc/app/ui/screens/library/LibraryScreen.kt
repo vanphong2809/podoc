@@ -399,6 +399,24 @@ fun LibraryScreen(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
+                    // 7. Chip Âm thanh (Nhạc, podcast, ghi âm, .mp3, .wav...)
+                    FilterChip(
+                        selected = uiState.selectedContentType == "audio",
+                        onClick = { viewModel.onContentTypeFilterChange("audio") },
+                        label = { Text("Âm thanh", fontWeight = if (uiState.selectedContentType == "audio") FontWeight.Bold else FontWeight.Medium) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Headphones,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        colors = activeChipColors,
+                        shape = chipShape
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
                     // Các Chip danh mục
                     uiState.categories.forEach { cat ->
                         FilterChip(
