@@ -140,9 +140,9 @@ class ArticleRepository(
                 ?: return Result.failure(IllegalStateException("Không thể đọc tệp tin"))
 
             // Kiểm tra dung lượng theo yêu cầu:
-            // - Hình ảnh: tối đa 5 MB
-            // - Video: tối đa 10 MB
-            // - Tệp tin: tối đa 10 MB
+            // - Hình ảnh: tối đa 20 MB
+            // - Video: tối đa 50 MB
+            // - Tệp tin: tối đa 50 MB
             val lowerName = fileName.lowercase()
             val isImage = mimeType.startsWith("image/") || lowerName.endsWith(".jpg") ||
                     lowerName.endsWith(".jpeg") || lowerName.endsWith(".png") ||
@@ -154,19 +154,19 @@ class ArticleRepository(
                     lowerName.endsWith(".3gp") || lowerName.endsWith(".ts")
 
             val fileSizeMb = bytes.size.toDouble() / (1024 * 1024)
-            if (isImage && bytes.size > 5 * 1024 * 1024) {
+            if (isImage && bytes.size > 20 * 1024 * 1024) {
                 return Result.failure(
-                    IllegalArgumentException("Hình ảnh '${fileName}' (${String.format("%.1f", fileSizeMb)} MB) vượt quá giới hạn 5 MB.")
+                    IllegalArgumentException("Hình ảnh '${fileName}' (${String.format("%.1f", fileSizeMb)} MB) vượt quá giới hạn 20 MB.")
                 )
             }
-            if (isVideo && bytes.size > 10 * 1024 * 1024) {
+            if (isVideo && bytes.size > 50 * 1024 * 1024) {
                 return Result.failure(
-                    IllegalArgumentException("Video '${fileName}' (${String.format("%.1f", fileSizeMb)} MB) vượt quá giới hạn 10 MB.")
+                    IllegalArgumentException("Video '${fileName}' (${String.format("%.1f", fileSizeMb)} MB) vượt quá giới hạn 50 MB.")
                 )
             }
-            if (!isImage && !isVideo && bytes.size > 10 * 1024 * 1024) {
+            if (!isImage && !isVideo && bytes.size > 50 * 1024 * 1024) {
                 return Result.failure(
-                    IllegalArgumentException("Tệp tin '${fileName}' (${String.format("%.1f", fileSizeMb)} MB) vượt quá giới hạn 10 MB.")
+                    IllegalArgumentException("Tệp tin '${fileName}' (${String.format("%.1f", fileSizeMb)} MB) vượt quá giới hạn 50 MB.")
                 )
             }
 

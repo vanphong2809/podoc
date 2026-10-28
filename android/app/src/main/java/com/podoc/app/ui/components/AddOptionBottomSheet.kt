@@ -172,7 +172,7 @@ fun AddOptionBottomSheet(
             HorizontalDivider()
             Spacer(modifier = Modifier.height(18.dp))
 
-            // Tuỳ chọn Chọn Video (tối đa 10 MB)
+            // Tuỳ chọn Chọn Video (tối đa 50 MB)
             OutlinedButton(
                 onClick = {
                     onPickVideos()
@@ -188,7 +188,7 @@ fun AddOptionBottomSheet(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Tuỳ chọn Chọn hình ảnh từ thiết bị (tối đa 5 MB)
+            // Tuỳ chọn Chọn hình ảnh từ thiết bị (tối đa 20 MB)
             OutlinedButton(
                 onClick = {
                     onPickImages()
@@ -204,7 +204,7 @@ fun AddOptionBottomSheet(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Tuỳ chọn Nhập tệp tin từ máy (tối đa 10 MB)
+            // Tuỳ chọn Nhập tệp tin từ máy (tối đa 50 MB)
             OutlinedButton(
                 onClick = {
                     onPickFiles()

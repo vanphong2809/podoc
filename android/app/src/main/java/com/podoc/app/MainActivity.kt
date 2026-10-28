@@ -103,7 +103,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // Launcher chọn 1 hoặc nhiều video trực tiếp từ máy (tối đa 10 MB)
+            // Launcher chọn 1 hoặc nhiều video trực tiếp từ máy (tối đa 50 MB)
             val videoPickerLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.GetMultipleContents()
             ) { uris: List<Uri> ->

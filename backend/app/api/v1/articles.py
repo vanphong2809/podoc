@@ -208,21 +208,21 @@ async def upload_article_file(
     mime_type = real_mime or file.content_type or "application/octet-stream"
 
     # Hạn mức dung lượng theo yêu cầu:
-    # - Ảnh: 5 MB
-    # - Video: 10 MB
-    # - File khác: 10 MB
+    # - Ảnh: 20 MB
+    # - Video: 50 MB
+    # - File khác: 50 MB
     is_image = mime_type.startswith("image/") or orig_ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg")
     is_video = mime_type.startswith("video/") or orig_ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts")
 
     if is_image:
-        max_bytes = 5 * 1024 * 1024
-        type_str = "hình ảnh (tối đa 5 MB)"
+        max_bytes = 20 * 1024 * 1024
+        type_str = "hình ảnh (tối đa 20 MB)"
     elif is_video:
-        max_bytes = 10 * 1024 * 1024
-        type_str = "video (tối đa 10 MB)"
+        max_bytes = 50 * 1024 * 1024
+        type_str = "video (tối đa 50 MB)"
     else:
-        max_bytes = 10 * 1024 * 1024
-        type_str = "tệp tin (tối đa 10 MB)"
+        max_bytes = 50 * 1024 * 1024
+        type_str = "tệp tin (tối đa 50 MB)"
 
     if len(file_bytes) > max_bytes:
         file_mb = len(file_bytes) / (1024 * 1024)

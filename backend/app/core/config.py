@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "PoDoc API"
-    VERSION: str = "1.3.1"
+    VERSION: str = "1.3.2"
     DOMAIN: str = "localhost"
 
     # Database
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
 
     # File Storage (Phase 2)
     FILES_STORAGE_DIR: str = "/data/files"
-    MAX_UPLOAD_SIZE_MB: int = 30
+    MAX_UPLOAD_SIZE_MB: int = 50
     MAX_DOWNLOAD_SIZE_MB: int = 10
 
     model_config = SettingsConfigDict(
