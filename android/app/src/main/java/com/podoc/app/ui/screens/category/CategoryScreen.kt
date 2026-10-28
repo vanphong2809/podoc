@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -32,13 +33,19 @@ import com.podoc.app.ui.theme.parseHexColor
 @Composable
 fun CategoryScreen(
     viewModel: CategoryViewModel,
+    themeMode: String = "system",
     onCategoryClick: (Category) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val isDark = isSystemInDarkTheme()
+    val systemDark = isSystemInDarkTheme()
+    val isDark = when (themeMode) {
+        "light" -> false
+        "dark" -> true
+        else -> MaterialTheme.colorScheme.surface.luminance() < 0.5f || systemDark
+    }
     val screenBg = if (isDark) MaterialTheme.colorScheme.background else Color(0xFFF4F6FB)
     val cardBg = if (isDark) MaterialTheme.colorScheme.surface else Color.White
-    val brandBlue = Color(0xFF0B57D0)
+    val brandBlue = if (isDark) Color(0xFF60A5FA) else Color(0xFF0B57D0)
 
     var searchQuery by remember { mutableStateOf("") }
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -89,7 +96,7 @@ fun CategoryScreen(
                             Text(
                                 text = "Tìm kiếm danh mục...",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = Color(0xFF9CA3AF)
+                                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF9CA3AF)
                             )
                         },
                         colors = TextFieldDefaults.colors(
@@ -97,7 +104,9 @@ fun CategoryScreen(
                             unfocusedContainerColor = Color.Transparent,
                             disabledContainerColor = Color.Transparent,
                             focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent
+                            unfocusedIndicatorColor = Color.Transparent,
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                         ),
                         singleLine = true,
                         modifier = Modifier
@@ -108,7 +117,7 @@ fun CategoryScreen(
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = "Tìm kiếm",
-                        tint = Color(0xFF6B7280),
+                        tint = if (isDark) Color(0xFF94A3B8) else Color(0xFF6B7280),
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -166,7 +175,8 @@ fun CategoryScreen(
                     Card(
                         shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(containerColor = cardBg),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = if (isDark) 0.dp else 0.5.dp),
+                        border = if (isDark) BorderStroke(1.dp, Color(0xFF334155)) else null,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(20.dp))
@@ -216,7 +226,7 @@ fun CategoryScreen(
                                         fontSize = 13.sp,
                                         fontWeight = if (count > 0) FontWeight.Medium else FontWeight.Normal
                                     ),
-                                    color = if (count > 0) Color(0xFF2563EB) else Color(0xFF9CA3AF)
+                                    color = if (count > 0) (if (isDark) Color(0xFF60A5FA) else Color(0xFF2563EB)) else (if (isDark) Color(0xFF94A3B8) else Color(0xFF9CA3AF))
                                 )
                             }
 
@@ -229,7 +239,7 @@ fun CategoryScreen(
                                     Icon(
                                         imageVector = Icons.Default.MoreVert,
                                         contentDescription = "Tuỳ chọn",
-                                        tint = Color(0xFF9CA3AF),
+                                        tint = if (isDark) Color(0xFF94A3B8) else Color(0xFF9CA3AF),
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
@@ -242,10 +252,10 @@ fun CategoryScreen(
                                         text = { Text(stringResource(R.string.action_edit_category)) },
                                         leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
                                         onClick = {
-                                            showItemMenu = false
-                                            editingCategory = cat
-                                            categoryNameInput = cat.name
-                                            categoryColorInput = cat.color
+                                             showItemMenu = false
+                                             editingCategory = cat
+                                             categoryNameInput = cat.name
+                                             categoryColorInput = cat.color
                                         }
                                     )
                                     if (!cat.isSystem) {
@@ -277,7 +287,7 @@ fun CategoryScreen(
                             Icon(
                                 imageVector = Icons.Default.ChevronRight,
                                 contentDescription = "Xem danh mục",
-                                tint = Color(0xFFD1D5DB),
+                                tint = if (isDark) Color(0xFF64748B) else Color(0xFFD1D5DB),
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -306,7 +316,7 @@ fun CategoryScreen(
                     // Xem trước màu sắc và icon thực tế của danh mục
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = parseHexColor(categoryColorInput).copy(alpha = 0.12f),
+                        color = parseHexColor(categoryColorInput).copy(alpha = if (isDark) 0.22f else 0.12f),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(bottom = 16.dp)
@@ -335,12 +345,12 @@ fun CategoryScreen(
                                     text = categoryNameInput.ifBlank { "Tên danh mục" },
                                     fontWeight = FontWeight.Bold,
                                     style = MaterialTheme.typography.titleMedium,
-                                    color = parseHexColor(categoryColorInput)
+                                    color = if (isDark) Color(0xFFF1F5F9) else parseHexColor(categoryColorInput)
                                 )
                                 Text(
                                     text = "0 mục",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = if (isDark) Color(0xFF94A3B8) else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }

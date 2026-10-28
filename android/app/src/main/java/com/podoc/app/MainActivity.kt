@@ -216,6 +216,7 @@ class MainActivity : ComponentActivity() {
                         composable(Screen.Categories.route) {
                             CategoryScreen(
                                 viewModel = categoryViewModel,
+                                themeMode = themeMode,
                                 onCategoryClick = { cat ->
                                     navController.navigate(Screen.CategoryDetail.createRoute(cat.id, cat.name, cat.color))
                                 }
