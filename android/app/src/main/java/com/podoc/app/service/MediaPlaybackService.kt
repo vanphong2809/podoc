@@ -367,6 +367,9 @@ class MediaPlaybackService : Service() {
                 setDataSource(filePath)
                 setOnPreparedListener { mp ->
                     mp.isLooping = MediaPlaybackManager._isRepeatMode.value
+                    if (mp.videoWidth > 0 && mp.videoHeight > 0) {
+                        MediaPlaybackManager._videoSize.value = Pair(mp.videoWidth, mp.videoHeight)
+                    }
                     if (isVideo && MediaPlaybackManager.currentHolder != null) {
                         try {
                             mp.setDisplay(MediaPlaybackManager.currentHolder)

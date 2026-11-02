@@ -1,7 +1,12 @@
 package com.podoc.app.ui.screens.reader
 
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
+import android.media.MediaMetadataRetriever
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color as AndroidColor
@@ -40,6 +45,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -1025,9 +1031,10 @@ private fun splitMarkdownIntoBlocks(markdown: String): List<String> {
 }
 
 /**
- * Trình phát Video tối ưu không gian hiển thị tràn viền (0dp top bar), gắn trực tiếp với MediaPlaybackManager
+ * Trình phát Video tối ưu không gian hiển thị, giữ nguyên tỉ lệ khung hình gốc (không bị méo/co giãn)
+ * Hỗ trợ xoay toàn màn hình ngang (Landscape), gắn trực tiếp với MediaPlaybackManager
  * Duy trì phát âm thanh liên tục trong nền ngay cả khi tắt màn hình điện thoại.
- * Các nút điều khiển nổi (Back, Play/Pause, Tua, Mở ngoài) tự động biến mất khi đang xem video.
+ * Các nút điều khiển nổi (Back, Play/Pause, Tua, Mở ngoài, Toàn màn hình) tự động biến mất khi đang xem video.
  */
 @Composable
 private fun InAppVideoViewer(
@@ -1038,12 +1045,56 @@ private fun InAppVideoViewer(
     onDeleteClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     val isPlaying by MediaPlaybackManager.isPlaying.collectAsState()
     val isRepeatMode by MediaPlaybackManager.isRepeatMode.collectAsState()
     val isCompleted by MediaPlaybackManager.isCompleted.collectAsState()
     val currentPosition by MediaPlaybackManager.currentPosition.collectAsState()
     val duration by MediaPlaybackManager.duration.collectAsState()
+    val videoSize by MediaPlaybackManager.videoSize.collectAsState()
     var showControls by remember { mutableStateOf(true) }
+
+    // Trích xuất tỉ lệ khung hình thực tế của video từ metadata tệp
+    val nativeVideoRatio = remember(file.absolutePath) {
+        try {
+            val retriever = MediaMetadataRetriever()
+            retriever.setDataSource(file.absolutePath)
+            val widthStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+            val heightStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+            val rotationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+            retriever.release()
+            val w = widthStr?.toFloatOrNull() ?: 0f
+            val h = heightStr?.toFloatOrNull() ?: 0f
+            val rotation = rotationStr?.toIntOrNull() ?: 0
+            if (w > 0f && h > 0f) {
+                if (rotation == 90 || rotation == 270) {
+                    h / w
+                } else {
+                    w / h
+                }
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // Tỉ lệ khung hình ưu tiên: retriever -> videoSize từ MediaPlayer -> mặc định 16:9
+    val currentRatio = nativeVideoRatio
+        ?: if (videoSize.first > 0 && videoSize.second > 0) {
+            videoSize.first.toFloat() / videoSize.second.toFloat()
+        } else {
+            16f / 9f
+        }
+
+    // Khôi phục hướng màn hình khi thoát khỏi video
+    DisposableEffect(Unit) {
+        onDispose {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
 
     // Tự động phát khi tải xong tệp video nếu chưa phát
     LaunchedEffect(file.absolutePath) {
@@ -1073,19 +1124,49 @@ private fun InAppVideoViewer(
         }
     }
 
-    // Bắt phím Back của hệ thống
+    // Bắt phím Back của hệ thống: nếu đang xoay ngang thì xoay dọc lại trước
     BackHandler(enabled = true) {
-        onNavigateBack()
+        if (isLandscape) {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        } else {
+            onNavigateBack()
+        }
     }
 
-    Box(
+    val toggleOrientation = {
+        activity?.let { act ->
+            if (isLandscape) {
+                act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            } else {
+                act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            }
+        }
+    }
+
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
             .clickable { showControls = !showControls },
         contentAlignment = Alignment.Center
     ) {
-        // Khung SurfaceView native kết nối trực tiếp với MediaPlaybackManager
+        val containerWidth = maxWidth.value
+        val containerHeight = maxHeight.value
+        val containerRatio = if (containerHeight > 0f) containerWidth / containerHeight else 1f
+
+        val surfaceModifier = if (currentRatio > containerRatio) {
+            // Video ngang hơn khung hình màn hình: full chiều ngang, tỉ lệ theo aspect ratio
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(currentRatio)
+        } else {
+            // Video dọc hơn khung hình màn hình: full chiều dọc, tỉ lệ theo aspect ratio
+            Modifier
+                .fillMaxHeight()
+                .aspectRatio(currentRatio)
+        }
+
+        // Khung SurfaceView native kết nối trực tiếp với MediaPlaybackManager với tỉ lệ chuẩn không bị méo hình
         AndroidView(
             factory = { ctx ->
                 android.view.SurfaceView(ctx).apply {
@@ -1100,10 +1181,10 @@ private fun InAppVideoViewer(
                     })
                 }
             },
-            modifier = Modifier.fillMaxSize()
+            modifier = surfaceModifier
         )
 
-        // Overlay điều khiển khi chạm vào màn hình (tự biến mất sau 3.5s, không chiếm diện tích 0dp)
+        // Overlay điều khiển khi chạm vào màn hình (tự biến mất sau 3.5s, không chiếm diện tích)
         AnimatedVisibility(
             visible = showControls,
             enter = fadeIn(),
@@ -1125,7 +1206,13 @@ private fun InAppVideoViewer(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
-                        onClick = onNavigateBack,
+                        onClick = {
+                            if (isLandscape) {
+                                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                            } else {
+                                onNavigateBack()
+                            }
+                        },
                         modifier = Modifier
                             .size(40.dp)
                             .background(Color.Black.copy(alpha = 0.55f), CircleShape)
@@ -1317,12 +1404,28 @@ private fun InAppVideoViewer(
                             color = Color.White,
                             fontWeight = FontWeight.Medium
                         )
-                        Text(
-                            text = formatDurationMs(duration),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.8f),
-                            fontWeight = FontWeight.Medium
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = formatDurationMs(duration),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.8f),
+                                fontWeight = FontWeight.Medium
+                            )
+                            IconButton(
+                                onClick = { toggleOrientation() },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isLandscape) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                                    contentDescription = if (isLandscape) "Thu nhỏ màn hình" else "Toàn màn hình",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
                     }
 
                     val maxDuration = duration.toFloat().coerceAtLeast(1f)
@@ -1655,6 +1758,15 @@ private fun formatDurationMs(ms: Int): String {
     } else {
         String.format(java.util.Locale.getDefault(), "%02d:%02d", minutes, seconds)
     }
+}
+
+private fun Context.findActivity(): Activity? {
+    var current = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        current = current.baseContext
+    }
+    return null
 }
 
 /**
