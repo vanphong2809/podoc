@@ -80,6 +80,7 @@ fun ReaderScreen(
     val lazyListState = rememberLazyListState()
 
     var showFontMenu by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(articleId) {
         viewModel.loadArticle(articleId, context)
@@ -262,6 +263,17 @@ fun ReaderScreen(
                             ) {
                                 Icon(imageVector = Icons.Default.Share, contentDescription = "Chia sẻ")
                             }
+
+                            // Nút Xoá bài viết / tệp tin
+                            IconButton(
+                                onClick = { showDeleteDialog = true }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Xoá bài viết",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     )
 
@@ -320,7 +332,8 @@ fun ReaderScreen(
                             markdownBlocks = markdownBlocks,
                             onRetryLoad = { viewModel.loadFileForInApp(context, article) },
                             onOpenExternal = { viewModel.openOriginalFile(context) },
-                            onNavigateBack = onNavigateBack
+                            onNavigateBack = onNavigateBack,
+                            onDeleteClick = { showDeleteDialog = true }
                         )
                     } else {
                         // CHẾ ĐỘ ĐỌC BÀI VIẾT WEB (MARKDOWN 120 FPS)
@@ -334,6 +347,47 @@ fun ReaderScreen(
                 }
             }
         }
+    }
+
+    // Dialog xác nhận xoá tài liệu / video / âm thanh trong màn hình đọc
+    if (showDeleteDialog) {
+        val isVideo = fileExt in listOf("mp4", "mkv", "mov", "webm", "avi", "3gp", "ts") || article?.mimeType?.startsWith("video/") == true
+        val isAudio = fileExt in listOf("mp3", "wav", "m4a", "aac", "flac", "ogg", "wma", "opus") || article?.mimeType?.startsWith("audio/") == true
+        val itemTypeName = when {
+            isVideo -> "video"
+            isAudio -> "tệp âm thanh"
+            else -> "bài viết"
+        }
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = {
+                Text(
+                    text = "Xoá $itemTypeName",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text("Bạn có chắc chắn muốn xoá \"${article?.title ?: "mục này"}\" không? Thao tác này sẽ xoá hoàn toàn tệp tin khỏi thư viện và máy chủ.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteDialog = false
+                        viewModel.deleteArticle(context) {
+                            onNavigateBack()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Xoá", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text(stringResource(R.string.btn_cancel))
+                }
+            }
+        )
     }
 }
 
@@ -351,7 +405,8 @@ private fun InAppFileContent(
     markdownBlocks: List<String>,
     onRetryLoad: () -> Unit,
     onOpenExternal: () -> Unit,
-    onNavigateBack: () -> Unit = {}
+    onNavigateBack: () -> Unit = {},
+    onDeleteClick: () -> Unit = {}
 ) {
     if (uiState.isFileLoading) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -403,7 +458,8 @@ private fun InAppFileContent(
                     file = file,
                     article = article,
                     onOpenExternal = onOpenExternal,
-                    onNavigateBack = onNavigateBack
+                    onNavigateBack = onNavigateBack,
+                    onDeleteClick = onDeleteClick
                 )
             } else {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -416,7 +472,12 @@ private fun InAppFileContent(
         isAudio -> {
             val file = uiState.localFile
             if (file != null && file.exists()) {
-                InAppAudioViewer(file = file, article = article, onOpenExternal = onOpenExternal)
+                InAppAudioViewer(
+                    file = file,
+                    article = article,
+                    onOpenExternal = onOpenExternal,
+                    onDeleteClick = onDeleteClick
+                )
             } else {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
@@ -973,7 +1034,8 @@ private fun InAppVideoViewer(
     file: File,
     article: ArticleDetail,
     onOpenExternal: () -> Unit,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onDeleteClick: () -> Unit
 ) {
     val context = LocalContext.current
     val isPlaying by MediaPlaybackManager.isPlaying.collectAsState()
@@ -1145,6 +1207,22 @@ private fun InAppVideoViewer(
                             modifier = Modifier.size(20.dp)
                         )
                     }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    IconButton(
+                        onClick = onDeleteClick,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Xoá video",
+                            tint = Color(0xFFEF4444),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
 
                 // 2. BỘ NÚT ĐIỀU KHIỂN CHÍNH GIỮA MÀN HÌNH (Lùi 10s, Play/Pause/Replay, Tiến 10s)
@@ -1275,7 +1353,8 @@ private fun InAppVideoViewer(
 private fun InAppAudioViewer(
     file: File,
     article: ArticleDetail,
-    onOpenExternal: () -> Unit
+    onOpenExternal: () -> Unit,
+    onDeleteClick: () -> Unit
 ) {
     val context = LocalContext.current
     val isPlaying by MediaPlaybackManager.isPlaying.collectAsState()
@@ -1535,15 +1614,30 @@ private fun InAppAudioViewer(
             }
         }
 
-        // 5. Nút mở ứng dụng ngoài
-        OutlinedButton(
-            onClick = onOpenExternal,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth()
+        // 5. Nút mở ứng dụng ngoài & Nút Xoá
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Icon(imageVector = Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Mở bằng ứng dụng phát nhạc ngoài")
+            OutlinedButton(
+                onClick = onOpenExternal,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(imageVector = Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Mở app ngoài", maxLines = 1)
+            }
+
+            OutlinedButton(
+                onClick = onDeleteClick,
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+            ) {
+                Icon(imageVector = Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Xoá")
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))

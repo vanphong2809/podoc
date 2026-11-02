@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.podoc.app.R
 import com.podoc.app.data.model.ArticleListItem
+import com.podoc.app.service.MediaPlaybackManager
 import com.podoc.app.ui.components.AddOptionBottomSheet
 import com.podoc.app.ui.components.ArticleCard
 import com.podoc.app.ui.components.EmptyStateView
@@ -52,6 +53,7 @@ fun CategoryDetailScreen(
     var editingArticle by remember { mutableStateOf<ArticleListItem?>(null) }
     var changingCategoryArticle by remember { mutableStateOf<ArticleListItem?>(null) }
     var newTitleInput by remember { mutableStateOf("") }
+    var articleToDelete by remember { mutableStateOf<ArticleListItem?>(null) }
 
     // Launcher chọn File từ máy
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -300,7 +302,7 @@ fun CategoryDetailScreen(
                                     article = article,
                                     onClick = { onArticleClick(article.id) },
                                     onToggleFavorite = { viewModel.toggleFavorite(article) },
-                                    onDelete = { viewModel.deleteArticle(article) },
+                                    onDelete = { articleToDelete = article },
                                     onOpenSource = {
                                         val url = article.sourceUrl
                                         if (!url.isNullOrBlank()) {
@@ -464,6 +466,50 @@ fun CategoryDetailScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { changingCategoryArticle = null }) {
+                    Text(stringResource(R.string.btn_cancel))
+                }
+            }
+        )
+    }
+
+    // Dialog xác nhận xoá 1 bài viết / video
+    if (articleToDelete != null) {
+        val article = articleToDelete!!
+        val isVideo = article.mimeType?.startsWith("video/") == true ||
+                listOf(".mp4", ".mov", ".mkv", ".webm", ".avi", ".3gp").any { (article.fileName ?: "").lowercase().endsWith(it) }
+        val isAudio = article.mimeType?.startsWith("audio/") == true ||
+                listOf(".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg").any { (article.fileName ?: "").lowercase().endsWith(it) }
+        val itemTypeName = when {
+            isVideo -> "video"
+            isAudio -> "tệp âm thanh"
+            else -> "bài viết"
+        }
+        AlertDialog(
+            onDismissRequest = { articleToDelete = null },
+            title = {
+                Text(
+                    text = "Xoá $itemTypeName",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text("Bạn có chắc chắn muốn xoá \"${article.title}\" không? Tệp tin sẽ bị xoá hoàn toàn khỏi thư viện và máy chủ.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val toDelete = article
+                        articleToDelete = null
+                        MediaPlaybackManager.stopIfPlaying(toDelete.id, context)
+                        viewModel.deleteArticle(toDelete)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Xoá", color = androidx.compose.ui.graphics.Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { articleToDelete = null }) {
                     Text(stringResource(R.string.btn_cancel))
                 }
             }

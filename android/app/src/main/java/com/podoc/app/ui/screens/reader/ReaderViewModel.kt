@@ -261,4 +261,23 @@ class ReaderViewModel(
             // Intent open fallback
         }
     }
+
+    fun deleteArticle(context: Context, onSuccess: () -> Unit) {
+        val articleId = _uiState.value.article?.id ?: return
+        com.podoc.app.service.MediaPlaybackManager.stopIfPlaying(articleId, context)
+        viewModelScope.launch {
+            articleRepository.deleteArticle(articleId).fold(
+                onSuccess = {
+                    withContext(Dispatchers.Main) {
+                        onSuccess()
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.value = _uiState.value.copy(
+                        errorMessage = "Không thể xoá mục này: ${error.message ?: "Lỗi kết nối máy chủ"}"
+                    )
+                }
+            )
+        }
+    }
 }

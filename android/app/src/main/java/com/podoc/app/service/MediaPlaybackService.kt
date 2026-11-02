@@ -162,6 +162,22 @@ object MediaPlaybackManager {
         }
         context.startService(intent)
     }
+
+    /**
+     * Dừng phát ngay lập tức nếu bài viết/video đang phát bị xoá
+     */
+    fun stopIfPlaying(articleId: Int, context: Context) {
+        if (_currentArticleId.value == articleId) {
+            stop(context)
+        }
+    }
+
+    fun stopIfPlaying(articleIds: List<Int>, context: Context) {
+        val curId = _currentArticleId.value
+        if (curId != null && articleIds.contains(curId)) {
+            stop(context)
+        }
+    }
 }
 
 /**

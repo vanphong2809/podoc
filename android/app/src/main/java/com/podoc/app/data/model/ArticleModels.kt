@@ -110,3 +110,8 @@ data class BatchDeleteRequest(
     @SerialName("ids") val ids: List<Int>
 )
 
+@Serializable
+data class BatchDeleteResponse(
+    @SerialName("deleted_count") val deletedCount: Int = 0
+)
+

@@ -280,32 +280,36 @@ class LibraryViewModel(
     }
 
     fun deleteArticle(article: ArticleListItem) {
-        // Tạm xoá khỏi UI để hiển thị Snackbar Hoàn tác
+        // Cập nhật giao diện ngay lập tức và gửi lệnh xoá lên server ngay lập tức
         val remaining = _uiState.value.articles.filter { it.id != article.id }
         _uiState.value = _uiState.value.copy(
             articles = remaining,
-            recentlyDeletedArticle = article
+            recentlyDeletedArticle = null
         )
 
         viewModelScope.launch {
-            // Đợi 4 giây cho người dùng có cơ hội bấm Hoàn tác
-            delay(4000)
-            if (_uiState.value.recentlyDeletedArticle?.id == article.id) {
-                // Người dùng không bấm Hoàn tác -> Gọi xoá thật trên server
-                articleRepository.deleteArticle(article.id)
-                _uiState.value = _uiState.value.copy(recentlyDeletedArticle = null)
-                // Cập nhật lại số đếm danh mục sau khi xoá
-                categoryRepository.getCategories()
-            }
+            val result = articleRepository.deleteArticle(article.id)
+            result.fold(
+                onSuccess = {
+                    _uiState.value = _uiState.value.copy(
+                        userMessage = "Đã xoá: ${article.title.take(25)}"
+                    )
+                    // Cập nhật lại số đếm danh mục sau khi xoá
+                    categoryRepository.getCategories()
+                },
+                onFailure = { error ->
+                    // Khôi phục lại bài viết nếu xoá thất bại
+                    _uiState.value = _uiState.value.copy(
+                        articles = listOf(article) + _uiState.value.articles,
+                        errorMessage = "Không thể xoá: ${error.message ?: "Lỗi kết nối máy chủ"}"
+                    )
+                }
+            )
         }
     }
 
     fun undoDelete() {
-        val deleted = _uiState.value.recentlyDeletedArticle ?: return
-        _uiState.value = _uiState.value.copy(
-            articles = listOf(deleted) + _uiState.value.articles,
-            recentlyDeletedArticle = null
-        )
+        // Không sử dụng cơ chế delay xoá để tránh xung đột dữ liệu
     }
 
     fun uploadFiles(uris: List<Uri>, onDone: ((count: Int) -> Unit)? = null) {
@@ -396,12 +400,17 @@ class LibraryViewModel(
             result.fold(
                 onSuccess = {
                     val count = idsToDelete.size
+                    val typeStr = when (_uiState.value.selectedContentType) {
+                        "video" -> "video"
+                        "image" -> "hình ảnh"
+                        else -> "mục"
+                    }
                     _uiState.value = _uiState.value.copy(
                         articles = _uiState.value.articles.filterNot { it.id in idsToDelete },
                         isSelectionMode = false,
                         selectedMediaIds = emptySet(),
                         isDeletingMultiple = false,
-                        userMessage = "Đã xoá $count hình ảnh thành công"
+                        userMessage = "Đã xoá $count $typeStr thành công"
                     )
                     categoryRepository.getCategories()
                     onDone?.invoke(count)

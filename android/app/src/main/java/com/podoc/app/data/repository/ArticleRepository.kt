@@ -337,8 +337,12 @@ class ArticleRepository(
 
     suspend fun deleteArticle(id: Int): Result<Unit> {
         return try {
-            getApi().deleteArticle(id)
-            Result.success(Unit)
+            val res = getApi().deleteArticle(id)
+            if (res.isSuccessful || res.code() == 404) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Xoá thất bại: mã phản hồi ${res.code()}"))
+            }
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -351,13 +355,25 @@ class ArticleRepository(
             if (res.isSuccessful) {
                 Result.success(Unit)
             } else {
-                ids.forEach { getApi().deleteArticle(it) }
-                Result.success(Unit)
+                var allSuccess = true
+                for (id in ids) {
+                    val singleRes = getApi().deleteArticle(id)
+                    if (!singleRes.isSuccessful && singleRes.code() != 404) {
+                        allSuccess = false
+                    }
+                }
+                if (allSuccess) Result.success(Unit) else Result.failure(Exception("Xoá thất bại: mã ${res.code()}"))
             }
         } catch (e: Exception) {
             try {
-                ids.forEach { getApi().deleteArticle(it) }
-                Result.success(Unit)
+                var allSuccess = true
+                for (id in ids) {
+                    val singleRes = getApi().deleteArticle(id)
+                    if (!singleRes.isSuccessful && singleRes.code() != 404) {
+                        allSuccess = false
+                    }
+                }
+                if (allSuccess) Result.success(Unit) else Result.failure(e)
             } catch (fallbackEx: Exception) {
                 Result.failure(fallbackEx)
             }
