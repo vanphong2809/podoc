@@ -3,6 +3,7 @@ package com.podoc.app.ui.screens.library
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.podoc.app.data.model.ArticleDetail
 import com.podoc.app.data.model.ArticleListItem
 import com.podoc.app.data.model.Category
 import com.podoc.app.data.repository.ArticleRepository
@@ -347,6 +348,34 @@ class LibraryViewModel(
             loadArticles(refresh = true)
             categoryRepository.getCategories()
             onDone?.invoke(successCount)
+        }
+    }
+
+    fun uploadAndConvertToPdf(uri: Uri, onSuccess: (ArticleDetail) -> Unit) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isUploading = true,
+                uploadProgressMessage = "Đang tải lên và chuyển đổi sang PDF..."
+            )
+            articleRepository.uploadAndConvertToPdf(uri).fold(
+                onSuccess = { newArticle ->
+                    _uiState.value = _uiState.value.copy(
+                        isUploading = false,
+                        uploadProgressMessage = null,
+                        userMessage = "Chuyển đổi sang PDF thành công!"
+                    )
+                    loadArticles(refresh = true)
+                    categoryRepository.getCategories()
+                    onSuccess(newArticle)
+                },
+                onFailure = { error ->
+                    _uiState.value = _uiState.value.copy(
+                        isUploading = false,
+                        uploadProgressMessage = null,
+                        errorMessage = "Chuyển đổi sang PDF thất bại: ${error.message ?: "Lỗi hệ thống"}"
+                    )
+                }
+            )
         }
     }
 

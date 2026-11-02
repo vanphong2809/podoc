@@ -32,7 +32,9 @@ data class ReaderUiState(
     val localFile: File? = null,
     val htmlContent: String? = null,
     val textContent: String? = null,
-    val fileError: String? = null
+    val fileError: String? = null,
+    val isConvertingToPdf: Boolean = false,
+    val convertError: String? = null
 )
 
 class ReaderViewModel(
@@ -279,5 +281,30 @@ class ReaderViewModel(
                 }
             )
         }
+    }
+
+    fun convertToPdf(onSuccess: (ArticleDetail) -> Unit) {
+        val article = _uiState.value.article ?: return
+        _uiState.value = _uiState.value.copy(isConvertingToPdf = true, convertError = null)
+        viewModelScope.launch {
+            articleRepository.convertArticleToPdf(article.id).fold(
+                onSuccess = { newArticle ->
+                    _uiState.value = _uiState.value.copy(isConvertingToPdf = false)
+                    withContext(Dispatchers.Main) {
+                        onSuccess(newArticle)
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.value = _uiState.value.copy(
+                        isConvertingToPdf = false,
+                        convertError = error.message ?: "Chuyển đổi sang PDF thất bại"
+                    )
+                }
+            )
+        }
+    }
+
+    fun clearConvertError() {
+        _uiState.value = _uiState.value.copy(convertError = null)
     }
 }

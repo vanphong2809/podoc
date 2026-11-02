@@ -79,7 +79,8 @@ import java.io.File
 fun ReaderScreen(
     articleId: Int,
     viewModel: ReaderViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigateToArticle: (Int) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -110,6 +111,12 @@ fun ReaderScreen(
                 article?.mimeType == "text/markdown" -> "md"
                 article?.mimeType == "text/html" -> "html"
                 article?.mimeType?.contains("wordprocessingml") == true -> "docx"
+                article?.mimeType == "application/msword" -> "doc"
+                article?.mimeType?.contains("spreadsheetml") == true -> "xlsx"
+                article?.mimeType == "application/vnd.ms-excel" -> "xls"
+                article?.mimeType?.contains("presentationml") == true -> "pptx"
+                article?.mimeType == "application/vnd.ms-powerpoint" -> "ppt"
+                article?.mimeType == "application/rtf" || article?.mimeType == "text/rtf" -> "rtf"
                 article?.mimeType == "video/mp4" -> "mp4"
                 article?.mimeType == "video/webm" -> "webm"
                 article?.mimeType == "video/x-matroska" -> "mkv"
@@ -134,6 +141,17 @@ fun ReaderScreen(
 
     val isVideo = fileExt in listOf("mp4", "mkv", "mov", "webm", "avi", "3gp", "ts") || article?.mimeType?.startsWith("video/") == true
     val isAudio = fileExt in listOf("mp3", "wav", "m4a", "aac", "flac", "ogg", "wma", "opus") || article?.mimeType?.startsWith("audio/") == true
+    val isOfficeDoc = fileExt in listOf("doc", "docx", "xls", "xlsx", "ppt", "pptx", "rtf", "odt", "ods", "odp", "csv") ||
+            article?.mimeType in listOf(
+                "application/msword",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.ms-excel",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/vnd.ms-powerpoint",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "application/rtf",
+                "text/rtf"
+            )
 
     // Dừng phát media nền khi người dùng thoát khỏi màn hình xem chi tiết
     DisposableEffect(articleId) {
@@ -241,6 +259,28 @@ fun ReaderScreen(
                                 }
                             }
 
+                            // Nút Chuyển đổi sang PDF giữ nguyên định dạng gốc cho tệp Office
+                            if (isOfficeDoc) {
+                                IconButton(
+                                    onClick = {
+                                        viewModel.convertToPdf { newArticle ->
+                                            onNavigateToArticle(newArticle.id)
+                                        }
+                                    },
+                                    enabled = !uiState.isConvertingToPdf
+                                ) {
+                                    if (uiState.isConvertingToPdf) {
+                                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.PictureAsPdf,
+                                            contentDescription = "Chuyển sang PDF",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+
                             // Nút Mở tệp tin bằng app ngoài (Word, WPS, v.v.)
                             if (isFile) {
                                 IconButton(
@@ -332,12 +372,18 @@ fun ReaderScreen(
                         InAppFileContent(
                             article = article,
                             fileExt = fileExt,
+                            isOfficeDoc = isOfficeDoc,
                             uiState = uiState,
                             lazyListState = lazyListState,
                             cleanedMarkdown = cleanedMarkdown,
                             markdownBlocks = markdownBlocks,
                             onRetryLoad = { viewModel.loadFileForInApp(context, article) },
                             onOpenExternal = { viewModel.openOriginalFile(context) },
+                            onConvertToPdf = {
+                                viewModel.convertToPdf { newArticle ->
+                                    onNavigateToArticle(newArticle.id)
+                                }
+                            },
                             onNavigateBack = onNavigateBack,
                             onDeleteClick = { showDeleteDialog = true }
                         )
@@ -395,6 +441,54 @@ fun ReaderScreen(
             }
         )
     }
+
+    // Dialog hiển thị tiến trình khi chuyển đổi sang PDF
+    if (uiState.isConvertingToPdf) {
+        AlertDialog(
+            onDismissRequest = {},
+            confirmButton = {},
+            title = {
+                Text(
+                    text = "Đang chuyển đổi sang PDF...",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(36.dp))
+                    Text(
+                        text = "Hệ thống đang chuyển đổi tài liệu giữ nguyên 100% định dạng ban đầu...",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+        )
+    }
+
+    // Dialog thông báo lỗi khi chuyển đổi thất bại
+    if (uiState.convertError != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.clearConvertError() },
+            confirmButton = {
+                TextButton(onClick = { viewModel.clearConvertError() }) {
+                    Text("Đóng")
+                }
+            },
+            title = {
+                Text(
+                    text = "Lỗi chuyển đổi",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
+            },
+            text = {
+                Text(uiState.convertError ?: "Không thể chuyển đổi sang PDF")
+            }
+        )
+    }
 }
 
 /**
@@ -405,12 +499,14 @@ fun ReaderScreen(
 private fun InAppFileContent(
     article: ArticleDetail,
     fileExt: String,
+    isOfficeDoc: Boolean = false,
     uiState: ReaderUiState,
     lazyListState: androidx.compose.foundation.lazy.LazyListState,
     cleanedMarkdown: String,
     markdownBlocks: List<String>,
     onRetryLoad: () -> Unit,
     onOpenExternal: () -> Unit,
+    onConvertToPdf: () -> Unit = {},
     onNavigateBack: () -> Unit = {},
     onDeleteClick: () -> Unit = {}
 ) {
@@ -515,13 +611,59 @@ private fun InAppFileContent(
             }
         }
 
-        // 3. Xem HTML hoặc Word (DOCX / DOC) qua WebView
+        // 3. Xem HTML hoặc Word (DOCX / DOC) qua WebView kèm tuỳ chọn convert sang PDF
         fileExt in listOf("html", "htm", "docx", "doc") || article.mimeType in listOf("text/html", "application/msword") -> {
-            InAppHtmlViewer(
-                htmlContent = uiState.htmlContent,
-                localFile = uiState.localFile,
-                onOpenExternal = onOpenExternal
-            )
+            Column(modifier = Modifier.fillMaxSize()) {
+                if (fileExt in listOf("docx", "doc")) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PictureAsPdf,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Định dạng Word gốc",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Text(
+                                    text = "Chuyển sang PDF để giữ chuẩn 100% bố cục trang & bảng",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            FilledTonalButton(
+                                onClick = onConvertToPdf,
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                            ) {
+                                Text("Chuyển PDF", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    }
+                }
+                Box(modifier = Modifier.weight(1f)) {
+                    InAppHtmlViewer(
+                        htmlContent = uiState.htmlContent,
+                        localFile = uiState.localFile,
+                        onOpenExternal = onOpenExternal
+                    )
+                }
+            }
         }
 
         // 4. Xem TXT, Markdown (MD, MDF)
@@ -534,7 +676,7 @@ private fun InAppFileContent(
             )
         }
 
-        // 5. Định dạng khác: Hiển thị thông tin file và nút mở ngoài
+        // 5. Định dạng khác (Excel: XLS, XLSX, PowerPoint: PPT, PPTX, hoặc tệp nhị phân khác)
         else -> {
             Column(
                 modifier = Modifier
@@ -549,7 +691,12 @@ private fun InAppFileContent(
                     modifier = Modifier.size(80.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(imageVector = Icons.Default.Description, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp))
+                        Icon(
+                            imageVector = if (isOfficeDoc) Icons.Default.PictureAsPdf else Icons.Default.Description,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(40.dp)
+                        )
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
@@ -557,7 +704,25 @@ private fun InAppFileContent(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text("Định dạng: ${fileExt.uppercase()}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 Spacer(modifier = Modifier.height(24.dp))
-                Button(onClick = onOpenExternal, shape = RoundedCornerShape(12.dp)) {
+
+                if (isOfficeDoc) {
+                    Button(
+                        onClick = onConvertToPdf,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.PictureAsPdf, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Chuyển đổi sang PDF & xem ngay")
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
+                OutlinedButton(
+                    onClick = onOpenExternal,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)
+                ) {
                     Icon(imageVector = Icons.Default.OpenInNew, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Mở bằng ứng dụng tương thích")

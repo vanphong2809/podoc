@@ -131,6 +131,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            // Launcher chọn file Office từ máy để chuyển đổi sang PDF
+            val officeToPdfLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.OpenDocument()
+            ) { uri: Uri? ->
+                if (uri != null) {
+                    libraryViewModel.uploadAndConvertToPdf(uri) { newArticle ->
+                        navController.navigate(Screen.Reader.createRoute(newArticle.id))
+                    }
+                }
+            }
+
             // Mở trực tiếp bài viết nếu được chuyển sang từ ShareReceiveActivity
             LaunchedEffect(Unit) {
                 val openArticleId = intent?.getIntExtra("open_article_id", -1)?.takeIf { it > 0 }
@@ -222,6 +233,11 @@ class MainActivity : ComponentActivity() {
                                 onNavigateBack = {
                                     libraryViewModel.loadArticles(refresh = true)
                                     navController.popBackStack()
+                                },
+                                onNavigateToArticle = { newArticleId ->
+                                    navController.navigate(Screen.Reader.createRoute(newArticleId)) {
+                                        popUpTo(Screen.Reader.createRoute(articleId)) { inclusive = true }
+                                    }
                                 }
                             )
                         }
@@ -321,6 +337,25 @@ class MainActivity : ComponentActivity() {
                             onPickAudios = {
                                 // Mở trình chọn tệp âm thanh từ máy (MP3, WAV, M4A, FLAC...)
                                 audioPickerLauncher.launch("audio/*")
+                            },
+                            onPickOfficeForPdf = {
+                                // Mở trình chọn tệp Office từ máy để convert sang PDF
+                                officeToPdfLauncher.launch(
+                                    arrayOf(
+                                        "application/msword",
+                                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                        "application/vnd.ms-excel",
+                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                        "application/vnd.ms-powerpoint",
+                                        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                                        "application/rtf",
+                                        "text/rtf",
+                                        "application/vnd.oasis.opendocument.text",
+                                        "application/vnd.oasis.opendocument.spreadsheet",
+                                        "application/vnd.oasis.opendocument.presentation",
+                                        "*/*"
+                                    )
+                                )
                             }
                         )
                     }

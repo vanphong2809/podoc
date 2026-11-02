@@ -27,7 +27,8 @@ fun AddOptionBottomSheet(
     onPickFiles: () -> Unit,
     onPickImages: () -> Unit = {},
     onPickVideos: () -> Unit = {},
-    onPickAudios: () -> Unit = {}
+    onPickAudios: () -> Unit = {},
+    onPickOfficeForPdf: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var urlInput by remember { mutableStateOf("") }
@@ -217,6 +218,22 @@ fun AddOptionBottomSheet(
                 Icon(imageVector = Icons.Default.Image, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(stringResource(R.string.action_import_image_limit))
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Tuỳ chọn Chuyển đổi sang PDF (Word, Excel, PowerPoint...)
+            OutlinedButton(
+                onClick = {
+                    onPickOfficeForPdf()
+                    onDismiss()
+                },
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(imageVector = Icons.Default.PictureAsPdf, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Chuyển đổi sang PDF (Word, Excel, PPT...)")
             }
 
             Spacer(modifier = Modifier.height(10.dp))

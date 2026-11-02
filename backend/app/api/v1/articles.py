@@ -1,4 +1,7 @@
+import logging
 import os
+import shutil
+import tempfile
 import uuid
 from typing import Annotated, List, Optional
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, File, status
@@ -24,6 +27,8 @@ from app.services.extractors.base import generate_excerpt
 from app.services.extractors.registry import extractor_registry
 from app.services.thumbnail import ensure_thumbnail
 from app.services.url_utils import normalize_url
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/articles", tags=["Articles"])
 
@@ -741,4 +746,189 @@ async def preview_article_html(
         return HTMLResponse(content=styled_html)
 
     return FileResponse(path=disk_path, filename=art.file_name, media_type=art.mime_type or "application/octet-stream")
+
+
+@router.post("/convert-to-pdf", response_model=ArticleDetailResponse, status_code=status.HTTP_201_CREATED)
+async def upload_and_convert_to_pdf(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    file: UploadFile = File(...),
+    category_id: Optional[int] = Form(None),
+    title: Optional[str] = Form(None),
+):
+    """
+    Tải lên tệp tin Office (DOC, DOCX, XLS, XLSX, PPT, PPTX, RTF...)
+    và chuyển đổi trực tiếp sang PDF giữ nguyên 100% định dạng ban đầu.
+    Lưu tệp kết quả dưới dạng PDF vào thư viện.
+    """
+    from app.services.pdf_converter import is_convertible_to_pdf, convert_office_to_pdf
+    from app.services.extractors.pdf import PdfExtractor
+
+    orig_name = file.filename or "document"
+
+    if not is_convertible_to_pdf(orig_name, file.content_type):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Định dạng tệp '{orig_name}' không được hỗ trợ chuyển đổi sang PDF. Chỉ hỗ trợ DOC, DOCX, XLS, XLSX, PPT, PPTX, RTF, ODT, ODS, ODP, TXT."
+        )
+
+    file_bytes = await file.read()
+    if len(file_bytes) > 50 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Dung lượng tệp vượt quá giới hạn cho phép (tối đa 50 MB)."
+        )
+
+    # Xác định danh mục
+    cat = None
+    if category_id is not None:
+        cat_stmt = select(Category).where(Category.id == category_id)
+        cat_res = await db.execute(cat_stmt)
+        cat = cat_res.scalar_one_or_none()
+        if not cat:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Danh mục không tồn tại")
+
+    if not cat:
+        first_cat_stmt = select(Category).order_by(Category.sort_order.asc(), Category.id.asc()).limit(1)
+        first_cat_res = await db.execute(first_cat_stmt)
+        cat = first_cat_res.scalar_one_or_none()
+        if not cat:
+            cat = Category(name="Tài liệu", icon="📁", color="#6366f1", is_system=True)
+            db.add(cat)
+            await db.flush()
+
+    # Chuyển đổi sang PDF trong thư mục tạm
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_input = os.path.join(temp_dir, orig_name)
+        with open(temp_input, "wb") as f_in:
+            f_in.write(file_bytes)
+
+        try:
+            converted_pdf_path = convert_office_to_pdf(temp_input, output_dir=temp_dir)
+            with open(converted_pdf_path, "rb") as f_pdf:
+                pdf_bytes = f_pdf.read()
+        except Exception as e:
+            logger.error(f"Lỗi convert PDF khi upload {orig_name}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Lỗi trong quá trình chuyển đổi sang PDF: {str(e)}"
+            )
+
+    # Lưu tệp PDF vào storage chính
+    os.makedirs(settings.FILES_STORAGE_DIR, exist_ok=True)
+    pdf_stored_filename = f"{uuid.uuid4().hex}.pdf"
+    pdf_disk_path = os.path.join(settings.FILES_STORAGE_DIR, pdf_stored_filename)
+    with open(pdf_disk_path, "wb") as f_out:
+        f_out.write(pdf_bytes)
+
+    base_name = os.path.splitext(orig_name)[0]
+    pdf_file_name = f"{base_name}.pdf"
+    final_title = title.strip() if title and title.strip() else base_name
+
+    pdf_extractor = PdfExtractor()
+    extraction_res = await pdf_extractor.extract(pdf_bytes, {"file_name": pdf_file_name, "file_path": pdf_stored_filename})
+
+    new_article = Article(
+        title=final_title,
+        source_type="FILE",
+        file_name=pdf_file_name,
+        file_path=pdf_stored_filename,
+        mime_type="application/pdf",
+        content_markdown=extraction_res.content_markdown,
+        excerpt=extraction_res.excerpt or f"Tài liệu PDF chuyển đổi từ '{orig_name}'",
+        category_id=cat.id,
+        reading_minutes=extraction_res.reading_minutes or 1,
+    )
+
+    db.add(new_article)
+    await db.commit()
+    await db.refresh(new_article)
+
+    return await get_article(new_article.id, current_user, db)
+
+
+@router.post("/{id}/convert-to-pdf", response_model=ArticleDetailResponse, status_code=status.HTTP_201_CREATED)
+async def convert_article_file_to_pdf(
+    id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Chuyển đổi file đính kèm của bài viết hiện có (doc, docx, xls, xlsx, ppt, pptx, rtf...)
+    sang định dạng PDF chuẩn giữ nguyên 100% định dạng ban đầu bằng LibreOffice headless.
+    Tạo một bài viết PDF mới trong cùng danh mục để người dùng xem trực tiếp trên app.
+    """
+    from app.services.pdf_converter import is_convertible_to_pdf, convert_office_to_pdf
+    from app.services.extractors.pdf import PdfExtractor
+
+    stmt = select(Article).options(selectinload(Article.category)).where(Article.id == id)
+    result = await db.execute(stmt)
+    art = result.scalar_one_or_none()
+
+    if not art:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy tài liệu")
+
+    if not art.file_path:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tài liệu này không có tệp đính kèm để chuyển đổi")
+
+    disk_path = os.path.join(settings.FILES_STORAGE_DIR, art.file_path)
+    if not os.path.exists(disk_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tệp vật lý không tồn tại trên máy chủ")
+
+    orig_name = art.file_name or os.path.basename(art.file_path)
+    if not is_convertible_to_pdf(orig_name, art.mime_type):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Định dạng tệp '{orig_name}' không được hỗ trợ chuyển đổi sang PDF. Chỉ hỗ trợ DOC, DOCX, XLS, XLSX, PPT, PPTX, RTF, ODT, ODS, ODP, TXT."
+        )
+
+    # Chuyển đổi sang PDF trong thư mục tạm
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_input = os.path.join(temp_dir, orig_name)
+        shutil.copy2(disk_path, temp_input)
+
+        try:
+            converted_pdf_path = convert_office_to_pdf(temp_input, output_dir=temp_dir)
+            with open(converted_pdf_path, "rb") as f_pdf:
+                pdf_bytes = f_pdf.read()
+        except Exception as e:
+            logger.error(f"Lỗi convert PDF cho article {id}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Lỗi trong quá trình chuyển đổi sang PDF: {str(e)}"
+            )
+
+    # Lưu tệp PDF mới vào storage chính
+    os.makedirs(settings.FILES_STORAGE_DIR, exist_ok=True)
+    pdf_stored_filename = f"{uuid.uuid4().hex}.pdf"
+    pdf_disk_path = os.path.join(settings.FILES_STORAGE_DIR, pdf_stored_filename)
+    with open(pdf_disk_path, "wb") as f_out:
+        f_out.write(pdf_bytes)
+
+    base_title = os.path.splitext(orig_name)[0]
+    pdf_file_name = f"{base_title}.pdf"
+    new_title = f"{art.title} (PDF)" if not art.title.lower().endswith(".pdf") else art.title
+
+    # Trích xuất nội dung text từ PDF để hỗ trợ tìm kiếm
+    pdf_extractor = PdfExtractor()
+    extraction_res = await pdf_extractor.extract(pdf_bytes, {"file_name": pdf_file_name, "file_path": pdf_stored_filename})
+
+    new_article = Article(
+        title=new_title,
+        source_type="FILE",
+        file_name=pdf_file_name,
+        file_path=pdf_stored_filename,
+        mime_type="application/pdf",
+        content_markdown=extraction_res.content_markdown,
+        excerpt=extraction_res.excerpt or f"Bản chuyển đổi PDF của '{orig_name}'",
+        category_id=art.category_id,
+        reading_minutes=extraction_res.reading_minutes or 1,
+    )
+
+    db.add(new_article)
+    await db.commit()
+    await db.refresh(new_article)
+
+    return await get_article(new_article.id, current_user, db)
+
 

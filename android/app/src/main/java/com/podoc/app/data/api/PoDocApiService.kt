@@ -96,4 +96,16 @@ interface PoDocApiService {
     // Preview HTML (for DOCX, HTML, TXT, MD)
     @GET("api/articles/{id}/preview-html")
     suspend fun previewArticleHtml(@Path("id") id: Int): ResponseBody
+
+    // Convert Office to PDF (doc, docx, xls, xlsx, ppt, pptx, rtf...)
+    @POST("api/articles/{id}/convert-to-pdf")
+    suspend fun convertArticleToPdf(@Path("id") id: Int): ArticleDetail
+
+    @Multipart
+    @POST("api/articles/convert-to-pdf")
+    suspend fun uploadAndConvertToPdf(
+        @Part file: MultipartBody.Part,
+        @Part("category_id") categoryId: RequestBody? = null,
+        @Part("title") title: RequestBody? = null
+    ): ArticleDetail
 }

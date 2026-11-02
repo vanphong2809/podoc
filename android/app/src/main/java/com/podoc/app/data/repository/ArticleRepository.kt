@@ -14,6 +14,8 @@ import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.ResponseBody
 import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class ArticleRepository(
     private val apiServiceProvider: () -> PoDocApiService?,
@@ -404,6 +406,63 @@ class ArticleRepository(
             Result.success(body.string())
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    private fun extractErrorMessage(e: Exception): String {
+        if (e is retrofit2.HttpException) {
+            try {
+                val body = e.response()?.errorBody()?.string()
+                if (!body.isNullOrBlank() && body.contains("detail")) {
+                    val detail = org.json.JSONObject(body).optString("detail", "")
+                    if (detail.isNotBlank()) return detail
+                }
+            } catch (_: Exception) {}
+        }
+        return e.localizedMessage ?: e.message ?: "Đã xảy ra lỗi kết nối"
+    }
+
+    /**
+     * Chuyển đổi tệp đính kèm của một tài liệu hiện có (doc, docx, xls, xlsx, ppt, pptx...)
+     * sang định dạng PDF giữ nguyên 100% định dạng ban đầu.
+     */
+    suspend fun convertArticleToPdf(id: Int): Result<ArticleDetail> = withContext(Dispatchers.IO) {
+        try {
+            val article = getApi().convertArticleToPdf(id)
+            Result.success(article)
+        } catch (e: Exception) {
+            Result.failure(Exception(extractErrorMessage(e)))
+        }
+    }
+
+    /**
+     * Tải trực tiếp tệp Office lên và chuyển đổi sang PDF ngay lập tức trên máy chủ.
+     */
+    suspend fun uploadAndConvertToPdf(
+        uri: Uri,
+        categoryId: Int? = null,
+        title: String? = null
+    ): Result<ArticleDetail> = withContext(Dispatchers.IO) {
+        try {
+            val fileName = queryFileName(uri) ?: "document.docx"
+            val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
+            val inputStream = context.contentResolver.openInputStream(uri)
+                ?: throw IllegalArgumentException("Không thể đọc tệp đã chọn")
+            val bytes = inputStream.use { it.readBytes() }
+
+            if (bytes.size > 50 * 1024 * 1024) {
+                throw IllegalArgumentException("Dung lượng tệp vượt quá giới hạn 50 MB.")
+            }
+
+            val requestFile = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
+            val filePart = MultipartBody.Part.createFormData("file", fileName, requestFile)
+            val catBody = categoryId?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
+            val titleBody = title?.toRequestBody("text/plain".toMediaTypeOrNull())
+
+            val article = getApi().uploadAndConvertToPdf(filePart, catBody, titleBody)
+            Result.success(article)
+        } catch (e: Exception) {
+            Result.failure(Exception(extractErrorMessage(e)))
         }
     }
 

@@ -7,12 +7,17 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Cài đặt gói hệ thống tối thiểu cần cho compile thư viện C nếu có và curl để healthcheck
+# Cài đặt gói hệ thống tối thiểu cần cho compile thư viện C, ffmpeg và LibreOffice headless để convert Office sang PDF
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     curl \
     ffmpeg \
+    libreoffice-writer-nogui \
+    libreoffice-calc-nogui \
+    libreoffice-impress-nogui \
+    fonts-liberation \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
