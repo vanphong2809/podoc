@@ -9,6 +9,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Collections
 import java.util.concurrent.TimeUnit
 
 data class GeminiVisionResult(
@@ -35,6 +36,9 @@ object GeminiDirectVisionService {
     private var cachedTargets: List<GeminiModelTarget> = emptyList()
     private var cachedApiKey: String = ""
 
+    // Đánh dấu các model đã hết hạn mức Quota (429) trong phiên làm việc để ưu tiên model còn hạn mức
+    private val exhaustedQuotaModels = Collections.synchronizedSet(mutableSetOf<String>())
+
     private val DEFAULT_PROMPT = """
         Hãy đọc và trích xuất TOÀN BỘ văn bản chữ viết có trong hình ảnh này một cách chính xác và trung thực nhất.
         - Giữ nguyên toàn bộ từ ngữ tiếng Việt có dấu, chữ số, ký hiệu và dấu câu.
@@ -42,6 +46,12 @@ object GeminiDirectVisionService {
         - KHÔNG giải thích, KHÔNG tóm tắt, KHÔNG thêm lời chào hay kết luận.
         - Chỉ trả về văn bản đọc được từ ảnh.
     """.trimIndent()
+
+    fun resetQuotaCache() {
+        exhaustedQuotaModels.clear()
+        cachedApiKey = ""
+        cachedTargets = emptyList()
+    }
 
     /**
      * Tự động truy vấn danh sách mô hình thực tế mà API Key này được cấp phép từ Google ModelService (ListModels).
@@ -124,7 +134,7 @@ object GeminiDirectVisionService {
 
     private fun scoreModelTarget(target: GeminiModelTarget): Int {
         val lower = target.model.lowercase()
-        val baseScore = when {
+        var baseScore = when {
             lower.contains("3.8-flash") -> 120
             lower.contains("2.5-flash") -> 110
             lower.contains("2.0-flash") -> 100
@@ -138,7 +148,12 @@ object GeminiDirectVisionService {
             lower.contains("gemini") -> 50
             else -> 10
         }
-        // Ưu tiên v1beta cho model thử nghiệm mới, v1 cho stable
+
+        // Nếu model này đã báo lỗi hết Quota (429), giảm mạnh độ ưu tiên để model còn quota được gọi trước
+        if (exhaustedQuotaModels.contains(target.model)) {
+            baseScore -= 1000
+        }
+
         val versionBonus = if (target.apiVersion == "v1beta" && (lower.contains("2.0") || lower.contains("3.8"))) 5 else 0
         return baseScore + versionBonus
     }
@@ -158,7 +173,6 @@ object GeminiDirectVisionService {
                 val modelNames = targets.map { "${it.model} (${it.apiVersion})" }.distinct()
                 Result.success(modelNames)
             } else {
-                // Nếu getAvailableModelTargets rỗng, gọi thử trực tiếp để lấy thông điệp lỗi chính xác từ Google
                 val testUrl = "https://generativelanguage.googleapis.com/v1beta/models?key=$cleanKey"
                 val response = httpClient.newCall(Request.Builder().url(testUrl).get().build()).execute()
                 val body = response.body?.string().orEmpty()
@@ -181,6 +195,7 @@ object GeminiDirectVisionService {
     /**
      * Gọi TRỰC TIẾP Google Gemini API từ thiết bị để trích xuất văn bản từ ảnh:
      * - Tự thích ứng 100% bằng cách truy vấn danh sách model đang hoạt động của chính API Key đó.
+     * - Tự động nhảy sang model tiếp theo (gemini-2.0-flash, gemini-1.5-flash) nếu model trước đó hết hạn mức Quota (429).
      * - Tránh hoàn toàn lỗi 404 do lệch version/model.
      * - Đọc chính xác 100% tiếng Việt có dấu, số, ký hiệu như khi chat trên Google AI Studio.
      */
@@ -214,6 +229,13 @@ object GeminiDirectVisionService {
                 GeminiModelTarget("gemini-1.5-pro", "v1beta"),
                 GeminiModelTarget("gemini-3.8-flash", "v1beta")
             )
+        }
+
+        // Tái sắp xếp targets theo mức độ ưu tiên hiện tại (đưa model đã cạn quota xuống cuối)
+        targetsToTry = targetsToTry.sortedWith { t1, t2 ->
+            val s1 = scoreModelTarget(t1)
+            val s2 = scoreModelTarget(t2)
+            s2.compareTo(s1)
         }
 
         var lastError: Exception? = null
@@ -266,13 +288,22 @@ object GeminiDirectVisionService {
                         "HTTP ${response.code}: $responseString"
                     }
 
-                    // Nếu 404 (model chưa hỗ trợ endpoint này) hoặc 503, thử target tiếp theo
-                    if (response.code == 404 || response.code == 503 || response.code == 400) {
+                    // Nếu 429: Hết hạn mức lượt gọi (Quota Exceeded / Free Tier daily limit) của model này
+                    // Ghi nhận và tự động thử ngay model tiếp theo (ví dụ từ 3.8-flash -> 2.0-flash / 1.5-flash)
+                    if (response.code == 429) {
+                        exhaustedQuotaModels.add(target.model)
+                        lastError = Exception("Mô hình ${target.model} (${target.apiVersion}) hết hạn mức ngày (429 Quota Exceeded), tự động chuyển sang mô hình tiếp theo.")
+                        continue
+                    }
+
+                    // Nếu 404 (model chưa hỗ trợ endpoint này), 503 (quá tải), 400 (lỗi param), 403 (cần billing riêng)
+                    val isKeyInvalid = errorMsg.contains("API_KEY_INVALID", ignoreCase = true) || errorMsg.contains("API key not valid", ignoreCase = true)
+                    if (!isKeyInvalid && (response.code == 404 || response.code == 503 || response.code == 400 || response.code == 403)) {
                         lastError = Exception("Mô hình ${target.model} (${target.apiVersion}) trả về mã ${response.code}: $errorMsg")
                         continue
                     } else {
-                        // Lỗi quota hoặc quyền hạn cụ thể
-                        return@withContext Result.failure(Exception("Lỗi Gemini (${target.model}): $errorMsg"))
+                        // Lỗi khóa API hoàn toàn không hợp lệ
+                        return@withContext Result.failure(Exception("Lỗi Google API: $errorMsg"))
                     }
                 }
 

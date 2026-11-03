@@ -207,8 +207,8 @@ async def call_gemini_api(
         try:
             async with httpx.AsyncClient(timeout=45.0) as client:
                 response = await client.post(url, json=payload)
-                if response.status_code == 404:
-                    logger.warning(f"Mô hình {target_model} chưa kích hoạt cho API key này (404), chuyển sang mô hình tiếp theo...")
+                if response.status_code in (404, 429, 503, 400):
+                    logger.warning(f"Mô hình {target_model} trả về mã {response.status_code} (hết quota hoặc chưa hỗ trợ), chuyển sang mô hình tiếp theo...")
                     continue
                 response.raise_for_status()
                 res_json = response.json()
@@ -499,8 +499,8 @@ async def read_image_with_gemini(
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
                 res = await client.post(url, json=payload)
-                if res.status_code == 404:
-                    logger.warning(f"Mô hình {target_model} ({api_version}) không hỗ trợ (404), thử mô hình tiếp theo...")
+                if res.status_code in (404, 429, 503, 400):
+                    logger.warning(f"Mô hình {target_model} ({api_version}) trả về {res.status_code} (hết hạn mức hoặc không hỗ trợ), thử mô hình tiếp theo...")
                     continue
                 res.raise_for_status()
                 res_json = res.json()

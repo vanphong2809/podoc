@@ -167,6 +167,7 @@ class OcrViewModel(
             geminiApiKey = key.trim()
             showApiKeyDialog = false
             apiKeyTestResult = null
+            GeminiDirectVisionService.resetQuotaCache()
             // Nếu có ảnh đang mở mà chưa nhận diện được hoặc có lỗi trước đó, tự động quét lại với key mới
             val current = activeBitmap ?: originalBitmap
             if (current != null && (recognizedText.isBlank() || errorMessage != null)) {
@@ -364,7 +365,9 @@ class OcrViewModel(
                     onFailure = { error ->
                         isReadingWithGemini = false
                         isRecognizing = false
-                        errorMessage = "Lỗi Gemini Vision: ${error.localizedMessage ?: "Không thể kết nối"}. Bạn có thể bấm 'Dùng OCR thiết bị' để quét ngoại tuyến."
+                        val current = activeBitmap ?: originalBitmap ?: bitmap
+                        readerNotice = "⚠️ AI Vision hết hạn mức hoặc lỗi mạng. Đã tự động chuyển sang đọc bằng ML Kit OCR thiết bị."
+                        recognizeWithMlKitOcr(current)
                     }
                 )
                 return@launch
