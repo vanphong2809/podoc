@@ -31,6 +31,8 @@ import com.podoc.app.ui.screens.reader.ReaderScreen
 import com.podoc.app.ui.screens.reader.ReaderViewModel
 import com.podoc.app.ui.screens.settings.SettingsScreen
 import com.podoc.app.ui.screens.settings.SettingsViewModel
+import com.podoc.app.ui.screens.tools.ToolsScreen
+import com.podoc.app.ui.screens.tools.ToolsViewModel
 import com.podoc.app.ui.theme.PoDocTheme
 
 class MainActivity : ComponentActivity() {
@@ -64,6 +66,9 @@ class MainActivity : ComponentActivity() {
             }
             val settingsViewModel = remember {
                 SettingsViewModel(container.authRepository, container.articleRepository, container.dataStoreManager)
+            }
+            val toolsViewModel = remember {
+                ToolsViewModel(container.articleRepository)
             }
 
             // Reload khi server URL thay đổi
@@ -136,7 +141,9 @@ class MainActivity : ComponentActivity() {
                 contract = ActivityResultContracts.OpenDocument()
             ) { uri: Uri? ->
                 if (uri != null) {
-                    libraryViewModel.uploadAndConvertToPdf(uri) { newArticle ->
+                    toolsViewModel.uploadAndConvertToPdf(uri) { newArticle ->
+                        libraryViewModel.loadArticles(refresh = true)
+                        categoryViewModel.loadCategories()
                         navController.navigate(Screen.Reader.createRoute(newArticle.id))
                     }
                 }
@@ -158,6 +165,7 @@ class MainActivity : ComponentActivity() {
                 val isBottomBarVisible = currentRoute in listOf(
                     Screen.Library.route,
                     Screen.Categories.route,
+                    Screen.Tools.route,
                     Screen.Settings.route
                 )
 
@@ -177,7 +185,7 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     floatingActionButton = {
-                        if (isBottomBarVisible) {
+                        if (currentRoute in listOf(Screen.Library.route, Screen.Categories.route)) {
                             FloatingActionButton(
                                 onClick = { showAddSheet = true },
                                 containerColor = MaterialTheme.colorScheme.primary,
@@ -297,6 +305,37 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
+                        // Màn hình Hộp công cụ tiện ích
+                        composable(Screen.Tools.route) {
+                            ToolsScreen(
+                                viewModel = toolsViewModel,
+                                onPickOfficeForPdf = {
+                                    officeToPdfLauncher.launch(
+                                        arrayOf(
+                                            "application/msword",
+                                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                            "application/vnd.ms-excel",
+                                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                            "application/vnd.ms-powerpoint",
+                                            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                                            "application/rtf",
+                                            "text/rtf",
+                                            "application/vnd.oasis.opendocument.text",
+                                            "application/vnd.oasis.opendocument.spreadsheet",
+                                            "application/vnd.oasis.opendocument.presentation",
+                                            "*/*"
+                                        )
+                                    )
+                                },
+                                onPasteLink = { url, asWebFormat ->
+                                    previewViewModel.extractUrl(url, asWebFormat = asWebFormat)
+                                    navController.navigate(Screen.Preview.route) {
+                                        launchSingleTop = true
+                                    }
+                                }
+                            )
+                        }
+
                         // Màn hình Cài đặt
                         composable(Screen.Settings.route) {
                             SettingsScreen(
@@ -337,25 +376,6 @@ class MainActivity : ComponentActivity() {
                             onPickAudios = {
                                 // Mở trình chọn tệp âm thanh từ máy (MP3, WAV, M4A, FLAC...)
                                 audioPickerLauncher.launch("audio/*")
-                            },
-                            onPickOfficeForPdf = {
-                                // Mở trình chọn tệp Office từ máy để convert sang PDF
-                                officeToPdfLauncher.launch(
-                                    arrayOf(
-                                        "application/msword",
-                                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                        "application/vnd.ms-excel",
-                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                        "application/vnd.ms-powerpoint",
-                                        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                                        "application/rtf",
-                                        "text/rtf",
-                                        "application/vnd.oasis.opendocument.text",
-                                        "application/vnd.oasis.opendocument.spreadsheet",
-                                        "application/vnd.oasis.opendocument.presentation",
-                                        "*/*"
-                                    )
-                                )
                             }
                         )
                     }
