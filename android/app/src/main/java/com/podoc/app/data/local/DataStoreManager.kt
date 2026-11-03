@@ -24,6 +24,11 @@ class DataStoreManager(private val context: Context) {
         val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val ACCENT_COLOR = stringPreferencesKey("accent_color")
         val DEFAULT_FONT_SIZE = intPreferencesKey("default_font_size")
+        val GEMINI_API_KEY = stringPreferencesKey("gemini_api_key")
+    }
+
+    val geminiApiKeyFlow: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[GEMINI_API_KEY] ?: ""
     }
 
     val serverUrlFlow: Flow<String> = context.dataStore.data.map { preferences ->
@@ -52,6 +57,12 @@ class DataStoreManager(private val context: Context) {
 
     val defaultFontSizeFlow: Flow<Int> = context.dataStore.data.map { preferences ->
         preferences[DEFAULT_FONT_SIZE] ?: 16
+    }
+
+    suspend fun saveGeminiApiKey(key: String) {
+        context.dataStore.edit { preferences ->
+            preferences[GEMINI_API_KEY] = key.trim()
+        }
     }
 
     suspend fun setServerUrl(url: String) {

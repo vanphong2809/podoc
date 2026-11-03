@@ -12,6 +12,7 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.categories import router as categories_router
 from app.api.v1.export import router as export_router
 from app.api.v1.extract import router as extract_router
+from app.api.v1.ocr import router as ocr_router
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, engine
 from app.core.rate_limit import limiter
@@ -135,3 +136,4 @@ app.include_router(extract_router, prefix="/api")
 app.include_router(categories_router, prefix="/api")
 app.include_router(articles_router, prefix="/api")
 app.include_router(export_router, prefix="/api")
+app.include_router(ocr_router, prefix="/api")

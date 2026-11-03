@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.RectF
 import android.net.Uri
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
@@ -12,15 +13,20 @@ import androidx.lifecycle.viewModelScope
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.podoc.app.data.api.PoDocApiService
+import com.podoc.app.data.local.DataStoreManager
 import com.podoc.app.data.model.ArticleDetail
 import com.podoc.app.data.model.Category
 import com.podoc.app.data.model.CreateArticleRequest
+import com.podoc.app.data.model.OcrExtractRequest
+import com.podoc.app.data.model.OcrExtractResponse
 import com.podoc.app.data.repository.ArticleRepository
 import com.podoc.app.data.repository.CategoryRepository
 import com.podoc.app.ui.screens.tools.ocr.CorrectionEntry
 import com.podoc.app.ui.screens.tools.ocr.ImagePreprocessor
 import com.podoc.app.ui.screens.tools.ocr.OcrCorrector
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -29,7 +35,9 @@ import java.util.Locale
 
 class OcrViewModel(
     private val articleRepository: ArticleRepository,
-    private val categoryRepository: CategoryRepository
+    private val categoryRepository: CategoryRepository,
+    private val dataStoreManager: DataStoreManager,
+    private val apiServiceProvider: () -> PoDocApiService?
 ) : ViewModel() {
 
     var imageUri by mutableStateOf<Uri?>(null)
@@ -43,7 +51,6 @@ class OcrViewModel(
     var activeBitmap by mutableStateOf<Bitmap?>(null)
         private set
 
-    // Tương thích ngược với imageBitmap cũ
     val imageBitmap: Bitmap?
         get() = activeBitmap
 
@@ -91,12 +98,33 @@ class OcrViewModel(
     var documentTitle by mutableStateOf("")
         private set
 
+    // AI Structured Extraction (KIE) states
+    var selectedDocType by mutableStateOf("id_card")
+        private set
+
+    var activeTab by mutableIntStateOf(0) // 0: Văn bản sạch, 1: Bóc tách AI
+
+    var isExtractingAi by mutableStateOf(false)
+        private set
+
+    var structuredResult by mutableStateOf<OcrExtractResponse?>(null)
+        private set
+
+    var aiErrorMessage by mutableStateOf<String?>(null)
+        private set
+
+    var showApiKeyDialog by mutableStateOf(false)
+
+    var geminiApiKey by mutableStateOf("")
+        private set
+
     private val recognizer by lazy {
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     }
 
     init {
         loadCategories()
+        loadApiKey()
     }
 
     fun loadCategories() {
@@ -113,12 +141,34 @@ class OcrViewModel(
         }
     }
 
+    private fun loadApiKey() {
+        viewModelScope.launch {
+            geminiApiKey = dataStoreManager.geminiApiKeyFlow.first()
+        }
+    }
+
+    fun saveGeminiApiKey(key: String) {
+        viewModelScope.launch {
+            dataStoreManager.saveGeminiApiKey(key)
+            geminiApiKey = key.trim()
+            showApiKeyDialog = false
+        }
+    }
+
     fun setSelectedCategory(catId: Int) {
         selectedCategoryId = catId
     }
 
     fun setDocTitle(title: String) {
         documentTitle = title
+    }
+
+    fun setDocType(type: String) {
+        selectedDocType = type
+    }
+
+    fun switchTab(tab: Int) {
+        activeTab = tab
     }
 
     fun updateRecognizedText(newText: String) {
@@ -192,7 +242,9 @@ class OcrViewModel(
         recognizedText = ""
         rawRecognizedText = ""
         corrections = emptyList()
+        structuredResult = null
         isRoiActive = false
+        activeTab = 0
 
         viewModelScope.launch {
             val loadedBitmap = withContext(Dispatchers.IO) {
@@ -218,9 +270,11 @@ class OcrViewModel(
         recognizedText = ""
         rawRecognizedText = ""
         corrections = emptyList()
+        structuredResult = null
         isRoiActive = false
         originalBitmap = bitmap
         activeBitmap = bitmap
+        activeTab = 0
 
         recognizeFromBitmap(bitmap)
     }
@@ -230,7 +284,6 @@ class OcrViewModel(
         errorMessage = null
 
         viewModelScope.launch {
-            // Tiền xử lý ảnh (Tăng tương phản & Grayscale nếu bật)
             val processedBitmap = withContext(Dispatchers.Default) {
                 if (isEnhanceContrastEnabled) {
                     ImagePreprocessor.enhanceForOcr(bitmap)
@@ -277,11 +330,73 @@ class OcrViewModel(
         }
     }
 
+    /**
+     * Bóc tách thông tin có cấu trúc bằng AI (KIE & LLM Context Correction)
+     */
+    fun extractStructuredWithAi() {
+        val textToProcess = recognizedText.ifBlank { rawRecognizedText }
+        if (textToProcess.isBlank()) {
+            errorMessage = "Chưa có văn bản OCR để trích xuất."
+            return
+        }
+
+        val apiService = apiServiceProvider()
+        if (apiService == null) {
+            errorMessage = "Chưa kết nối máy chủ PoDoc. Vui lòng kiểm tra lại địa chỉ máy chủ trong Cài đặt."
+            return
+        }
+
+        viewModelScope.launch {
+            isExtractingAi = true
+            aiErrorMessage = null
+
+            try {
+                val request = OcrExtractRequest(
+                    rawText = textToProcess,
+                    documentType = selectedDocType,
+                    apiKey = geminiApiKey.takeIf { it.isNotBlank() }
+                )
+                val response = apiService.extractStructuredOcr(request)
+                structuredResult = response
+                activeTab = 1 // Chuyển sang Tab hiển thị dữ liệu bóc tách
+
+                // Gợi ý tiêu đề bài viết thông minh theo thông tin bóc tách
+                val timeStr = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
+                if (selectedDocType == "id_card") {
+                    val name = response.structuredData["full_name"]?.toString()?.replace("\"", "") ?: ""
+                    val idNum = response.structuredData["id_number"]?.toString()?.replace("\"", "") ?: ""
+                    documentTitle = if (name.isNotBlank()) "CCCD - $name ($idNum)" else "CCCD ($timeStr)"
+                } else if (selectedDocType == "invoice") {
+                    val seller = response.structuredData["seller_name"]?.toString()?.replace("\"", "") ?: ""
+                    val invNo = response.structuredData["invoice_number"]?.toString()?.replace("\"", "") ?: ""
+                    documentTitle = if (seller.isNotBlank()) "Hóa đơn - $seller ($invNo)" else "Hóa đơn ($timeStr)"
+                } else if (selectedDocType == "business_card") {
+                    val name = response.structuredData["full_name"]?.toString()?.replace("\"", "") ?: ""
+                    val company = response.structuredData["company"]?.toString()?.replace("\"", "") ?: ""
+                    documentTitle = if (name.isNotBlank()) "Danh thiếp - $name ($company)" else "Danh thiếp ($timeStr)"
+                }
+            } catch (e: Exception) {
+                aiErrorMessage = "Lỗi khi trích xuất AI: ${e.localizedMessage ?: "Vui lòng kiểm tra kết nối"}"
+            } finally {
+                isExtractingAi = false
+            }
+        }
+    }
+
+    /**
+     * Lưu vào Thư viện PoDoc (hỗ trợ cả lưu text thuần và lưu bảng Markdown bóc tách)
+     */
     fun saveToLibrary(
+        useStructuredTable: Boolean = false,
         onSuccess: (ArticleDetail) -> Unit
     ) {
-        val text = recognizedText.trim()
-        if (text.isBlank()) {
+        val content = if (useStructuredTable && structuredResult != null) {
+            structuredResult!!.markdownTable
+        } else {
+            recognizedText.trim()
+        }
+
+        if (content.isBlank()) {
             errorMessage = "Nội dung văn bản đang trống, không thể lưu."
             return
         }
@@ -301,14 +416,14 @@ class OcrViewModel(
             isSaving = true
             errorMessage = null
 
-            val wordCount = text.split("\\s+".toRegex()).filter { it.isNotBlank() }.size
+            val wordCount = content.split("\\s+".toRegex()).filter { it.isNotBlank() }.size
             val readingMin = maxOf(1, wordCount / 200)
 
             val request = CreateArticleRequest(
                 title = title,
                 sourceType = "URL",
-                contentMarkdown = text,
-                excerpt = text.take(150),
+                contentMarkdown = content,
+                excerpt = content.take(150),
                 readingMinutes = readingMin,
                 categoryId = catId
             )
@@ -337,13 +452,20 @@ class OcrViewModel(
         recognizedText = ""
         rawRecognizedText = ""
         corrections = emptyList()
+        structuredResult = null
+        activeTab = 0
         documentTitle = ""
         errorMessage = null
+        aiErrorMessage = null
         saveSuccessMessage = null
     }
 
     fun clearError() {
         errorMessage = null
+    }
+
+    fun clearAiError() {
+        aiErrorMessage = null
     }
 
     fun clearSuccess() {

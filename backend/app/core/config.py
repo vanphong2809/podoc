@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "PoDoc API"
-    VERSION: str = "1.4.7"
+    VERSION: str = "1.4.8"
     DOMAIN: str = "localhost"
 
     # Database
@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     FILES_STORAGE_DIR: str = "/data/files"
     MAX_UPLOAD_SIZE_MB: int = 50
     MAX_DOWNLOAD_SIZE_MB: int = 10
+
+    # Google Gemini AI / LLM OCR Service
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.0-flash"
 
     model_config = SettingsConfigDict(
         env_file=".env",

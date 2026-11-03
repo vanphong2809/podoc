@@ -108,4 +108,8 @@ interface PoDocApiService {
         @Part("category_id") categoryId: RequestBody? = null,
         @Part("title") title: RequestBody? = null
     ): ArticleDetail
+
+    // OCR & IDP Structured Extraction
+    @POST("api/ocr/extract-structured")
+    suspend fun extractStructuredOcr(@Body request: OcrExtractRequest): OcrExtractResponse
 }

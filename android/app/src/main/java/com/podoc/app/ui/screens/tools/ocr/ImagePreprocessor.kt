@@ -158,3 +158,4 @@ object ImagePreprocessor {
         return Bitmap.createBitmap(source, left, top, cropWidth, cropHeight)
     }
 }
+

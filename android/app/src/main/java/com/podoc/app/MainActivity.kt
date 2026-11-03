@@ -73,7 +73,12 @@ class MainActivity : ComponentActivity() {
                 ToolsViewModel(container.articleRepository)
             }
             val ocrViewModel = remember {
-                OcrViewModel(container.articleRepository, container.categoryRepository)
+                OcrViewModel(
+                    container.articleRepository,
+                    container.categoryRepository,
+                    container.dataStoreManager,
+                    apiServiceProvider = { container.getApiService() }
+                )
             }
 
             // Reload khi server URL thay đổi
