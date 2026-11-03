@@ -31,6 +31,8 @@ import com.podoc.app.ui.screens.reader.ReaderScreen
 import com.podoc.app.ui.screens.reader.ReaderViewModel
 import com.podoc.app.ui.screens.settings.SettingsScreen
 import com.podoc.app.ui.screens.settings.SettingsViewModel
+import com.podoc.app.ui.screens.tools.OcrScreen
+import com.podoc.app.ui.screens.tools.OcrViewModel
 import com.podoc.app.ui.screens.tools.ToolsScreen
 import com.podoc.app.ui.screens.tools.ToolsViewModel
 import com.podoc.app.ui.theme.PoDocTheme
@@ -69,6 +71,9 @@ class MainActivity : ComponentActivity() {
             }
             val toolsViewModel = remember {
                 ToolsViewModel(container.articleRepository)
+            }
+            val ocrViewModel = remember {
+                OcrViewModel(container.articleRepository, container.categoryRepository)
             }
 
             // Reload khi server URL thay đổi
@@ -331,6 +336,24 @@ class MainActivity : ComponentActivity() {
                                     previewViewModel.extractUrl(url, asWebFormat = asWebFormat)
                                     navController.navigate(Screen.Preview.route) {
                                         launchSingleTop = true
+                                    }
+                                },
+                                onOpenOcr = {
+                                    navController.navigate(Screen.Ocr.route)
+                                }
+                            )
+                        }
+
+                        // Màn hình Quét chữ từ ảnh (OCR)
+                        composable(Screen.Ocr.route) {
+                            OcrScreen(
+                                viewModel = ocrViewModel,
+                                onNavigateBack = { navController.popBackStack() },
+                                onOpenArticle = { articleId ->
+                                    libraryViewModel.loadArticles(refresh = true)
+                                    categoryViewModel.loadCategories()
+                                    navController.navigate(Screen.Reader.createRoute(articleId)) {
+                                        popUpTo(Screen.Ocr.route) { inclusive = true }
                                     }
                                 }
                             )

@@ -27,7 +27,8 @@ import androidx.compose.ui.window.DialogProperties
 fun ToolsScreen(
     viewModel: ToolsViewModel,
     onPickOfficeForPdf: () -> Unit,
-    onPasteLink: (url: String, asWebFormat: Boolean) -> Unit
+    onPasteLink: (url: String, asWebFormat: Boolean) -> Unit,
+    onOpenOcr: () -> Unit = {}
 ) {
     var showUrlDialog by remember { mutableStateOf(false) }
     var urlInput by remember { mutableStateOf("") }
@@ -318,6 +319,120 @@ fun ToolsScreen(
                 }
             }
 
+            // Thẻ Công cụ: OCR - Nhận dạng văn bản từ ảnh
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 20.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF7C3AED).copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DocumentScanner,
+                                contentDescription = null,
+                                tint = Color(0xFF7C3AED),
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "OCR - Quét chữ từ ảnh",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Surface(
+                                    color = Color(0xFF10B981).copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text(
+                                        text = "Khả dụng",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFF059669),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Camera / Thư viện -> Chữ tiếng Việt & Anh",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "Trích xuất chữ viết tiếng Việt và tiếng Anh tự động từ ảnh chụp tài liệu, sách báo, biên lai hoặc ảnh chụp màn hình bằng AI trên thiết bị. Cho phép sao chép, chỉnh sửa và lưu thành bài viết vào Thư viện.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 20.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf("Tiếng Việt", "Tiếng Anh", "Chụp ảnh", "Thư viện ảnh", "Lưu bài viết").forEach { tag ->
+                            Surface(
+                                color = MaterialTheme.colorScheme.surface,
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                            ) {
+                                Text(
+                                    text = tag,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = onOpenOcr,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF7C3AED),
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(imageVector = Icons.Default.DocumentScanner, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Mở công cụ quét chữ (OCR)",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
             // Nhóm 3: Các công cụ chuẩn bị tích hợp
             Text(
                 text = "CÔNG CỤ SẮP RA MẮT",
@@ -342,15 +457,6 @@ fun ToolsScreen(
                 iconTint = Color(0xFFD97706),
                 title = "Nén & Tối ưu dung lượng",
                 description = "Giảm dung lượng file PDF và hình ảnh mà vẫn giữ độ nét cao để tiết kiệm lưu trữ."
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            UpcomingToolItem(
-                icon = Icons.Default.DocumentScanner,
-                iconTint = Color(0xFF7C3AED),
-                title = "OCR - Nhận dạng văn bản từ ảnh",
-                description = "Quét chữ viết tiếng Việt tự động từ ảnh chụp tài liệu, biên lai hoặc file scan."
             )
 
             Spacer(modifier = Modifier.height(24.dp))

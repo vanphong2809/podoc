@@ -14,8 +14,8 @@ android {
         applicationId = "com.podoc.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 28
-        versionName = "1.4.5"
+        versionCode = 29
+        versionName = "1.4.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -81,6 +81,9 @@ dependencies {
 
     // Media & MediaSession support
     implementation("androidx.media:media:1.7.0")
+
+    // ML Kit Text Recognition (On-device OCR supporting Vietnamese Latin script)
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 
     // Markdown Renderer M3
     implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.16.0")

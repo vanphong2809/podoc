@@ -133,8 +133,18 @@
     <string name="logged_in_as">Tài khoản: %s</string>
 
     <string name="section_about">Về ứng dụng</string>
-    <string name="app_version">Phiên bản: 1.4.5</string>
+    <string name="app_version">Phiên bản: 1.4.6</string>
     <string name="app_description">PoDoc là ứng dụng lưu trữ và quản lý tài liệu cá nhân độc lập, tự chủ hoàn toàn trên máy chủ riêng của bạn.</string>
+
+    <!-- OCR Tool -->
+    <string name="tool_ocr_title">OCR - Nhận dạng văn bản từ ảnh</string>
+    <string name="tool_ocr_desc">Trích xuất chữ viết tiếng Việt và tiếng Anh tự động từ ảnh chụp tài liệu, sách báo, biên lai hoặc ảnh chụp màn hình.</string>
+    <string name="ocr_scan_image">Quét chữ từ ảnh</string>
+    <string name="ocr_take_photo">Chụp ảnh mới</string>
+    <string name="ocr_pick_image">Chọn ảnh từ máy</string>
+    <string name="ocr_copied_toast">Đã sao chép văn bản vào bộ nhớ tạm</string>
+    <string name="ocr_save_success">Đã lưu bài viết vào Thư viện thành công!</string>
+    <string name="ocr_no_text_found">Không tìm thấy chữ trong ảnh này. Vui lòng thử lại với ảnh rõ nét hơn.</string>
 
     <!-- General -->
     <string name="btn_confirm">Xác nhận</string>
