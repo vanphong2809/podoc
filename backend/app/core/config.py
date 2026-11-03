@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "PoDoc API"
-    VERSION: str = "1.5.2"
+    VERSION: str = "1.5.3"
     DOMAIN: str = "localhost"
 
     # Database

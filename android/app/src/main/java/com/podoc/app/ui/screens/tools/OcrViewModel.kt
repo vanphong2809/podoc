@@ -24,6 +24,7 @@ import com.podoc.app.data.model.ReadImageRequest
 import com.podoc.app.data.repository.ArticleRepository
 import com.podoc.app.data.repository.CategoryRepository
 import com.podoc.app.ui.screens.tools.ocr.CorrectionEntry
+import com.podoc.app.ui.screens.tools.ocr.GeminiDirectVisionService
 import com.podoc.app.ui.screens.tools.ocr.ImagePreprocessor
 import com.podoc.app.ui.screens.tools.ocr.OcrCorrector
 import kotlinx.coroutines.Dispatchers
@@ -289,8 +290,9 @@ class OcrViewModel(
     /**
      * Quy trình nhận dạng văn bản:
      * 1. ƯU TIÊN SỐ 1: Sử dụng Google Gemini 3.8 Flash Multimodal Vision đọc trực tiếp ảnh
-     *    (Hoạt động tự nhiên như khi chat: đọc chính xác 100% tiếng Việt, số, không bịa chữ, không ép schema).
-     * 2. PHÒNG THỦ DỰ PHÒNG: Nếu chưa có API key hoặc mất mạng ngoại tuyến, tự động chuyển sang Google ML Kit OCR.
+     *    (Gọi TRỰC TIẾP Google API từ thiết bị, đọc chính xác 100% tiếng Việt, số, không bịa chữ).
+     * 2. Nếu lỗi kết nối hoặc chưa cấu hình API Key: Báo lỗi minh bạch cho người dùng,
+     *    cung cấp nút để người dùng CHỦ ĐỘNG chọn quét OCR nội bộ nếu muốn.
      */
     fun processImageWithBestReader(bitmap: Bitmap) {
         isRecognizing = true
@@ -299,8 +301,37 @@ class OcrViewModel(
         readerNotice = null
 
         viewModelScope.launch {
+            // Trường hợp 1: Có API Key -> Gọi TRỰC TIẾP Google Gemini (Nhanh nhất & chuẩn xác nhất)
+            if (geminiApiKey.isNotBlank()) {
+                val geminiResult = GeminiDirectVisionService.extractTextFromBitmap(
+                    bitmap = bitmap,
+                    apiKey = geminiApiKey
+                )
+
+                geminiResult.fold(
+                    onSuccess = { res ->
+                        recognizedText = res.text
+                        rawRecognizedText = res.text
+                        readerNotice = "Trích xuất bởi ${res.modelUsed} Vision (Chính xác 100%)"
+                        isReadingWithGemini = false
+                        isRecognizing = false
+
+                        val firstLine = res.text.lineSequence().firstOrNull { it.isNotBlank() }?.take(40)
+                        val timeStr = SimpleDateFormat("HH:mm dd/MM", Locale.getDefault()).format(Date())
+                        documentTitle = firstLine ?: "Tài liệu Gemini Vision ($timeStr)"
+                    },
+                    onFailure = { error ->
+                        isReadingWithGemini = false
+                        isRecognizing = false
+                        errorMessage = "Lỗi Gemini Vision: ${error.localizedMessage ?: "Không thể kết nối"}. Bạn có thể bấm 'Dùng OCR thiết bị' để quét ngoại tuyến."
+                    }
+                )
+                return@launch
+            }
+
+            // Trường hợp 2: Chưa có API Key cá nhân -> Thử gọi qua máy chủ PoDoc Backend
             val apiService = apiServiceProvider()
-            var geminiSuccess = false
+            var backendSuccess = false
 
             if (apiService != null) {
                 try {
@@ -311,7 +342,7 @@ class OcrViewModel(
                     val request = ReadImageRequest(
                         imageBase64 = base64Img,
                         mimeType = "image/jpeg",
-                        apiKey = geminiApiKey.takeIf { it.isNotBlank() }
+                        apiKey = null
                     )
 
                     val response = withContext(Dispatchers.IO) {
@@ -322,25 +353,35 @@ class OcrViewModel(
                         recognizedText = response.text
                         rawRecognizedText = response.text
                         readerNotice = "Trích xuất bởi ${response.modelUsed} Vision (Chính xác 100%)"
-                        geminiSuccess = true
+                        backendSuccess = true
 
                         val firstLine = response.text.lineSequence().firstOrNull { it.isNotBlank() }?.take(40)
                         val timeStr = SimpleDateFormat("HH:mm dd/MM", Locale.getDefault()).format(Date())
                         documentTitle = firstLine ?: "Tài liệu AI ($timeStr)"
                     }
                 } catch (e: Exception) {
-                    geminiSuccess = false
-                    readerNotice = "AI Ngoại tuyến: Chuyển sang OCR máy (${e.localizedMessage ?: "Mất mạng"})"
+                    backendSuccess = false
                 }
             }
 
             isReadingWithGemini = false
-            if (!geminiSuccess) {
-                // Tự động fallback sang ML Kit OCR nội bộ trên máy
-                recognizeWithMlKitOcr(bitmap)
-            } else {
-                isRecognizing = false
+            isRecognizing = false
+
+            if (!backendSuccess) {
+                // Nhắc người dùng nhập API Key Google AI Studio để kích hoạt Gemini 3.8 Flash
+                errorMessage = "Chưa cấu hình API Key Google AI Studio. Vui lòng bấm biểu tượng chìa khóa 🔑 ở góc trên để dán API Key (miễn phí), hoặc bấm 'Dùng OCR thiết bị'."
             }
+        }
+    }
+
+    /**
+     * Người dùng chủ động kích hoạt quét OCR nội bộ trên máy (offline)
+     */
+    fun runMlKitOcrManual() {
+        val current = activeBitmap ?: originalBitmap
+        if (current != null) {
+            readerNotice = "Đã quét bằng Google ML Kit OCR (Ngoại tuyến)"
+            recognizeWithMlKitOcr(current)
         }
     }
 

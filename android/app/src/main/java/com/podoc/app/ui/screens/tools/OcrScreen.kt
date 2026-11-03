@@ -1179,30 +1179,57 @@ fun OcrScreen(
         )
     }
 
-    // Thông báo lỗi OCR nếu có
+    // Thông báo lỗi nhận dạng nếu có
     if (viewModel.errorMessage != null) {
+        val errorText = viewModel.errorMessage ?: ""
+        val canUseMlKit = viewModel.activeBitmap != null || viewModel.originalBitmap != null
+
         AlertDialog(
             onDismissRequest = { viewModel.clearError() },
             icon = {
                 Icon(
                     imageVector = Icons.Default.Info,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = Color(0xFF7C3AED),
                     modifier = Modifier.size(32.dp)
                 )
             },
             title = {
-                Text("Thông báo OCR", fontWeight = FontWeight.Bold)
+                Text("Thông báo nhận dạng", fontWeight = FontWeight.Bold)
             },
             text = {
-                Text(viewModel.errorMessage ?: "")
+                Text(errorText)
             },
             confirmButton = {
-                Button(
-                    onClick = { viewModel.clearError() },
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text("Đã hiểu")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (errorText.contains("chìa khóa") || errorText.contains("API Key")) {
+                        Button(
+                            onClick = {
+                                viewModel.clearError()
+                                viewModel.showApiKeyDialog = true
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
+                        ) {
+                            Text("Nhập API Key")
+                        }
+                    }
+
+                    if (canUseMlKit && errorText.contains("OCR thiết bị")) {
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.clearError()
+                                viewModel.runMlKitOcrManual()
+                            },
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("Dùng OCR máy")
+                        }
+                    }
+
+                    TextButton(onClick = { viewModel.clearError() }) {
+                        Text("Đóng")
+                    }
                 }
             }
         )
