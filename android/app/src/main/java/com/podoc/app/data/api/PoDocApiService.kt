@@ -112,4 +112,8 @@ interface PoDocApiService {
     // OCR & IDP Structured Extraction
     @POST("api/ocr/extract-structured")
     suspend fun extractStructuredOcr(@Body request: OcrExtractRequest): OcrExtractResponse
+
+    // Đọc toàn bộ văn bản từ ảnh bằng Gemini 3.8 Flash Vision (như trong chat)
+    @POST("api/ocr/read-image")
+    suspend fun readImageWithGemini(@Body request: ReadImageRequest): ReadImageResponse
 }

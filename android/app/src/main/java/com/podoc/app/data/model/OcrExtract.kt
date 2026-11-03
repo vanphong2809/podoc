@@ -30,3 +30,19 @@ data class OcrExtractResponse(
     @SerialName("validation") val validation: ValidationStatus = ValidationStatus(),
     @SerialName("markdown_table") val markdownTable: String = ""
 )
+
+@Serializable
+data class ReadImageRequest(
+    @SerialName("image_base64") val imageBase64: String,
+    @SerialName("mime_type") val mimeType: String = "image/jpeg",
+    @SerialName("api_key") val apiKey: String? = null,
+    @SerialName("prompt") val prompt: String? = null
+)
+
+@Serializable
+data class ReadImageResponse(
+    @SerialName("text") val text: String,
+    @SerialName("model_used") val modelUsed: String = "gemini-3.8-flash",
+    @SerialName("word_count") val wordCount: Int = 0,
+    @SerialName("line_count") val lineCount: Int = 0
+)

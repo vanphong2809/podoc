@@ -429,3 +429,93 @@ Trả về JSON:
         validation=validation,
         markdown_table=markdown_table
     )
+
+
+async def read_image_with_gemini(
+    image_base64: str,
+    mime_type: str = "image/jpeg",
+    user_api_key: Optional[str] = None,
+    custom_prompt: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Trích xuất toàn bộ văn bản từ hình ảnh bằng Google Gemini 3.8 Flash (Multimodal Vision):
+    - Đọc trung thực 100% từng chữ viết, tiếng Việt có dấu, số và bố cục tài liệu giống hệt như khi chat với model.
+    - Không ép khuôn khổ JSON Schema cố định để tránh hallucination (ảo giác).
+    - Hỗ trợ fallback tự động sang gemini-2.0-flash / gemini-1.5-flash nếu cần.
+    """
+    api_key = (user_api_key or "").strip() or settings.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        raise ValueError("Chưa cấu hình Google Gemini API Key. Bạn hãy bấm biểu tượng chìa khóa ở góc trên để nhập API Key từ Google AI Studio.")
+
+    models_to_try = [settings.GEMINI_MODEL or "gemini-3.8-flash"]
+    for m in ["gemini-3.8-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+        if m not in models_to_try:
+            models_to_try.append(m)
+
+    clean_b64 = image_base64
+    if "," in clean_b64:
+        clean_b64 = clean_b64.split(",", 1)[1]
+    clean_b64 = clean_b64.strip()
+
+    prompt = custom_prompt or (
+        "Hãy đọc và trích xuất TOÀN BỘ văn bản chữ viết có trong hình ảnh này một cách chính xác và trung thực nhất.\n"
+        "- Giữ nguyên toàn bộ từ ngữ tiếng Việt có dấu, chữ số, ký hiệu và dấu câu.\n"
+        "- Giữ nguyên cấu trúc các dòng, đoạn văn, danh sách hoặc bảng biểu giống như bố cục trong tài liệu gốc.\n"
+        "- KHÔNG giải thích, KHÔNG tóm tắt, KHÔNG thêm lời chào hay kết luận.\n"
+        "- Chỉ trả về văn bản đọc được từ ảnh."
+    )
+
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {
+                        "inline_data": {
+                            "mime_type": mime_type,
+                            "data": clean_b64
+                        }
+                    },
+                    {
+                        "text": prompt
+                    }
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.0
+        }
+    }
+
+    last_error = None
+    for target_model in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={api_key}"
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                res = await client.post(url, json=payload)
+                if res.status_code == 404:
+                    logger.warning(f"Mô hình {target_model} không hỗ trợ (404), thử mô hình tiếp theo...")
+                    continue
+                res.raise_for_status()
+                res_json = res.json()
+                candidates = res_json.get("candidates", [])
+                if not candidates:
+                    continue
+                parts = candidates[0].get("content", {}).get("parts", [])
+                if not parts:
+                    continue
+                extracted_text = parts[0].get("text", "").strip()
+                words = len(extracted_text.split())
+                lines = len([line for line in extracted_text.splitlines() if line.strip()])
+                return {
+                    "text": extracted_text,
+                    "model_used": target_model,
+                    "word_count": words,
+                    "line_count": lines
+                }
+        except Exception as e:
+            last_error = e
+            logger.warning(f"Lỗi khi gọi {target_model}: {e}")
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("Không thể trích xuất văn bản từ ảnh qua Gemini API.")

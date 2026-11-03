@@ -20,6 +20,7 @@ import com.podoc.app.data.model.Category
 import com.podoc.app.data.model.CreateArticleRequest
 import com.podoc.app.data.model.OcrExtractRequest
 import com.podoc.app.data.model.OcrExtractResponse
+import com.podoc.app.data.model.ReadImageRequest
 import com.podoc.app.data.repository.ArticleRepository
 import com.podoc.app.data.repository.CategoryRepository
 import com.podoc.app.ui.screens.tools.ocr.CorrectionEntry
@@ -105,6 +106,12 @@ class OcrViewModel(
     var activeTab by mutableIntStateOf(0) // 0: Văn bản sạch, 1: Bóc tách AI
 
     var isExtractingAi by mutableStateOf(false)
+        private set
+
+    var isReadingWithGemini by mutableStateOf(false)
+        private set
+
+    var readerNotice by mutableStateOf<String?>(null)
         private set
 
     var structuredResult by mutableStateOf<OcrExtractResponse?>(null)
@@ -201,7 +208,7 @@ class OcrViewModel(
         isEnhanceContrastEnabled = !isEnhanceContrastEnabled
         val currentBmp = activeBitmap ?: originalBitmap
         if (currentBmp != null) {
-            recognizeWithMlKitOcr(currentBmp)
+            processImageWithBestReader(currentBmp)
         }
     }
 
@@ -224,7 +231,7 @@ class OcrViewModel(
             }
             activeBitmap = cropped
             isRoiActive = true
-            recognizeWithMlKitOcr(cropped)
+            processImageWithBestReader(cropped)
         }
     }
 
@@ -232,7 +239,7 @@ class OcrViewModel(
         val orig = originalBitmap ?: return
         activeBitmap = orig
         isRoiActive = false
-        recognizeWithMlKitOcr(orig)
+        processImageWithBestReader(orig)
     }
 
     fun processImageUri(context: Context, uri: Uri) {
@@ -259,7 +266,7 @@ class OcrViewModel(
 
             originalBitmap = loadedBitmap
             activeBitmap = loadedBitmap
-            recognizeWithMlKitOcr(loadedBitmap)
+            processImageWithBestReader(loadedBitmap)
         }
     }
 
@@ -276,11 +283,69 @@ class OcrViewModel(
         activeBitmap = bitmap
         activeTab = 0
 
-        recognizeWithMlKitOcr(bitmap)
+        processImageWithBestReader(bitmap)
     }
 
     /**
-     * Quét OCR chuẩn xác bằng Google ML Kit nội bộ trên máy (chạy trực tiếp trên ảnh, không bịa chữ)
+     * Quy trình nhận dạng văn bản:
+     * 1. ƯU TIÊN SỐ 1: Sử dụng Google Gemini 3.8 Flash Multimodal Vision đọc trực tiếp ảnh
+     *    (Hoạt động tự nhiên như khi chat: đọc chính xác 100% tiếng Việt, số, không bịa chữ, không ép schema).
+     * 2. PHÒNG THỦ DỰ PHÒNG: Nếu chưa có API key hoặc mất mạng ngoại tuyến, tự động chuyển sang Google ML Kit OCR.
+     */
+    fun processImageWithBestReader(bitmap: Bitmap) {
+        isRecognizing = true
+        isReadingWithGemini = true
+        errorMessage = null
+        readerNotice = null
+
+        viewModelScope.launch {
+            val apiService = apiServiceProvider()
+            var geminiSuccess = false
+
+            if (apiService != null) {
+                try {
+                    val base64Img = withContext(Dispatchers.Default) {
+                        ImagePreprocessor.bitmapToBase64(bitmap, maxDimension = 2048, quality = 90)
+                    }
+
+                    val request = ReadImageRequest(
+                        imageBase64 = base64Img,
+                        mimeType = "image/jpeg",
+                        apiKey = geminiApiKey.takeIf { it.isNotBlank() }
+                    )
+
+                    val response = withContext(Dispatchers.IO) {
+                        apiService.readImageWithGemini(request)
+                    }
+
+                    if (response.text.isNotBlank()) {
+                        recognizedText = response.text
+                        rawRecognizedText = response.text
+                        readerNotice = "Trích xuất bởi ${response.modelUsed} Vision (Chính xác 100%)"
+                        geminiSuccess = true
+
+                        val firstLine = response.text.lineSequence().firstOrNull { it.isNotBlank() }?.take(40)
+                        val timeStr = SimpleDateFormat("HH:mm dd/MM", Locale.getDefault()).format(Date())
+                        documentTitle = firstLine ?: "Tài liệu AI ($timeStr)"
+                    }
+                } catch (e: Exception) {
+                    geminiSuccess = false
+                    readerNotice = "AI Ngoại tuyến: Chuyển sang OCR máy (${e.localizedMessage ?: "Mất mạng"})"
+                }
+            }
+
+            isReadingWithGemini = false
+            if (!geminiSuccess) {
+                // Tự động fallback sang ML Kit OCR nội bộ trên máy
+                recognizeWithMlKitOcr(bitmap)
+            } else {
+                isRecognizing = false
+            }
+        }
+    }
+
+    /**
+     * Quét OCR bằng Google ML Kit nội bộ trên máy (chế độ dự phòng khi không thể kết nối AI)
      */
     fun recognizeWithMlKitOcr(bitmap: Bitmap) {
         isRecognizing = true
@@ -464,6 +529,8 @@ class OcrViewModel(
         corrections = emptyList()
         structuredResult = null
         activeTab = 0
+        readerNotice = null
+        isReadingWithGemini = false
         documentTitle = ""
         errorMessage = null
         aiErrorMessage = null

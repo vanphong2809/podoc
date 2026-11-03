@@ -33,3 +33,17 @@ class OcrExtractResponse(BaseModel):
     confidence_notes: List[str] = Field(default_factory=list, description="Ghi chú các lỗi chính tả và chuyển đổi AI đã thực hiện")
     validation: ValidationStatus = Field(default_factory=ValidationStatus, description="Kết quả kiểm tra tính hợp lệ nghiệp vụ")
     markdown_table: str = Field(default="", description="Bảng Markdown định dạng trực quan để lưu trữ hoặc xem")
+
+
+class ReadImageRequest(BaseModel):
+    image_base64: str = Field(..., description="Dữ liệu ảnh dạng base64")
+    mime_type: str = Field(default="image/jpeg", description="MIME type của ảnh")
+    api_key: Optional[str] = Field(default=None, description="Google Gemini API key cá nhân (nếu có)")
+    prompt: Optional[str] = Field(default=None, description="Tùy chọn câu lệnh trích xuất văn bản")
+
+
+class ReadImageResponse(BaseModel):
+    text: str = Field(..., description="Toàn bộ văn bản trích xuất được từ ảnh")
+    model_used: str = Field(default="gemini-3.8-flash", description="Mô hình AI đã thực thi")
+    word_count: int = Field(default=0, description="Số từ trích xuất được")
+    line_count: int = Field(default=0, description="Số dòng văn bản")

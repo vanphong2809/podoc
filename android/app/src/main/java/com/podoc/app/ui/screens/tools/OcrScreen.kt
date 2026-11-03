@@ -78,12 +78,12 @@ fun OcrScreen(
                 title = {
                     Column {
                         Text(
-                            text = "OCR & Bóc tách thông minh",
+                            text = "OCR & Trích xuất văn bản",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "ML Kit OCR + Tiền xử lý + Gemini AI (KIE)",
+                            text = "Gemini 3.8 Flash Vision (Chính xác) + Fallback OCR",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -349,8 +349,9 @@ fun OcrScreen(
                 }
             }
 
-            // Trạng thái đang nhận dạng văn bản bằng OCR thiết bị
+            // Trạng thái đang nhận dạng văn bản (Gemini 3.8 Flash Vision hoặc ML Kit)
             if (viewModel.isRecognizing) {
+                val isGemini = viewModel.isReadingWithGemini
                 Surface(
                     color = Color(0xFF7C3AED).copy(alpha = 0.08f),
                     shape = RoundedCornerShape(16.dp),
@@ -371,14 +372,15 @@ fun OcrScreen(
                         Spacer(modifier = Modifier.width(14.dp))
                         Column {
                             Text(
-                                text = "Đang nhận dạng văn bản từ ảnh...",
+                                text = if (isGemini) "Gemini 3.8 Flash đang đọc văn bản..." else "Đang nhận dạng văn bản bằng OCR thiết bị...",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF7C3AED)
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Sử dụng Google ML Kit nội bộ + Tiền xử lý + Bộ sửa lỗi Heuristic",
+                                text = if (isGemini) "Multimodal Vision đọc trực tiếp ảnh (chính xác như trong chat)"
+                                else "Sử dụng Google ML Kit nội bộ + Tiền xử lý + Sửa lỗi",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -513,6 +515,37 @@ fun OcrScreen(
                     // TAB 0: VĂN BẢN SẠCH & SỬA LỖI HEURISTIC
                     val words = viewModel.recognizedText.split("\\s+".toRegex()).filter { it.isNotBlank() }.size
                     val lines = viewModel.recognizedText.lines().filter { it.isNotBlank() }.size
+
+                    // Huy hiệu thông báo nguồn nhận dạng (Gemini 3.8 Flash hoặc ML Kit)
+                    if (viewModel.readerNotice != null) {
+                        Surface(
+                            color = Color(0xFF7C3AED).copy(alpha = 0.09f),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Color(0xFF7C3AED).copy(alpha = 0.25f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = Color(0xFF7C3AED),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = viewModel.readerNotice ?: "",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF7C3AED)
+                                )
+                            }
+                        }
+                    }
 
                     // Thẻ thông báo AI / Heuristic đã sửa lỗi
                     if (viewModel.corrections.isNotEmpty()) {
