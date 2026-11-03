@@ -83,7 +83,7 @@ fun OcrScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = if (viewModel.useAiVisionPrimary) "AI Vision (Gemini 3.8 Flash) + Fallback OCR" else "ML Kit OCR Ngoại tuyến",
+                            text = "ML Kit OCR + Tiền xử lý + Gemini AI (KIE)",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -108,7 +108,7 @@ fun OcrScreen(
                     }
 
                     if (viewModel.activeBitmap != null || viewModel.originalBitmap != null || viewModel.recognizedText.isNotBlank()) {
-                        IconButton(onClick = { viewModel.clear() }) {
+                        IconButton(onClick = { viewModel.clearAll() }) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
                                 contentDescription = "Làm mới"
@@ -129,124 +129,6 @@ fun OcrScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-
-            // THANH CÔNG CỤ CHỌN CHẾ ĐỘ ĐỌC: Ưu tiên AI Vision vs Quét OCR Nội bộ
-            Surface(
-                color = if (viewModel.useAiVisionPrimary) Color(0xFF7C3AED).copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(
-                    1.dp,
-                    if (viewModel.useAiVisionPrimary) Color(0xFF7C3AED).copy(alpha = 0.3f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = if (viewModel.useAiVisionPrimary) Icons.Default.AutoAwesome else Icons.Default.DocumentScanner,
-                            contentDescription = null,
-                            tint = if (viewModel.useAiVisionPrimary) Color(0xFF7C3AED) else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = if (viewModel.useAiVisionPrimary) "Chế độ: AI Vision đọc ảnh (Mặc định)" else "Chế độ: Quét OCR nội bộ (Offline)",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (viewModel.useAiVisionPrimary) Color(0xFF7C3AED) else MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = if (viewModel.useAiVisionPrimary) "Không dùng OCR thuần, Gemini đọc trực tiếp" else "Dùng Google ML Kit xử lý trên thiết bị",
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    TextButton(
-                        onClick = { viewModel.toggleUseAiVisionPrimary() },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.height(30.dp)
-                    ) {
-                        Text(
-                            text = if (viewModel.useAiVisionPrimary) "Dùng OCR" else "Dùng AI",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF7C3AED)
-                        )
-                    }
-                }
-            }
-
-            // BANNER CẢNH BÁO CỜ DỰ PHÒNG (FALLBACK OCR) KHI AI KHÔNG KẾT NỐI ĐƯỢC
-            if (viewModel.usedOcrFallback && viewModel.fallbackNotice != null) {
-                Surface(
-                    color = Color(0xFFFFFBEB),
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, Color(0xFFFCD34D)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = null,
-                            tint = Color(0xFFD97706),
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "⚠️ Đã kích hoạt cờ dự phòng OCR",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                color = Color(0xFFB45309)
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = viewModel.fallbackNotice ?: "",
-                                fontSize = 11.sp,
-                                color = Color(0xFF92400E)
-                            )
-                        }
-                        val currentBmp = viewModel.activeBitmap ?: viewModel.originalBitmap
-                        if (currentBmp != null) {
-                            TextButton(
-                                onClick = { viewModel.processWithAiVisionOrFallback(currentBmp) },
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                                modifier = Modifier.height(28.dp)
-                            ) {
-                                Text("Thử lại AI", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB45309))
-                            }
-                        }
-                        IconButton(
-                            onClick = { viewModel.dismissFallbackNotice() },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Đóng",
-                                tint = Color(0xFFB45309),
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
-                }
-            }
 
             // Khu vực chọn/chụp ảnh ban đầu
             if (viewModel.activeBitmap == null && viewModel.originalBitmap == null && viewModel.imageUri == null) {
@@ -467,16 +349,12 @@ fun OcrScreen(
                 }
             }
 
-            // Trạng thái đang nhận dạng (AI Vision hoặc OCR Thiết bị)
+            // Trạng thái đang nhận dạng văn bản bằng OCR thiết bị
             if (viewModel.isRecognizing) {
-                val isVision = viewModel.isProcessingVision
                 Surface(
-                    color = if (isVision) Color(0xFF7C3AED).copy(alpha = 0.08f) else Color(0xFF0284C7).copy(alpha = 0.08f),
+                    color = Color(0xFF7C3AED).copy(alpha = 0.08f),
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(
-                        1.dp,
-                        if (isVision) Color(0xFF7C3AED).copy(alpha = 0.25f) else Color(0xFF0284C7).copy(alpha = 0.25f)
-                    ),
+                    border = BorderStroke(1.dp, Color(0xFF7C3AED).copy(alpha = 0.25f)),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 16.dp)
@@ -486,22 +364,21 @@ fun OcrScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         CircularProgressIndicator(
-                            color = if (isVision) Color(0xFF7C3AED) else Color(0xFF0284C7),
+                            color = Color(0xFF7C3AED),
                             strokeWidth = 3.dp,
                             modifier = Modifier.size(28.dp)
                         )
                         Spacer(modifier = Modifier.width(14.dp))
                         Column {
                             Text(
-                                text = if (isVision) "Đang đọc văn bản bằng AI Vision..." else "Đang quét văn bản bằng OCR thiết bị...",
+                                text = "Đang nhận dạng văn bản từ ảnh...",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isVision) Color(0xFF7C3AED) else Color(0xFF0284C7)
+                                color = Color(0xFF7C3AED)
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = if (isVision) "Gemini 3.8 Flash đang đọc trực tiếp từ ảnh (Không qua OCR thuần, chống sai chính tả)"
-                                else "Sử dụng Google ML Kit nội bộ + Bộ tiền xử lý + Sửa lỗi",
+                                text = "Sử dụng Google ML Kit nội bộ + Tiền xử lý + Bộ sửa lỗi Heuristic",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -546,16 +423,16 @@ fun OcrScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // Chọn loại tài liệu (CCCD, Hóa đơn, Danh thiếp, Chung)
+                        // Chọn loại tài liệu (Chung, CCCD, Hóa đơn, Danh thiếp)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             listOf(
+                                "general" to "Văn bản chung",
                                 "id_card" to "Căn cước",
                                 "invoice" to "Hóa đơn",
-                                "business_card" to "Danh thiếp",
-                                "general" to "Văn bản"
+                                "business_card" to "Danh thiếp"
                             ).forEach { (typeKey, label) ->
                                 val selected = viewModel.selectedDocType == typeKey
                                 FilterChip(
@@ -636,37 +513,6 @@ fun OcrScreen(
                     // TAB 0: VĂN BẢN SẠCH & SỬA LỖI HEURISTIC
                     val words = viewModel.recognizedText.split("\\s+".toRegex()).filter { it.isNotBlank() }.size
                     val lines = viewModel.recognizedText.lines().filter { it.isNotBlank() }.size
-
-                    // Huy hiệu thông báo nguồn đọc AI Vision
-                    if (viewModel.structuredResult?.isVision == true) {
-                        Surface(
-                            color = Color(0xFF7C3AED).copy(alpha = 0.1f),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, Color(0xFF7C3AED).copy(alpha = 0.3f)),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 10.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AutoAwesome,
-                                    contentDescription = null,
-                                    tint = Color(0xFF7C3AED),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Đọc trực tiếp từ ảnh bằng AI Vision (Gemini 3.8 Flash)",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFF7C3AED)
-                                )
-                            }
-                        }
-                    }
 
                     // Thẻ thông báo AI / Heuristic đã sửa lỗi
                     if (viewModel.corrections.isNotEmpty()) {

@@ -98,23 +98,8 @@ class OcrViewModel(
     var documentTitle by mutableStateOf("")
         private set
 
-    // AI Vision Mode vs OCR Fallback Flags
-    // Cờ mặc định: Chỉ sử dụng AI Vision để đọc ảnh
-    var useAiVisionPrimary by mutableStateOf(true)
-        private set
-
-    // Cờ báo hiệu: Khi không thể kết nối AI thì đã tự động fallback sang OCR
-    var usedOcrFallback by mutableStateOf(false)
-        private set
-
-    var fallbackNotice by mutableStateOf<String?>(null)
-        private set
-
-    var isProcessingVision by mutableStateOf(false)
-        private set
-
     // AI Structured Extraction (KIE) states
-    var selectedDocType by mutableStateOf("id_card")
+    var selectedDocType by mutableStateOf("general")
         private set
 
     var activeTab by mutableIntStateOf(0) // 0: Văn bản sạch, 1: Bóc tách AI
@@ -186,14 +171,6 @@ class OcrViewModel(
         activeTab = tab
     }
 
-    fun toggleUseAiVisionPrimary() {
-        useAiVisionPrimary = !useAiVisionPrimary
-        val current = activeBitmap ?: originalBitmap
-        if (current != null) {
-            processWithAiVisionOrFallback(current)
-        }
-    }
-
     fun updateRecognizedText(newText: String) {
         recognizedText = newText
     }
@@ -224,7 +201,7 @@ class OcrViewModel(
         isEnhanceContrastEnabled = !isEnhanceContrastEnabled
         val currentBmp = activeBitmap ?: originalBitmap
         if (currentBmp != null) {
-            processWithAiVisionOrFallback(currentBmp)
+            recognizeWithMlKitOcr(currentBmp)
         }
     }
 
@@ -247,7 +224,7 @@ class OcrViewModel(
             }
             activeBitmap = cropped
             isRoiActive = true
-            processWithAiVisionOrFallback(cropped)
+            recognizeWithMlKitOcr(cropped)
         }
     }
 
@@ -255,7 +232,7 @@ class OcrViewModel(
         val orig = originalBitmap ?: return
         activeBitmap = orig
         isRoiActive = false
-        processWithAiVisionOrFallback(orig)
+        recognizeWithMlKitOcr(orig)
     }
 
     fun processImageUri(context: Context, uri: Uri) {
@@ -267,8 +244,6 @@ class OcrViewModel(
         corrections = emptyList()
         structuredResult = null
         isRoiActive = false
-        usedOcrFallback = false
-        fallbackNotice = null
         activeTab = 0
 
         viewModelScope.launch {
@@ -284,7 +259,7 @@ class OcrViewModel(
 
             originalBitmap = loadedBitmap
             activeBitmap = loadedBitmap
-            processWithAiVisionOrFallback(loadedBitmap)
+            recognizeWithMlKitOcr(loadedBitmap)
         }
     }
 
@@ -297,93 +272,17 @@ class OcrViewModel(
         corrections = emptyList()
         structuredResult = null
         isRoiActive = false
-        usedOcrFallback = false
-        fallbackNotice = null
         originalBitmap = bitmap
         activeBitmap = bitmap
         activeTab = 0
 
-        processWithAiVisionOrFallback(bitmap)
+        recognizeWithMlKitOcr(bitmap)
     }
 
     /**
-     * Quy trình chính:
-     * 1. Nếu cờ useAiVisionPrimary = true: ƯU TIÊN SỐ 1 gọi Gemini Vision đọc text từ ảnh trực tiếp.
-     * 2. Nếu AI không kết nối được (không mạng, lỗi server, hết quota): TỰ ĐỘNG BẬT CỜ FALLBACK SANG OCR THIẾT BỊ.
+     * Quét OCR chuẩn xác bằng Google ML Kit nội bộ trên máy (chạy trực tiếp trên ảnh, không bịa chữ)
      */
-    fun processWithAiVisionOrFallback(bitmap: Bitmap) {
-        if (!useAiVisionPrimary) {
-            // Người dùng chủ động chọn quét OCR offline
-            usedOcrFallback = false
-            fallbackNotice = null
-            recognizeWithMlKitOcr(bitmap)
-            return
-        }
-
-        isRecognizing = true
-        isProcessingVision = true
-        errorMessage = null
-        usedOcrFallback = false
-        fallbackNotice = null
-
-        viewModelScope.launch {
-            val apiService = apiServiceProvider()
-            val base64Img = withContext(Dispatchers.Default) {
-                ImagePreprocessor.bitmapToBase64(bitmap)
-            }
-
-            var visionSuccess = false
-            if (apiService != null) {
-                try {
-                    val request = OcrExtractRequest(
-                        imageBase64 = base64Img,
-                        mimeType = "image/jpeg",
-                        documentType = selectedDocType,
-                        apiKey = geminiApiKey.takeIf { it.isNotBlank() }
-                    )
-                    val response = withContext(Dispatchers.IO) {
-                        apiService.extractStructuredOcr(request)
-                    }
-
-                    if (response.fullText.isNotBlank() || response.structuredData.isNotEmpty()) {
-                        val text = response.fullText.ifBlank {
-                            response.structuredData.values.joinToString("\n") { it.toString().replace("\"", "") }
-                        }
-                        recognizedText = text
-                        rawRecognizedText = text
-                        structuredResult = response
-                        usedOcrFallback = false
-                        fallbackNotice = null
-                        activeTab = if (response.structuredData.isNotEmpty()) 1 else 0
-
-                        val firstLine = text.lineSequence().firstOrNull { it.isNotBlank() }?.take(40)
-                        val timeStr = SimpleDateFormat("HH:mm dd/MM", Locale.getDefault()).format(Date())
-                        documentTitle = firstLine ?: "Tài liệu AI Vision ($timeStr)"
-                        visionSuccess = true
-                    }
-                } catch (e: Exception) {
-                    usedOcrFallback = true
-                    fallbackNotice = "Không thể kết nối AI (${e.localizedMessage ?: "Ngoại tuyến"}). Đã tự động kích hoạt cờ dự phòng OCR trên máy."
-                }
-            } else {
-                usedOcrFallback = true
-                fallbackNotice = "Chưa kết nối máy chủ PoDoc để gọi AI Vision. Đã tự động kích hoạt cờ dự phòng OCR trên máy."
-            }
-
-            isProcessingVision = false
-            if (!visionSuccess) {
-                // ĐÃ KÍCH HOẠT CỜ DỰ PHÒNG: CHẠY OCR NỘI BỘ
-                recognizeWithMlKitOcr(bitmap)
-            } else {
-                isRecognizing = false
-            }
-        }
-    }
-
-    /**
-     * Quét OCR bằng Google ML Kit nội bộ trên máy (chế độ dự phòng khi không thể kết nối AI)
-     */
-    private fun recognizeWithMlKitOcr(bitmap: Bitmap) {
+    fun recognizeWithMlKitOcr(bitmap: Bitmap) {
         isRecognizing = true
         errorMessage = null
 
@@ -457,16 +356,8 @@ class OcrViewModel(
             aiErrorMessage = null
 
             try {
-                val base64Img = currentBitmap?.let {
-                    withContext(Dispatchers.Default) {
-                        ImagePreprocessor.bitmapToBase64(it)
-                    }
-                }
-
                 val request = OcrExtractRequest(
                     rawText = textToProcess,
-                    imageBase64 = base64Img,
-                    mimeType = "image/jpeg",
                     documentType = selectedDocType,
                     apiKey = geminiApiKey.takeIf { it.isNotBlank() }
                 )
@@ -562,7 +453,7 @@ class OcrViewModel(
         }
     }
 
-    fun clear() {
+    fun clearAll() {
         imageUri = null
         originalBitmap = null
         activeBitmap = null
@@ -573,16 +464,10 @@ class OcrViewModel(
         corrections = emptyList()
         structuredResult = null
         activeTab = 0
-        usedOcrFallback = false
-        fallbackNotice = null
         documentTitle = ""
         errorMessage = null
         aiErrorMessage = null
         saveSuccessMessage = null
-    }
-
-    fun dismissFallbackNotice() {
-        fallbackNotice = null
     }
 
     fun clearError() {

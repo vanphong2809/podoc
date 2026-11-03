@@ -256,99 +256,23 @@ async def extract_structured_ocr(
     is_vision_processed = False
 
     if api_key:
-        if image_base64:
-            is_vision_processed = True
-            # Prompt chuyên sâu cho AI Vision đọc trực tiếp từ file ảnh
-            if doc_type == DocumentType.ID_CARD.value:
-                system_prompt = f"""
-Bạn là chuyên gia thị giác máy tính và AI trích xuất Căn cước công dân (CCCD) / CMND Việt Nam.
-Hình ảnh đính kèm là một thẻ CCCD hoặc giấy tờ tùy thân.
-Nhiệm vụ:
-1. Đọc TOÀN BỘ chữ viết trong hình ảnh vào trường 'full_text' (tiếng Việt có dấu, in hoa, số chính xác 100%, không nhầm số 0 với chữ O).
-2. Bóc tách các trường thông tin cần thiết vào JSON:
-{{
-  "full_text": "Toàn bộ văn bản có trong ảnh",
-  "id_number": "12 chữ số CCCD (chỉ số)",
-  "full_name": "Họ và tên in hoa tiếng Việt",
-  "date_of_birth": "DD/MM/YYYY",
-  "gender": "Nam hoặc Nữ",
-  "nationality": "Việt Nam",
-  "place_of_origin": "Quê quán",
-  "place_of_residence": "Nơi thường trú",
-  "expiry_date": "DD/MM/YYYY hoặc Không thời hạn",
-  "corrections": ["ghi chú chất lượng ảnh hoặc điểm đã tối ưu hóa"]
-}}
-"""
-            elif doc_type == DocumentType.INVOICE.value:
-                system_prompt = f"""
-Bạn là chuyên gia thị giác máy tính trích xuất Hóa đơn thanh toán / Hóa đơn điện tử VAT Việt Nam từ ảnh.
-Nhiệm vụ: Đọc toàn bộ chữ viết trong ảnh và bóc tách các trường theo JSON schema:
-{{
-  "full_text": "Toàn bộ nội dung chữ trong hóa đơn",
-  "invoice_number": "Số hóa đơn",
-  "seller_name": "Tên công ty / đơn vị bán hàng",
-  "seller_tax_id": "Mã số thuế bên bán",
-  "invoice_date": "Ngày lập hóa đơn DD/MM/YYYY",
-  "buyer_name": "Tên người mua / đơn vị mua",
-  "total_amount": "Tổng tiền thanh toán (kèm đơn vị nếu có)",
-  "items_summary": "Tóm tắt ngắn gọn các mặt hàng",
-  "corrections": ["ghi chú AI Vision"]
-}}
-"""
-            elif doc_type == DocumentType.BUSINESS_CARD.value:
-                system_prompt = f"""
-Bạn là chuyên gia thị giác máy tính đọc Danh thiếp (Business Card) từ ảnh.
-Nhiệm vụ: Đọc toàn bộ nội dung và bóc tách theo JSON:
-{{
-  "full_text": "Toàn bộ chữ trên danh thiếp",
-  "full_name": "Họ và tên",
-  "job_title": "Chức danh / Vị trí",
-  "company": "Tên công ty",
-  "phone_number": "Số điện thoại di động",
-  "email": "Địa chỉ email",
-  "address": "Địa chỉ văn phòng",
-  "website": "Địa chỉ website",
-  "corrections": ["ghi chú AI Vision"]
-}}
-"""
-            else:
-                system_prompt = f"""
-Bạn là chuyên gia thị giác máy tính đọc văn bản từ hình ảnh tài liệu.
-Nhiệm vụ: Đọc toàn bộ chữ viết tiếng Việt và tiếng Anh trong ảnh giữ nguyên bố cục đoạn, sửa các chỗ mờ nhòe.
-Trả về JSON:
-{{
-  "full_text": "Toàn bộ văn bản đã đọc được từ ảnh một cách hoàn chỉnh và mạch lạc",
-  "title": "Tiêu đề ngắn gọn gợi ý cho tài liệu",
-  "cleaned_content": "Văn bản đã được chuẩn hóa",
-  "key_points": ["danh sách 3-5 ý chính quan trọng nhất"],
-  "corrections": ["ghi chú AI"]
-}}
-"""
-            try:
-                llm_result = await call_gemini_api(
-                    prompt=system_prompt,
-                    api_key=api_key,
-                    model=model_name,
-                    image_base64=image_base64,
-                    mime_type=mime_type
-                )
-                confidence_notes = llm_result.pop("corrections", []) or []
-                full_text = llm_result.pop("full_text", "") or ""
-                structured_data = llm_result
-                confidence_notes.insert(0, f"Đã đọc trực tiếp từ ảnh bằng AI Vision ({model_name})")
-            except Exception as e:
-                logger.warning(f"Lỗi khi gọi Gemini Vision ({e}), chuyển sang chế độ Heuristic / OCR Fallback.")
-                structured_data, confidence_notes = fallback_heuristic_extraction(raw_text or "", doc_type)
-                full_text = raw_text or ""
-                confidence_notes.append(f"Chế độ ngoại tuyến Heuristic (Vision lỗi: {str(e)[:60]})")
-        else:
-            # Xử lý từ văn bản thô (khi không truyền ảnh)
-            text_to_process = raw_text or ""
+        text_to_process = (raw_text or "").strip()
+
+        if text_to_process:
+            # ƯU TIÊN SỐ 1: Phân tích & Bóc tách trực tiếp từ văn bản OCR thực tế do thiết bị quét
+            # Chống hoàn toàn hiện tượng ảo giác (hallucination) / đọc text một đằng ra một nẻo
+            is_vision_processed = False
             if doc_type == DocumentType.ID_CARD.value:
                 system_prompt = f"""
 Bạn là chuyên gia Intelligent Document Processing (IDP) xử lý căn cước công dân Việt Nam (CCCD).
 Nhiệm vụ: Phân tích đoạn văn bản OCR sau, SỬA LỖI CHÍNH TẢ do OCR đọc nhầm theo ngữ cảnh (ví dụ 'PH0NG' -> 'PHONG', '28/O9/1998' -> '28/09/1998', 'Hà Nộj' -> 'Hà Nội', số 0 lẫn chữ O).
 Chỉ trích xuất các thông tin cần thiết, bỏ qua toàn bộ văn bản rác, quốc huy, hoa văn.
+
+NGUYÊN TẮC BẮT BUỘC:
+1. Bạn CHỈ ĐƯỢC trích xuất thông tin có thật trong đoạn văn bản OCR dưới đây.
+2. TUYỆT ĐỐI KHÔNG BỊA ĐẶT thông tin, họ tên hoặc số CCCD không xuất hiện trong văn bản.
+3. Nếu trường thông tin nào không có trong văn bản, hãy để chuỗi rỗng "" hoặc null.
+
 Trả về định dạng JSON thuần túy theo schema sau:
 {{
   "id_number": "12 chữ số CCCD (chỉ số)",
@@ -368,7 +292,13 @@ VĂN BẢN OCR THÔ CẦN XỬ LÝ:
             elif doc_type == DocumentType.INVOICE.value:
                 system_prompt = f"""
 Bạn là chuyên gia bóc tách Hóa đơn mua hàng / Hóa đơn điện tử VAT Việt Nam.
-Nhiệm vụ: Sửa lỗi OCR và trích xuất các trường thông tin thành JSON theo schema sau:
+Nhiệm vụ: Sửa lỗi OCR và trích xuất các trường thông tin thành JSON.
+
+NGUYÊN TẮC BẮT BUỘC:
+1. CHỈ trích xuất thông tin có trong văn bản OCR dưới đây, TUYỆT ĐỐI KHÔNG BỊA ĐẶT số tiền hoặc tên công ty.
+2. Nếu trường thông tin nào không có, để chuỗi rỗng "".
+
+Trả về JSON theo schema:
 {{
   "invoice_number": "Số hóa đơn",
   "seller_name": "Tên công ty / đơn vị bán hàng",
@@ -386,7 +316,13 @@ VĂN BẢN OCR THÔ:
             elif doc_type == DocumentType.BUSINESS_CARD.value:
                 system_prompt = f"""
 Bạn là chuyên gia trích xuất Danh thiếp (Business Card).
-Nhiệm vụ: Sửa lỗi OCR và trích xuất thành JSON theo schema sau:
+Nhiệm vụ: Sửa lỗi OCR và trích xuất thành JSON.
+
+NGUYÊN TẮC BẮT BUỘC:
+1. CHỈ trích xuất thông tin có trong văn bản OCR dưới đây, TUYỆT ĐỐI KHÔNG BỊA ĐẶT.
+2. Nếu trường thông tin nào không có, để chuỗi rỗng "".
+
+Trả về JSON theo schema:
 {{
   "full_name": "Họ và tên",
   "job_title": "Chức danh / Vị trí công việc",
@@ -404,12 +340,14 @@ VĂN BẢN OCR THÔ:
             else:
                 system_prompt = f"""
 Bạn là trợ lý AI sửa lỗi chính tả và chuẩn hóa văn bản tiếng Việt từ kết quả OCR.
-Nhiệm vụ: Sửa toàn bộ lỗi chính tả, dấu câu, ngắt dòng do OCR, giữ nguyên ý nghĩa nội dung.
+Nhiệm vụ: Sửa toàn bộ lỗi chính tả, dấu câu, ngắt dòng do OCR, giữ nguyên ý nghĩa nội dung và số liệu có thật.
+TUYỆT ĐỐI KHÔNG BỊA ĐẶT thêm thông tin ngoài văn bản.
+
 Trả về định dạng JSON:
 {{
   "title": "Tiêu đề ngắn gọn gợi ý cho tài liệu",
   "cleaned_content": "Toàn bộ văn bản đã được sửa lỗi chính tả và chuẩn hóa trình bày",
-  "key_points": ["danh sách 3-5 ý chính quan trọng nhất"],
+  "key_points": ["danh sách 3-5 ý chính quan trọng nhất có trong văn bản"],
   "corrections": ["danh sách các lỗi chính tả tiêu biểu đã sửa"]
 }}
 
@@ -419,14 +357,46 @@ VĂN BẢN OCR THÔ:
             try:
                 llm_result = await call_gemini_api(system_prompt, api_key, model=model_name)
                 confidence_notes = llm_result.pop("corrections", []) or []
-                full_text = text_to_process
+                full_text = llm_result.get("cleaned_content") or text_to_process
                 structured_data = llm_result
             except Exception as e:
                 logger.warning(f"Lỗi khi gọi Gemini API ({e}), tự động chuyển sang Fallback Heuristic Extractor.")
                 structured_data, confidence_notes = fallback_heuristic_extraction(text_to_process, doc_type)
                 full_text = text_to_process
                 confidence_notes.append(f"Chế độ ngoại tuyến Heuristic (LLM lỗi: {str(e)[:60]})")
+        elif image_base64:
+            # Chỉ khi không có raw_text thì mới thử đọc ảnh
+            is_vision_processed = True
+            system_prompt = f"""
+Bạn là chuyên gia thị giác máy tính đọc văn bản từ hình ảnh.
+Hãy đọc trung thực và chính xác từng chữ viết trong ảnh. TUYỆT ĐỐI KHÔNG BỊA ĐẶT NỘI DUNG.
+Trả về JSON:
+{{
+  "full_text": "Toàn bộ văn bản có trong ảnh",
+  "title": "Tiêu đề tài liệu",
+  "cleaned_content": "Văn bản đã đọc",
+  "key_points": [],
+  "corrections": []
+}}
+"""
+            try:
+                llm_result = await call_gemini_api(
+                    prompt=system_prompt,
+                    api_key=api_key,
+                    model=model_name,
+                    image_base64=image_base64,
+                    mime_type=mime_type
+                )
+                confidence_notes = llm_result.pop("corrections", []) or []
+                full_text = llm_result.pop("full_text", "") or ""
+                structured_data = llm_result
+            except Exception as e:
+                logger.warning(f"Lỗi khi gọi Gemini Vision ({e}), chuyển sang chế độ Heuristic.")
+                structured_data, confidence_notes = fallback_heuristic_extraction("", doc_type)
+                full_text = ""
+                confidence_notes.append(f"Vision lỗi: {str(e)[:60]}")
     else:
+        # Không có API key -> dùng Fallback Heuristic Extractor ngay lập tức
         # Không có API key -> dùng Fallback Heuristic Extractor ngay lập tức
         text_to_process = raw_text or ""
         structured_data, confidence_notes = fallback_heuristic_extraction(text_to_process, doc_type)
