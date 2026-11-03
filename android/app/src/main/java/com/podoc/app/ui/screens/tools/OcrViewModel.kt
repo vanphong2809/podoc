@@ -2,6 +2,7 @@ package com.podoc.app.ui.screens.tools
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.RectF
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -16,7 +17,12 @@ import com.podoc.app.data.model.Category
 import com.podoc.app.data.model.CreateArticleRequest
 import com.podoc.app.data.repository.ArticleRepository
 import com.podoc.app.data.repository.CategoryRepository
+import com.podoc.app.ui.screens.tools.ocr.CorrectionEntry
+import com.podoc.app.ui.screens.tools.ocr.ImagePreprocessor
+import com.podoc.app.ui.screens.tools.ocr.OcrCorrector
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -29,13 +35,42 @@ class OcrViewModel(
     var imageUri by mutableStateOf<Uri?>(null)
         private set
 
-    var imageBitmap by mutableStateOf<Bitmap?>(null)
+    // Ảnh gốc chụp/chọn
+    var originalBitmap by mutableStateOf<Bitmap?>(null)
+        private set
+
+    // Ảnh đang hiển thị / đang dùng để quét (sau khi Crop ROI hoặc ảnh gốc)
+    var activeBitmap by mutableStateOf<Bitmap?>(null)
+        private set
+
+    // Tương thích ngược với imageBitmap cũ
+    val imageBitmap: Bitmap?
+        get() = activeBitmap
+
+    var isRoiActive by mutableStateOf(false)
+        private set
+
+    var showCropDialog by mutableStateOf(false)
+
+    var isEnhanceContrastEnabled by mutableStateOf(true)
+        private set
+
+    var isAutoCorrectionEnabled by mutableStateOf(true)
+        private set
+
+    var isShowingCleaned by mutableStateOf(true)
         private set
 
     var isRecognizing by mutableStateOf(false)
         private set
 
     var recognizedText by mutableStateOf("")
+        private set
+
+    var rawRecognizedText by mutableStateOf("")
+        private set
+
+    var corrections by mutableStateOf<List<CorrectionEntry>>(emptyList())
         private set
 
     var errorMessage by mutableStateOf<String?>(null)
@@ -90,67 +125,155 @@ class OcrViewModel(
         recognizedText = newText
     }
 
+    fun toggleShowingCleaned() {
+        isShowingCleaned = !isShowingCleaned
+        recognizedText = if (isShowingCleaned) {
+            val result = OcrCorrector.cleanAndCorrect(rawRecognizedText)
+            result.cleanedText
+        } else {
+            rawRecognizedText
+        }
+    }
+
+    fun toggleAutoCorrection() {
+        isAutoCorrectionEnabled = !isAutoCorrectionEnabled
+        recognizedText = if (isAutoCorrectionEnabled) {
+            val result = OcrCorrector.cleanAndCorrect(rawRecognizedText)
+            corrections = result.corrections
+            result.cleanedText
+        } else {
+            corrections = emptyList()
+            rawRecognizedText
+        }
+    }
+
+    fun toggleEnhanceContrast() {
+        isEnhanceContrastEnabled = !isEnhanceContrastEnabled
+        val currentBmp = activeBitmap ?: originalBitmap
+        if (currentBmp != null) {
+            recognizeFromBitmap(currentBmp)
+        }
+    }
+
+    fun openCropDialog() {
+        if (originalBitmap != null) {
+            showCropDialog = true
+        }
+    }
+
+    fun closeCropDialog() {
+        showCropDialog = false
+    }
+
+    fun applyRoiCrop(cropRect: RectF) {
+        showCropDialog = false
+        val orig = originalBitmap ?: return
+        viewModelScope.launch {
+            val cropped = withContext(Dispatchers.Default) {
+                ImagePreprocessor.cropNormalized(orig, cropRect)
+            }
+            activeBitmap = cropped
+            isRoiActive = true
+            recognizeFromBitmap(cropped)
+        }
+    }
+
+    fun resetRoi() {
+        val orig = originalBitmap ?: return
+        activeBitmap = orig
+        isRoiActive = false
+        recognizeFromBitmap(orig)
+    }
+
     fun processImageUri(context: Context, uri: Uri) {
         imageUri = uri
-        imageBitmap = null
         isRecognizing = true
         errorMessage = null
         recognizedText = ""
+        rawRecognizedText = ""
+        corrections = emptyList()
+        isRoiActive = false
 
-        try {
-            val image = InputImage.fromFilePath(context, uri)
-            recognizer.process(image)
-                .addOnSuccessListener { visionText ->
-                    isRecognizing = false
-                    val text = visionText.text.trim()
-                    recognizedText = text
-                    if (text.isBlank()) {
-                        errorMessage = "Không tìm thấy văn bản trong ảnh này. Vui lòng thử lại với ảnh rõ nét hơn."
-                    } else {
-                        val firstLine = text.lineSequence().firstOrNull { it.isNotBlank() }?.take(40)
-                        val timeStr = SimpleDateFormat("HH:mm dd/MM", Locale.getDefault()).format(Date())
-                        documentTitle = firstLine ?: "Tài liệu OCR ($timeStr)"
-                    }
-                }
-                .addOnFailureListener { e ->
-                    isRecognizing = false
-                    errorMessage = "Lỗi nhận dạng ảnh: ${e.localizedMessage ?: "Vui lòng thử lại"}"
-                }
-        } catch (e: Exception) {
-            isRecognizing = false
-            errorMessage = "Không thể đọc tệp ảnh: ${e.localizedMessage}"
+        viewModelScope.launch {
+            val loadedBitmap = withContext(Dispatchers.IO) {
+                ImagePreprocessor.loadAndOrientBitmap(context, uri)
+            }
+
+            if (loadedBitmap == null) {
+                isRecognizing = false
+                errorMessage = "Không thể đọc hoặc xử lý tệp ảnh này."
+                return@launch
+            }
+
+            originalBitmap = loadedBitmap
+            activeBitmap = loadedBitmap
+            recognizeFromBitmap(loadedBitmap)
         }
     }
 
     fun processBitmap(bitmap: Bitmap) {
-        imageBitmap = bitmap
         imageUri = null
         isRecognizing = true
         errorMessage = null
         recognizedText = ""
+        rawRecognizedText = ""
+        corrections = emptyList()
+        isRoiActive = false
+        originalBitmap = bitmap
+        activeBitmap = bitmap
 
-        try {
-            val image = InputImage.fromBitmap(bitmap, 0)
-            recognizer.process(image)
-                .addOnSuccessListener { visionText ->
-                    isRecognizing = false
-                    val text = visionText.text.trim()
-                    recognizedText = text
-                    if (text.isBlank()) {
-                        errorMessage = "Không tìm thấy văn bản trong ảnh này. Vui lòng thử lại với ảnh rõ nét hơn."
-                    } else {
-                        val firstLine = text.lineSequence().firstOrNull { it.isNotBlank() }?.take(40)
-                        val timeStr = SimpleDateFormat("HH:mm dd/MM", Locale.getDefault()).format(Date())
-                        documentTitle = firstLine ?: "Tài liệu OCR ($timeStr)"
+        recognizeFromBitmap(bitmap)
+    }
+
+    private fun recognizeFromBitmap(bitmap: Bitmap) {
+        isRecognizing = true
+        errorMessage = null
+
+        viewModelScope.launch {
+            // Tiền xử lý ảnh (Tăng tương phản & Grayscale nếu bật)
+            val processedBitmap = withContext(Dispatchers.Default) {
+                if (isEnhanceContrastEnabled) {
+                    ImagePreprocessor.enhanceForOcr(bitmap)
+                } else {
+                    bitmap
+                }
+            }
+
+            try {
+                val inputImage = InputImage.fromBitmap(processedBitmap, 0)
+                recognizer.process(inputImage)
+                    .addOnSuccessListener { visionText ->
+                        isRecognizing = false
+                        val rawText = visionText.text.trim()
+                        rawRecognizedText = rawText
+
+                        if (rawText.isBlank()) {
+                            recognizedText = ""
+                            corrections = emptyList()
+                            errorMessage = "Không tìm thấy văn bản trong vùng ảnh này. Bạn hãy thử mở rộng vùng quét hoặc chụp rõ hơn."
+                        } else {
+                            if (isAutoCorrectionEnabled) {
+                                val correctionResult = OcrCorrector.cleanAndCorrect(rawText)
+                                recognizedText = correctionResult.cleanedText
+                                corrections = correctionResult.corrections
+                            } else {
+                                recognizedText = rawText
+                                corrections = emptyList()
+                            }
+
+                            val firstLine = recognizedText.lineSequence().firstOrNull { it.isNotBlank() }?.take(40)
+                            val timeStr = SimpleDateFormat("HH:mm dd/MM", Locale.getDefault()).format(Date())
+                            documentTitle = firstLine ?: "Tài liệu OCR ($timeStr)"
+                        }
                     }
-                }
-                .addOnFailureListener { e ->
-                    isRecognizing = false
-                    errorMessage = "Lỗi nhận dạng ảnh: ${e.localizedMessage ?: "Vui lòng thử lại"}"
-                }
-        } catch (e: Exception) {
-            isRecognizing = false
-            errorMessage = "Không thể đọc dữ liệu ảnh: ${e.localizedMessage}"
+                    .addOnFailureListener { e ->
+                        isRecognizing = false
+                        errorMessage = "Lỗi nhận dạng ảnh: ${e.localizedMessage ?: "Vui lòng thử lại"}"
+                    }
+            } catch (e: Exception) {
+                isRecognizing = false
+                errorMessage = "Không thể xử lý ảnh: ${e.localizedMessage}"
+            }
         }
     }
 
@@ -207,8 +330,13 @@ class OcrViewModel(
 
     fun clear() {
         imageUri = null
-        imageBitmap = null
+        originalBitmap = null
+        activeBitmap = null
+        isRoiActive = false
+        showCropDialog = false
         recognizedText = ""
+        rawRecognizedText = ""
+        corrections = emptyList()
         documentTitle = ""
         errorMessage = null
         saveSuccessMessage = null
@@ -222,4 +350,3 @@ class OcrViewModel(
         saveSuccessMessage = null
     }
 }
-

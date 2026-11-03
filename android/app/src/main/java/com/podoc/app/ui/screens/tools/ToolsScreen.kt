@@ -395,7 +395,7 @@ fun ToolsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        listOf("Tiếng Việt", "Tiếng Anh", "Chụp ảnh", "Thư viện ảnh", "Lưu bài viết").forEach { tag ->
+                        listOf("Tiếng Việt", "Khoanh vùng ROI", "Sửa lỗi chính tả", "Offline", "Lưu bài viết").forEach { tag ->
                             Surface(
                                 color = MaterialTheme.colorScheme.surface,
                                 shape = RoundedCornerShape(6.dp),
