@@ -126,6 +126,12 @@ class OcrViewModel(
     var geminiApiKey by mutableStateOf("")
         private set
 
+    var isTestingApiKey by mutableStateOf(false)
+        private set
+
+    var apiKeyTestResult by mutableStateOf<String?>(null)
+        private set
+
     private val recognizer by lazy {
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     }
@@ -160,7 +166,42 @@ class OcrViewModel(
             dataStoreManager.saveGeminiApiKey(key)
             geminiApiKey = key.trim()
             showApiKeyDialog = false
+            apiKeyTestResult = null
+            // Nếu có ảnh đang mở mà chưa nhận diện được hoặc có lỗi trước đó, tự động quét lại với key mới
+            val current = activeBitmap ?: originalBitmap
+            if (current != null && (recognizedText.isBlank() || errorMessage != null)) {
+                processImageWithBestReader(current)
+            }
         }
+    }
+
+    fun testGeminiApiKey(key: String) {
+        val clean = key.trim()
+        if (clean.isBlank()) {
+            apiKeyTestResult = "Vui lòng nhập API Key trước khi kiểm tra."
+            return
+        }
+        isTestingApiKey = true
+        apiKeyTestResult = null
+
+        viewModelScope.launch {
+            val result = GeminiDirectVisionService.testApiKey(clean)
+            isTestingApiKey = false
+            result.fold(
+                onSuccess = { models ->
+                    val displayList = models.take(3).joinToString(", ")
+                    val extra = if (models.size > 3) " (+${models.size - 3} mô hình khác)" else ""
+                    apiKeyTestResult = "✅ Kết nối thành công!\nMô hình sẵn sàng: $displayList$extra"
+                },
+                onFailure = { error ->
+                    apiKeyTestResult = "❌ ${error.localizedMessage ?: error.message}"
+                }
+            )
+        }
+    }
+
+    fun clearApiKeyTestResult() {
+        apiKeyTestResult = null
     }
 
     fun setSelectedCategory(catId: Int) {

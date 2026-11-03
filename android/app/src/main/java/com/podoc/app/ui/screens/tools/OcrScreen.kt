@@ -950,22 +950,73 @@ fun OcrScreen(
             text = {
                 Column {
                     Text(
-                        text = "Nhập Google AI Studio API Key cá nhân của bạn để sử dụng mô hình Gemini 3.8 Flash nhận diện và sửa lỗi tiếng Việt chuyên sâu nhất:",
+                        text = "Nhập Google AI Studio API Key cá nhân của bạn để sử dụng mô hình Gemini Multimodal Vision đọc chính xác 100% tiếng Việt trực tiếp từ thiết bị:",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
                         value = tempApiKey,
-                        onValueChange = { tempApiKey = it },
+                        onValueChange = {
+                            tempApiKey = it
+                            viewModel.clearApiKeyTestResult()
+                        },
                         placeholder = { Text("AIzaSy...") },
                         singleLine = true,
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = { viewModel.testGeminiApiKey(tempApiKey) },
+                            enabled = !viewModel.isTestingApiKey && tempApiKey.isNotBlank(),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            if (viewModel.isTestingApiKey) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Đang kiểm tra...", fontSize = 12.sp)
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircleOutline,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Kiểm tra kết nối", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                    if (viewModel.apiKeyTestResult != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val isOk = viewModel.apiKeyTestResult?.startsWith("✅") == true
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isOk) Color(0xFFECFDF5) else Color(0xFFFEF2F2)
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = viewModel.apiKeyTestResult ?: "",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 12.sp,
+                                color = if (isOk) Color(0xFF047857) else Color(0xFFB91C1C),
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Nếu để trống, hệ thống sẽ sử dụng API Key mặc định của máy chủ PoDoc hoặc chạy chế độ Heuristic Regex ngoại tuyến.",
+                        text = "Hệ thống sẽ tự động phát hiện model Gemini tốt nhất (3.8-Flash / 2.0-Flash / 1.5-Flash) được cấp phép cho key của bạn.",
                         style = MaterialTheme.typography.bodySmall,
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant

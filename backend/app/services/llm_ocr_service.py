@@ -447,10 +447,17 @@ async def read_image_with_gemini(
     if not api_key:
         raise ValueError("Chưa cấu hình Google Gemini API Key. Bạn hãy bấm biểu tượng chìa khóa ở góc trên để nhập API Key từ Google AI Studio.")
 
-    models_to_try = [settings.GEMINI_MODEL or "gemini-3.8-flash"]
-    for m in ["gemini-3.8-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
-        if m not in models_to_try:
-            models_to_try.append(m)
+    targets_to_try = [
+        ("gemini-2.0-flash", "v1beta"),
+        ("gemini-2.0-flash-exp", "v1beta"),
+        ("gemini-1.5-flash", "v1"),
+        ("gemini-1.5-flash", "v1beta"),
+        ("gemini-1.5-flash-latest", "v1beta"),
+        ("gemini-1.5-flash-002", "v1"),
+        ("gemini-1.5-pro", "v1"),
+        ("gemini-1.5-pro", "v1beta"),
+        ("gemini-3.8-flash", "v1beta"),
+    ]
 
     clean_b64 = image_base64
     if "," in clean_b64:
@@ -487,13 +494,13 @@ async def read_image_with_gemini(
     }
 
     last_error = None
-    for target_model in models_to_try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={api_key}"
+    for target_model, api_version in targets_to_try:
+        url = f"https://generativelanguage.googleapis.com/{api_version}/models/{target_model}:generateContent?key={api_key}"
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
                 res = await client.post(url, json=payload)
                 if res.status_code == 404:
-                    logger.warning(f"Mô hình {target_model} không hỗ trợ (404), thử mô hình tiếp theo...")
+                    logger.warning(f"Mô hình {target_model} ({api_version}) không hỗ trợ (404), thử mô hình tiếp theo...")
                     continue
                 res.raise_for_status()
                 res_json = res.json()
@@ -503,7 +510,9 @@ async def read_image_with_gemini(
                 parts = candidates[0].get("content", {}).get("parts", [])
                 if not parts:
                     continue
-                extracted_text = parts[0].get("text", "").strip()
+                extracted_text = "".join([p.get("text", "") for p in parts]).strip()
+                if not extracted_text:
+                    continue
                 words = len(extracted_text.split())
                 lines = len([line for line in extracted_text.splitlines() if line.strip()])
                 return {
@@ -514,7 +523,7 @@ async def read_image_with_gemini(
                 }
         except Exception as e:
             last_error = e
-            logger.warning(f"Lỗi khi gọi {target_model}: {e}")
+            logger.warning(f"Lỗi khi gọi {target_model} ({api_version}): {e}")
 
     if last_error:
         raise last_error
