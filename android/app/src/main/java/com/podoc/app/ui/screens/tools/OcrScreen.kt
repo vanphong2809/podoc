@@ -415,7 +415,7 @@ fun OcrScreen(
                             )
 
                             Text(
-                                text = if (viewModel.geminiApiKey.isNotBlank()) "Gemini 2.0 Flash" else "Chế độ Heuristic",
+                                text = if (viewModel.geminiApiKey.isNotBlank()) "Gemini 3.8 Flash" else "Chế độ Heuristic",
                                 fontSize = 11.sp,
                                 color = if (viewModel.geminiApiKey.isNotBlank()) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -912,12 +912,12 @@ fun OcrScreen(
                 )
             },
             title = {
-                Text("Cấu hình Google Gemini API", fontWeight = FontWeight.Bold)
+                Text("Cấu hình Google Gemini 3.8 Flash API", fontWeight = FontWeight.Bold)
             },
             text = {
                 Column {
                     Text(
-                        text = "Nhập Google AI Studio API Key cá nhân của bạn để sử dụng mô hình Gemini 2.0 Flash nhận diện và sửa lỗi tiếng Việt chuyên sâu nhất:",
+                        text = "Nhập Google AI Studio API Key cá nhân của bạn để sử dụng mô hình Gemini 3.8 Flash nhận diện và sửa lỗi tiếng Việt chuyên sâu nhất:",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

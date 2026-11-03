@@ -26,3 +26,4 @@ data class OcrExtractResponse(
     @SerialName("validation") val validation: ValidationStatus = ValidationStatus(),
     @SerialName("markdown_table") val markdownTable: String = ""
 )
+

@@ -160,40 +160,59 @@ def fallback_heuristic_extraction(raw_text: str, doc_type: str) -> Dict[str, Any
     return data, notes
 
 
-async def call_gemini_api(prompt: str, api_key: str, model: str = "gemini-2.0-flash") -> Dict[str, Any]:
-    """Gửi yêu cầu đến Google Gemini API với chế độ JSON Structured Output."""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+async def call_gemini_api(prompt: str, api_key: str, model: str = "gemini-3.8-flash") -> Dict[str, Any]:
+    """Gửi yêu cầu đến Google Gemini API với chế độ JSON Structured Output, ưu tiên Gemini 3.8 Flash."""
+    models_to_try = [model]
+    if "gemini-3.8-flash" not in models_to_try:
+        models_to_try.insert(0, "gemini-3.8-flash")
+    if "gemini-2.0-flash" not in models_to_try:
+        models_to_try.append("gemini-2.0-flash")
+    if "gemini-1.5-flash" not in models_to_try:
+        models_to_try.append("gemini-1.5-flash")
 
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": prompt}
-                ]
+    last_exception = None
+    for target_model in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={api_key}"
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": prompt}
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "response_mime_type": "application/json",
+                "temperature": 0.1
             }
-        ],
-        "generationConfig": {
-            "response_mime_type": "application/json",
-            "temperature": 0.1
         }
-    }
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(url, json=payload)
-        response.raise_for_status()
-        res_json = response.json()
+        try:
+            async with httpx.AsyncClient(timeout=35.0) as client:
+                response = await client.post(url, json=payload)
+                if response.status_code == 404:
+                    logger.warning(f"Mô hình {target_model} chưa kích hoạt cho API key này (404), chuyển sang mô hình tiếp theo...")
+                    continue
+                response.raise_for_status()
+                res_json = response.json()
 
-        # Trích xuất text JSON từ phản hồi của Gemini
-        candidates = res_json.get("candidates", [])
-        if not candidates:
-            raise ValueError("Gemini không trả về kết quả hợp lệ.")
+                candidates = res_json.get("candidates", [])
+                if not candidates:
+                    raise ValueError(f"{target_model} không trả về kết quả hợp lệ.")
 
-        parts = candidates[0].get("content", {}).get("parts", [])
-        if not parts:
-            raise ValueError("Phản hồi Gemini rỗng.")
+                parts = candidates[0].get("content", {}).get("parts", [])
+                if not parts:
+                    raise ValueError(f"Phản hồi {target_model} rỗng.")
 
-        raw_content = parts[0].get("text", "{}")
-        return json.loads(raw_content)
+                raw_content = parts[0].get("text", "{}")
+                return json.loads(raw_content)
+        except Exception as e:
+            last_exception = e
+            logger.warning(f"Lỗi khi gọi {target_model}: {e}")
+
+    if last_exception:
+        raise last_exception
+    raise RuntimeError("Không thể gọi API Gemini.")
 
 
 async def extract_structured_ocr(
@@ -210,7 +229,7 @@ async def extract_structured_ocr(
     5. Đóng gói kết quả kèm bảng Markdown trực quan.
     """
     api_key = (user_api_key or "").strip() or settings.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY", "")
-    model_name = settings.GEMINI_MODEL or "gemini-2.0-flash"
+    model_name = settings.GEMINI_MODEL or "gemini-3.8-flash"
 
     structured_data: Dict[str, Any] = {}
     confidence_notes: List[str] = []

@@ -197,3 +197,4 @@ def validate_business_card(data: Dict[str, Any]) -> ValidationStatus:
         checks=checks,
         warnings=warnings
     )
+
