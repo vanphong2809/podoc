@@ -11,7 +11,9 @@ class DocumentType(str, Enum):
 
 
 class OcrExtractRequest(BaseModel):
-    raw_text: str = Field(..., min_length=1, description="Văn bản thô trích xuất từ OCR")
+    raw_text: Optional[str] = Field(default="", description="Văn bản thô trích xuất từ OCR (nếu có)")
+    image_base64: Optional[str] = Field(default=None, description="Dữ liệu ảnh dạng base64 để AI Vision đọc trực tiếp")
+    mime_type: str = Field(default="image/jpeg", description="MIME type của ảnh")
     document_type: str = Field(default="id_card", description="Loại tài liệu: id_card, invoice, business_card, general")
     api_key: Optional[str] = Field(default=None, description="Google Gemini API key cá nhân (nếu có)")
 
@@ -25,6 +27,8 @@ class ValidationStatus(BaseModel):
 
 class OcrExtractResponse(BaseModel):
     document_type: str = Field(..., description="Loại tài liệu đã xử lý")
+    full_text: str = Field(default="", description="Toàn bộ văn bản đã đọc được từ ảnh")
+    is_vision: bool = Field(default=False, description="True nếu xử lý trực tiếp qua AI Vision từ ảnh")
     structured_data: Dict[str, Any] = Field(..., description="Dữ liệu bóc tách có cấu trúc JSON")
     confidence_notes: List[str] = Field(default_factory=list, description="Ghi chú các lỗi chính tả và chuyển đổi AI đã thực hiện")
     validation: ValidationStatus = Field(default_factory=ValidationStatus, description="Kết quả kiểm tra tính hợp lệ nghiệp vụ")

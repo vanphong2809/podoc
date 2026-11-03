@@ -11,6 +11,8 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.media.ExifInterface
 import android.net.Uri
+import android.util.Base64
+import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import kotlin.math.max
 import kotlin.math.min
@@ -156,6 +158,27 @@ object ImagePreprocessor {
         val cropHeight = max(1, bottom - top)
 
         return Bitmap.createBitmap(source, left, top, cropWidth, cropHeight)
+    }
+
+    /**
+     * Chuyển đổi Bitmap sang chuỗi Base64 JPEG để gửi trực tiếp cho AI Vision
+     */
+    fun bitmapToBase64(bitmap: Bitmap, maxDimension: Int = 1600, quality: Int = 85): String {
+        var scaled = bitmap
+        if (bitmap.width > maxDimension || bitmap.height > maxDimension) {
+            val aspect = bitmap.width.toFloat() / bitmap.height.toFloat()
+            val (newW, newH) = if (aspect > 1f) {
+                maxDimension to (maxDimension / aspect).toInt()
+            } else {
+                (maxDimension * aspect).toInt() to maxDimension
+            }
+            scaled = Bitmap.createScaledBitmap(bitmap, newW, newH, true)
+        }
+
+        val outputStream = ByteArrayOutputStream()
+        scaled.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
+        val bytes = outputStream.toByteArray()
+        return Base64.encodeToString(bytes, Base64.NO_WRAP)
     }
 }
 

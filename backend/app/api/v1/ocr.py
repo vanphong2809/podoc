@@ -20,18 +20,21 @@ async def extract_structured(
     - Tự động Fallback sang bộ bóc tách Heuristic Regex nếu chưa cấu hình API key.
     - Xác thực định dạng CCCD 12 số, mã tỉnh theo Bộ Công An, ngày tháng hợp lệ.
     """
-    raw_text = payload.raw_text.strip()
-    if not raw_text:
+    raw_text = (payload.raw_text or "").strip()
+    image_b64 = payload.image_base64
+    if not raw_text and not image_b64:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Nội dung văn bản OCR đầu vào không được để trống."
+            detail="Vui lòng cung cấp văn bản OCR thô hoặc dữ liệu ảnh (image_base64) để AI xử lý."
         )
 
     try:
         response = await extract_structured_ocr(
             raw_text=raw_text,
             doc_type=payload.document_type,
-            user_api_key=payload.api_key
+            user_api_key=payload.api_key,
+            image_base64=image_b64,
+            mime_type=payload.mime_type
         )
         return response
     except Exception as e:

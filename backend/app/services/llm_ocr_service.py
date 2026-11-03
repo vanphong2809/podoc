@@ -160,8 +160,14 @@ def fallback_heuristic_extraction(raw_text: str, doc_type: str) -> Dict[str, Any
     return data, notes
 
 
-async def call_gemini_api(prompt: str, api_key: str, model: str = "gemini-3.8-flash") -> Dict[str, Any]:
-    """Gửi yêu cầu đến Google Gemini API với chế độ JSON Structured Output, ưu tiên Gemini 3.8 Flash."""
+async def call_gemini_api(
+    prompt: str,
+    api_key: str,
+    model: str = "gemini-3.8-flash",
+    image_base64: Optional[str] = None,
+    mime_type: str = "image/jpeg"
+) -> Dict[str, Any]:
+    """Gửi yêu cầu đến Google Gemini API với chế độ JSON Structured Output, ưu tiên Gemini 3.8 Flash, hỗ trợ Multimodal Vision."""
     models_to_try = [model]
     if "gemini-3.8-flash" not in models_to_try:
         models_to_try.insert(0, "gemini-3.8-flash")
@@ -173,12 +179,23 @@ async def call_gemini_api(prompt: str, api_key: str, model: str = "gemini-3.8-fl
     last_exception = None
     for target_model in models_to_try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={api_key}"
+
+        parts: List[Dict[str, Any]] = [{"text": prompt}]
+        if image_base64:
+            clean_b64 = image_base64
+            if "," in clean_b64:
+                clean_b64 = clean_b64.split(",", 1)[1]
+            parts.append({
+                "inline_data": {
+                    "mime_type": mime_type,
+                    "data": clean_b64.strip()
+                }
+            })
+
         payload = {
             "contents": [
                 {
-                    "parts": [
-                        {"text": prompt}
-                    ]
+                    "parts": parts
                 }
             ],
             "generationConfig": {
@@ -188,7 +205,7 @@ async def call_gemini_api(prompt: str, api_key: str, model: str = "gemini-3.8-fl
         }
 
         try:
-            async with httpx.AsyncClient(timeout=35.0) as client:
+            async with httpx.AsyncClient(timeout=45.0) as client:
                 response = await client.post(url, json=payload)
                 if response.status_code == 404:
                     logger.warning(f"Mô hình {target_model} chưa kích hoạt cho API key này (404), chuyển sang mô hình tiếp theo...")
@@ -200,11 +217,11 @@ async def call_gemini_api(prompt: str, api_key: str, model: str = "gemini-3.8-fl
                 if not candidates:
                     raise ValueError(f"{target_model} không trả về kết quả hợp lệ.")
 
-                parts = candidates[0].get("content", {}).get("parts", [])
-                if not parts:
+                content_parts = candidates[0].get("content", {}).get("parts", [])
+                if not content_parts:
                     raise ValueError(f"Phản hồi {target_model} rỗng.")
 
-                raw_content = parts[0].get("text", "{}")
+                raw_content = content_parts[0].get("text", "{}")
                 return json.loads(raw_content)
         except Exception as e:
             last_exception = e
@@ -216,14 +233,16 @@ async def call_gemini_api(prompt: str, api_key: str, model: str = "gemini-3.8-fl
 
 
 async def extract_structured_ocr(
-    raw_text: str,
-    doc_type: str,
-    user_api_key: Optional[str] = None
+    raw_text: Optional[str] = "",
+    doc_type: str = DocumentType.ID_CARD.value,
+    user_api_key: Optional[str] = None,
+    image_base64: Optional[str] = None,
+    mime_type: str = "image/jpeg"
 ) -> OcrExtractResponse:
     """
-    Quy trình xử lý hoàn chỉnh:
-    1. Xác định Google Gemini API Key (từ người dùng hoặc từ biến môi trường).
-    2. Gọi Gemini LLM để sửa lỗi chính tả ngữ cảnh và bóc tách Key Information Extraction (KIE).
+    Quy trình xử lý hoàn chỉnh (AI Vision trực tiếp là chính, OCR là dự phòng):
+    1. Nếu có ảnh (image_base64), dùng Gemini 3.8 Flash Vision đọc trực tiếp ảnh.
+    2. Bóc tách Full text và các trường có cấu trúc JSON.
     3. Nếu không có key hoặc lỗi mạng, tự động Fallback sang Heuristic Regex Extractor.
     4. Chạy bộ Validation kiểm tra tính hợp lệ nghiệp vụ (CCCD 12 số, mã tỉnh, năm sinh, v.v.).
     5. Đóng gói kết quả kèm bảng Markdown trực quan.
@@ -233,11 +252,100 @@ async def extract_structured_ocr(
 
     structured_data: Dict[str, Any] = {}
     confidence_notes: List[str] = []
+    full_text: str = ""
+    is_vision_processed = False
 
     if api_key:
-        # Xây dựng prompt chuyên dụng theo từng loại tài liệu
-        if doc_type == DocumentType.ID_CARD.value:
-            system_prompt = f"""
+        if image_base64:
+            is_vision_processed = True
+            # Prompt chuyên sâu cho AI Vision đọc trực tiếp từ file ảnh
+            if doc_type == DocumentType.ID_CARD.value:
+                system_prompt = f"""
+Bạn là chuyên gia thị giác máy tính và AI trích xuất Căn cước công dân (CCCD) / CMND Việt Nam.
+Hình ảnh đính kèm là một thẻ CCCD hoặc giấy tờ tùy thân.
+Nhiệm vụ:
+1. Đọc TOÀN BỘ chữ viết trong hình ảnh vào trường 'full_text' (tiếng Việt có dấu, in hoa, số chính xác 100%, không nhầm số 0 với chữ O).
+2. Bóc tách các trường thông tin cần thiết vào JSON:
+{{
+  "full_text": "Toàn bộ văn bản có trong ảnh",
+  "id_number": "12 chữ số CCCD (chỉ số)",
+  "full_name": "Họ và tên in hoa tiếng Việt",
+  "date_of_birth": "DD/MM/YYYY",
+  "gender": "Nam hoặc Nữ",
+  "nationality": "Việt Nam",
+  "place_of_origin": "Quê quán",
+  "place_of_residence": "Nơi thường trú",
+  "expiry_date": "DD/MM/YYYY hoặc Không thời hạn",
+  "corrections": ["ghi chú chất lượng ảnh hoặc điểm đã tối ưu hóa"]
+}}
+"""
+            elif doc_type == DocumentType.INVOICE.value:
+                system_prompt = f"""
+Bạn là chuyên gia thị giác máy tính trích xuất Hóa đơn thanh toán / Hóa đơn điện tử VAT Việt Nam từ ảnh.
+Nhiệm vụ: Đọc toàn bộ chữ viết trong ảnh và bóc tách các trường theo JSON schema:
+{{
+  "full_text": "Toàn bộ nội dung chữ trong hóa đơn",
+  "invoice_number": "Số hóa đơn",
+  "seller_name": "Tên công ty / đơn vị bán hàng",
+  "seller_tax_id": "Mã số thuế bên bán",
+  "invoice_date": "Ngày lập hóa đơn DD/MM/YYYY",
+  "buyer_name": "Tên người mua / đơn vị mua",
+  "total_amount": "Tổng tiền thanh toán (kèm đơn vị nếu có)",
+  "items_summary": "Tóm tắt ngắn gọn các mặt hàng",
+  "corrections": ["ghi chú AI Vision"]
+}}
+"""
+            elif doc_type == DocumentType.BUSINESS_CARD.value:
+                system_prompt = f"""
+Bạn là chuyên gia thị giác máy tính đọc Danh thiếp (Business Card) từ ảnh.
+Nhiệm vụ: Đọc toàn bộ nội dung và bóc tách theo JSON:
+{{
+  "full_text": "Toàn bộ chữ trên danh thiếp",
+  "full_name": "Họ và tên",
+  "job_title": "Chức danh / Vị trí",
+  "company": "Tên công ty",
+  "phone_number": "Số điện thoại di động",
+  "email": "Địa chỉ email",
+  "address": "Địa chỉ văn phòng",
+  "website": "Địa chỉ website",
+  "corrections": ["ghi chú AI Vision"]
+}}
+"""
+            else:
+                system_prompt = f"""
+Bạn là chuyên gia thị giác máy tính đọc văn bản từ hình ảnh tài liệu.
+Nhiệm vụ: Đọc toàn bộ chữ viết tiếng Việt và tiếng Anh trong ảnh giữ nguyên bố cục đoạn, sửa các chỗ mờ nhòe.
+Trả về JSON:
+{{
+  "full_text": "Toàn bộ văn bản đã đọc được từ ảnh một cách hoàn chỉnh và mạch lạc",
+  "title": "Tiêu đề ngắn gọn gợi ý cho tài liệu",
+  "cleaned_content": "Văn bản đã được chuẩn hóa",
+  "key_points": ["danh sách 3-5 ý chính quan trọng nhất"],
+  "corrections": ["ghi chú AI"]
+}}
+"""
+            try:
+                llm_result = await call_gemini_api(
+                    prompt=system_prompt,
+                    api_key=api_key,
+                    model=model_name,
+                    image_base64=image_base64,
+                    mime_type=mime_type
+                )
+                confidence_notes = llm_result.pop("corrections", []) or []
+                full_text = llm_result.pop("full_text", "") or ""
+                structured_data = llm_result
+                confidence_notes.insert(0, f"Đã đọc trực tiếp từ ảnh bằng AI Vision ({model_name})")
+            except Exception as e:
+                logger.warning(f"Lỗi khi gọi Gemini Vision ({e}), chuyển sang chế độ Heuristic / OCR Fallback.")
+                structured_data, confidence_notes = fallback_heuristic_extraction(raw_text or "", doc_type)
+                full_text = raw_text or ""
+                confidence_notes.append(f"Chế độ ngoại tuyến Heuristic (Vision lỗi: {str(e)[:60]})")
+        else:
+            # Xử lý từ văn bản thô (khi không truyền ảnh)
+            text_to_process = raw_text or ""
+            if doc_type == DocumentType.ID_CARD.value:
+                system_prompt = f"""
 Bạn là chuyên gia Intelligent Document Processing (IDP) xử lý căn cước công dân Việt Nam (CCCD).
 Nhiệm vụ: Phân tích đoạn văn bản OCR sau, SỬA LỖI CHÍNH TẢ do OCR đọc nhầm theo ngữ cảnh (ví dụ 'PH0NG' -> 'PHONG', '28/O9/1998' -> '28/09/1998', 'Hà Nộj' -> 'Hà Nội', số 0 lẫn chữ O).
 Chỉ trích xuất các thông tin cần thiết, bỏ qua toàn bộ văn bản rác, quốc huy, hoa văn.
@@ -255,10 +363,10 @@ Trả về định dạng JSON thuần túy theo schema sau:
 }}
 
 VĂN BẢN OCR THÔ CẦN XỬ LÝ:
-\"\"\"{raw_text}\"\"\"
+\"\"\"{text_to_process}\"\"\"
 """
-        elif doc_type == DocumentType.INVOICE.value:
-            system_prompt = f"""
+            elif doc_type == DocumentType.INVOICE.value:
+                system_prompt = f"""
 Bạn là chuyên gia bóc tách Hóa đơn mua hàng / Hóa đơn điện tử VAT Việt Nam.
 Nhiệm vụ: Sửa lỗi OCR và trích xuất các trường thông tin thành JSON theo schema sau:
 {{
@@ -273,10 +381,10 @@ Nhiệm vụ: Sửa lỗi OCR và trích xuất các trường thông tin thành
 }}
 
 VĂN BẢN OCR THÔ:
-\"\"\"{raw_text}\"\"\"
+\"\"\"{text_to_process}\"\"\"
 """
-        elif doc_type == DocumentType.BUSINESS_CARD.value:
-            system_prompt = f"""
+            elif doc_type == DocumentType.BUSINESS_CARD.value:
+                system_prompt = f"""
 Bạn là chuyên gia trích xuất Danh thiếp (Business Card).
 Nhiệm vụ: Sửa lỗi OCR và trích xuất thành JSON theo schema sau:
 {{
@@ -291,10 +399,10 @@ Nhiệm vụ: Sửa lỗi OCR và trích xuất thành JSON theo schema sau:
 }}
 
 VĂN BẢN OCR THÔ:
-\"\"\"{raw_text}\"\"\"
+\"\"\"{text_to_process}\"\"\"
 """
-        else:
-            system_prompt = f"""
+            else:
+                system_prompt = f"""
 Bạn là trợ lý AI sửa lỗi chính tả và chuẩn hóa văn bản tiếng Việt từ kết quả OCR.
 Nhiệm vụ: Sửa toàn bộ lỗi chính tả, dấu câu, ngắt dòng do OCR, giữ nguyên ý nghĩa nội dung.
 Trả về định dạng JSON:
@@ -306,21 +414,28 @@ Trả về định dạng JSON:
 }}
 
 VĂN BẢN OCR THÔ:
-\"\"\"{raw_text}\"\"\"
+\"\"\"{text_to_process}\"\"\"
 """
-
-        try:
-            llm_result = await call_gemini_api(system_prompt, api_key, model=model_name)
-            confidence_notes = llm_result.pop("corrections", []) or []
-            structured_data = llm_result
-        except Exception as e:
-            logger.warning(f"Lỗi khi gọi Gemini API ({e}), tự động chuyển sang Fallback Heuristic Extractor.")
-            structured_data, confidence_notes = fallback_heuristic_extraction(raw_text, doc_type)
-            confidence_notes.append(f"Chế độ ngoại tuyến Heuristic (LLM lỗi: {str(e)[:60]})")
+            try:
+                llm_result = await call_gemini_api(system_prompt, api_key, model=model_name)
+                confidence_notes = llm_result.pop("corrections", []) or []
+                full_text = text_to_process
+                structured_data = llm_result
+            except Exception as e:
+                logger.warning(f"Lỗi khi gọi Gemini API ({e}), tự động chuyển sang Fallback Heuristic Extractor.")
+                structured_data, confidence_notes = fallback_heuristic_extraction(text_to_process, doc_type)
+                full_text = text_to_process
+                confidence_notes.append(f"Chế độ ngoại tuyến Heuristic (LLM lỗi: {str(e)[:60]})")
     else:
         # Không có API key -> dùng Fallback Heuristic Extractor ngay lập tức
-        structured_data, confidence_notes = fallback_heuristic_extraction(raw_text, doc_type)
+        text_to_process = raw_text or ""
+        structured_data, confidence_notes = fallback_heuristic_extraction(text_to_process, doc_type)
+        full_text = text_to_process
         confidence_notes.append("Trích xuất bằng bộ quy tắc Heuristic Regex (Không có Gemini API Key)")
+
+    # Nếu full_text vẫn rỗng, xây dựng lại từ các trường
+    if not full_text:
+        full_text = "\n".join(f"{k}: {v}" for k, v in structured_data.items() if v)
 
     # Kiểm tra tính hợp lệ bằng Validation Layer
     if doc_type == DocumentType.ID_CARD.value:
@@ -337,6 +452,8 @@ VĂN BẢN OCR THÔ:
 
     return OcrExtractResponse(
         document_type=doc_type,
+        full_text=full_text,
+        is_vision=is_vision_processed,
         structured_data=structured_data,
         confidence_notes=confidence_notes,
         validation=validation,
