@@ -1,29 +1,43 @@
+
 services:
   - type: web
     name: podoc-api
     runtime: docker
+    rootDir: ""
     dockerfilePath: backend/Dockerfile
-    dockerContext: backend
     healthCheckPath: /health
+    autoDeploy: true
+
+    x-porender:
+      port: 10000
+      memoryMiB: 256
+      cpu: 0.5
+      healthTimeoutSeconds: 60
+
     envVars:
       - key: DATABASE_URL
         fromDatabase:
           name: podoc-db
           property: connectionString
+
       - key: ADMIN_USERNAME
         value: "admin"
+
       - key: ADMIN_PASSWORD
         generateValue: true
+
       - key: JWT_SECRET
         generateValue: true
+
       - key: ACCESS_TOKEN_EXPIRE_DAYS
         value: "30"
+
       - key: RATE_LIMIT_LOGIN
         value: "10/minute"
 
 databases:
   - name: podoc-db
-    plan: free
-    region: singapore
+    postgresMajorVersion: "16"
     databaseName: podoc
     user: podoc
+    diskSizeGB: 1
