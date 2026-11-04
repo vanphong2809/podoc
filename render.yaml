@@ -13,15 +13,15 @@ services:
           name: podoc-db
           property: connectionString
       - key: ADMIN_USERNAME
-        value: admin
+        value: "admin"
       - key: ADMIN_PASSWORD
         generateValue: true
       - key: JWT_SECRET
         generateValue: true
       - key: ACCESS_TOKEN_EXPIRE_DAYS
-        value: 30
+        value: "30"
       - key: RATE_LIMIT_LOGIN
-        value: 10/minute
+        value: "10/minute"
 
 databases:
   - name: podoc-db
