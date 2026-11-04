@@ -4,8 +4,6 @@ services:
     runtime: docker
     dockerfilePath: backend/Dockerfile
     dockerContext: backend
-    plan: free
-    region: singapore
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
