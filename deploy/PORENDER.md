@@ -52,6 +52,33 @@ chuyển sang PoRender khi deploy code.
 
 ## Kết nối và tự động deploy
 
+Địa chỉ đã cấu hình trên máy chủ:
+
+| Mục đích | Địa chỉ |
+| --- | --- |
+| Dashboard PoRender | `https://porender-server.tail7c6a6a.ts.net` |
+| API dùng trong ứng dụng PoDoc | `https://porender-server.tail7c6a6a.ts.net:8443` |
+| Kiểm tra API trong trình duyệt | `https://porender-server.tail7c6a6a.ts.net:8443/health` |
+
+Trên Android, cài Tailscale, đăng nhập cùng tailnet với server và bật kết nối
+VPN trước khi dùng PoDoc. Trong PoDoc → Cài đặt → Máy chủ, nhập URL API ở trên,
+không thêm `/health`. URL dashboard không phải API PoDoc. Nếu chưa kết nối VPN,
+tên miền riêng có thể báo `Unable to resolve host`.
+
+API có gateway riêng chạy bằng user systemd unit `podoc-vpn-gateway.service`.
+Source/config nằm tại `/home/vanphong/porender/shared/vpn/podoc-gateway.mjs` và
+`podoc-gateway.json`; báo cáo cấu hình nằm tại `podoc-access-report.json` trong
+cùng thư mục. Tailscale Serve HTTPS 8443 trỏ vào Unix socket
+`/var/lib/tailscale/podoc.sock`, rồi gateway chuyển đến app proxy loopback 18088
+với Host cố định `f814e00e-9993-46fc-bb71-a7d36675d38e.localhost`. Route đi theo
+service ID nên vẫn dùng được khi PoRender thay container. Nếu tạo lại service
+với ID khác, phải cập nhật gateway config.
+
+Gateway truyền upload theo luồng, giới hạn request 64 MiB, không chuyển cookie
+dashboard sang API. HTTPS 443 và SSH 22 giữ nguyên, không bật Funnel. Đã kiểm
+chứng `/health`, upload/download file thử 1.210.000 byte qua TLS có xác minh
+chứng chỉ, và xóa riêng tài liệu thử. Không cần cập nhật APK cho thay đổi URL.
+
 - `autoDeploy: true` vẫn cần GitHub connection/webhook hoạt động hoặc Blueprint
   auto sync đã cấu hình. Một checkbox bật không chứng minh webhook đã kết nối.
 - URL dạng `*.localhost:18088` chỉ dùng trên máy chủ. Điện thoại cần URL ứng
