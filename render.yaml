@@ -3,10 +3,19 @@ services:
   - type: web
     name: podoc-api
     runtime: docker
-    rootDir: ""
-    dockerfilePath: backend/Dockerfile
+    # PoRender uses rootDir as the Docker build context; Dockerfile paths
+    # are relative to this directory (not the repository root).
+    rootDir: backend
+    dockerfilePath: Dockerfile
     healthCheckPath: /health
     autoDeploy: true
+
+    disk:
+      mountPath: /data/files
+      sizeGB: 1
+      # The Python image runs as root with all Linux capabilities dropped.
+      uid: 0
+      gid: 0
 
     x-porender:
       port: 10000
@@ -19,6 +28,9 @@ services:
         fromDatabase:
           name: podoc-db
           property: connectionString
+
+      - key: FILES_STORAGE_DIR
+        value: "/data/files"
 
       - key: ADMIN_USERNAME
         value: "admin"
