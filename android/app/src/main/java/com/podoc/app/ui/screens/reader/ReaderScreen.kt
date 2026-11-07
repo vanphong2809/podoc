@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -1465,8 +1466,6 @@ private fun TikTokVideoFeedViewer(
     val context = LocalContext.current
     val isPlaying by MediaPlaybackManager.isPlaying.collectAsState()
     val isRepeatMode by MediaPlaybackManager.isRepeatMode.collectAsState()
-    val currentPosition by MediaPlaybackManager.currentPosition.collectAsState()
-    val duration by MediaPlaybackManager.duration.collectAsState()
     val videoSize by MediaPlaybackManager.videoSize.collectAsState()
 
     var itemToDelete by remember { mutableStateOf<ArticleListItem?>(null) }
@@ -1513,28 +1512,41 @@ private fun TikTokVideoFeedViewer(
         pageCount = { feedList.size }
     )
 
-    // Khi chuyển video (vuốt trang)
-    LaunchedEffect(pagerState.currentPage, feedList) {
-        if (feedList.isEmpty() || pagerState.currentPage !in feedList.indices) return@LaunchedEffect
-        val currentItem = feedList[pagerState.currentPage]
+    // Tinh chỉnh hiệu ứng lướt bắt dính nhanh, dứt khoát 120 FPS như TikTok
+    val flingBehavior = PagerDefaults.flingBehavior(
+        state = pagerState,
+        snapAnimationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        )
+    )
 
-        viewModel.getVideoFile(context, currentItem) { file ->
-            MediaPlaybackManager.startPlay(
-                context = context,
-                filePath = file.absolutePath,
-                title = currentItem.title,
-                articleId = currentItem.id,
-                isVideo = true
-            )
-        }
+    // CHỈ kích hoạt phát video khi trang đã dừng cuộn dứt khoát (settledPage)
+    // Giúp animation vuốt đạt trọn vẹn 120 FPS không bị frame drop do MediaPlayer decode giữa chừng
+    LaunchedEffect(pagerState, feedList) {
+        snapshotFlow { pagerState.settledPage }
+            .collect { settledPage ->
+                if (feedList.isEmpty() || settledPage !in feedList.indices) return@collect
+                val currentItem = feedList[settledPage]
 
-        // Tải trước (preload) video tiếp theo và video trước để lướt siêu mượt
-        if (pagerState.currentPage + 1 < feedList.size) {
-            viewModel.preloadVideo(pagerState.currentPage + 1, feedList, context)
-        }
-        if (pagerState.currentPage - 1 >= 0) {
-            viewModel.preloadVideo(pagerState.currentPage - 1, feedList, context)
-        }
+                viewModel.getVideoFile(context, currentItem) { file ->
+                    MediaPlaybackManager.startPlay(
+                        context = context,
+                        filePath = file.absolutePath,
+                        title = currentItem.title,
+                        articleId = currentItem.id,
+                        isVideo = true
+                    )
+                }
+
+                // Tải trước (preload) video tiếp theo và video trước để vuốt là có ngay
+                if (settledPage + 1 < feedList.size) {
+                    viewModel.preloadVideo(settledPage + 1, feedList, context)
+                }
+                if (settledPage - 1 >= 0) {
+                    viewModel.preloadVideo(settledPage - 1, feedList, context)
+                }
+            }
     }
 
     BackHandler(enabled = true) {
@@ -1548,6 +1560,9 @@ private fun TikTokVideoFeedViewer(
     ) {
         VerticalPager(
             state = pagerState,
+            beyondViewportPageCount = 1,
+            flingBehavior = flingBehavior,
+            key = { index -> if (index in feedList.indices) feedList[index].id else index },
             modifier = Modifier.fillMaxSize()
         ) { pageIndex ->
             val item = feedList[pageIndex]
@@ -1565,29 +1580,14 @@ private fun TikTokVideoFeedViewer(
                 contentAlignment = Alignment.Center
             ) {
                 // 1. Khung hiển thị SurfaceView Video với tỉ lệ khung hình chuẩn
+                // KHÔNG đọc I/O trên Main Thread - tỉ lệ đã được cache sẵn trong ViewModel
                 if (videoFile != null && videoFile.exists()) {
-                    val nativeVideoRatio = remember(videoFile.absolutePath) {
-                        try {
-                            val retriever = MediaMetadataRetriever()
-                            retriever.setDataSource(videoFile.absolutePath)
-                            val wStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
-                            val hStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
-                            val rotStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
-                            retriever.release()
-                            val w = wStr?.toFloatOrNull() ?: 0f
-                            val h = hStr?.toFloatOrNull() ?: 0f
-                            val rot = rotStr?.toIntOrNull() ?: 0
-                            if (w > 0f && h > 0f) {
-                                if (rot == 90 || rot == 270) h / w else w / h
-                            } else null
-                        } catch (e: Exception) {
-                            null
+                    val nativeVideoRatio = uiState.videoAspectRatios[item.id]
+                        ?: if (videoSize.first > 0 && videoSize.second > 0) {
+                            videoSize.first.toFloat() / videoSize.second.toFloat()
+                        } else {
+                            16f / 9f
                         }
-                    } ?: if (videoSize.first > 0 && videoSize.second > 0) {
-                        videoSize.first.toFloat() / videoSize.second.toFloat()
-                    } else {
-                        16f / 9f
-                    }
 
                     BoxWithConstraints(
                         modifier = Modifier.fillMaxSize(),
@@ -1610,6 +1610,7 @@ private fun TikTokVideoFeedViewer(
                         AndroidView(
                             factory = { ctx ->
                                 android.view.SurfaceView(ctx).apply {
+                                    holder.setKeepScreenOn(true)
                                     holder.addCallback(object : SurfaceHolder.Callback {
                                         override fun surfaceCreated(holder: SurfaceHolder) {
                                             if (isCurrentPage) {
@@ -1778,26 +1779,12 @@ private fun TikTokVideoFeedViewer(
                     )
                 }
 
-                // 6. Thanh tua tiến độ đáy (Bottom Seekbar mỏng sát mép)
-                if (isCurrentPage && duration > 0) {
-                    val maxDur = duration.toFloat().coerceAtLeast(1f)
-                    Slider(
-                        value = currentPosition.toFloat().coerceIn(0f, maxDur),
-                        onValueChange = { newPos ->
-                            MediaPlaybackManager.seekTo(context, newPos.toInt())
-                        },
-                        valueRange = 0f..maxDur,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .offset(y = 12.dp),
-                        colors = SliderDefaults.colors(
-                            thumbColor = Color.White,
-                            activeTrackColor = Color.White,
-                            inactiveTrackColor = Color.White.copy(alpha = 0.25f)
-                        )
-                    )
-                }
+                // 6. Thanh tua tiến độ đáy (Được tách thành composable riêng biệt để tránh recompose toàn trang)
+                TikTokBottomProgressBar(
+                    isCurrentPage = isCurrentPage,
+                    onSeek = { newPos -> MediaPlaybackManager.seekTo(context, newPos) },
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
             }
         }
 
@@ -1911,6 +1898,36 @@ private fun TikTokVideoFeedViewer(
             }
         )
     }
+}
+
+/**
+ * Thanh tua tiến độ đáy (Tách riêng để giảm thiểu recomposition khi thời gian cập nhật liên tục)
+ */
+@Composable
+private fun TikTokBottomProgressBar(
+    isCurrentPage: Boolean,
+    onSeek: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (!isCurrentPage) return
+    val currentPosition by MediaPlaybackManager.currentPosition.collectAsState()
+    val duration by MediaPlaybackManager.duration.collectAsState()
+    if (duration <= 0) return
+
+    val maxDur = duration.toFloat().coerceAtLeast(1f)
+    Slider(
+        value = currentPosition.toFloat().coerceIn(0f, maxDur),
+        onValueChange = { newPos -> onSeek(newPos.toInt()) },
+        valueRange = 0f..maxDur,
+        modifier = modifier
+            .fillMaxWidth()
+            .offset(y = 12.dp),
+        colors = SliderDefaults.colors(
+            thumbColor = Color.White,
+            activeTrackColor = Color.White,
+            inactiveTrackColor = Color.White.copy(alpha = 0.25f)
+        )
+    )
 }
 
 /**

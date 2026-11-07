@@ -39,7 +39,8 @@ data class ReaderUiState(
     // TikTok Video Feed states
     val videoFeed: List<ArticleListItem> = emptyList(),
     val currentVideoIndex: Int = 0,
-    val videoFilesCache: Map<Int, File> = emptyMap()
+    val videoFilesCache: Map<Int, File> = emptyMap(),
+    val videoAspectRatios: Map<Int, Float> = emptyMap()
 )
 
 class ReaderViewModel(
@@ -173,12 +174,19 @@ class ReaderViewModel(
             try { file.readText() } catch (e: Exception) { null }
         } else _uiState.value.htmlContent
 
+        val isVid = ext in listOf("mp4", "mkv", "mov", "webm", "avi", "3gp", "ts")
+        val curId = _uiState.value.article?.id
+        if (isVid && curId != null) {
+            extractRatioInBackground(curId, file)
+        }
+
         withContext(Dispatchers.Main) {
             _uiState.value = _uiState.value.copy(
                 isFileLoading = false,
                 localFile = file,
                 textContent = text,
-                htmlContent = html
+                htmlContent = html,
+                videoFilesCache = if (isVid && curId != null) _uiState.value.videoFilesCache + (curId to file) else _uiState.value.videoFilesCache
             )
         }
     }
@@ -394,6 +402,7 @@ class ReaderViewModel(
             _uiState.value = _uiState.value.copy(
                 videoFilesCache = _uiState.value.videoFilesCache + (item.id to cacheFile)
             )
+            extractRatioInBackground(item.id, cacheFile)
             onReady(cacheFile)
             return
         }
@@ -409,6 +418,7 @@ class ReaderViewModel(
                             _uiState.value = _uiState.value.copy(
                                 videoFilesCache = _uiState.value.videoFilesCache + (item.id to cacheFile)
                             )
+                            extractRatioInBackground(item.id, cacheFile)
                             onReady(cacheFile)
                         }
                     } catch (e: Exception) {
@@ -417,6 +427,33 @@ class ReaderViewModel(
                 },
                 onFailure = { /* Bỏ qua */ }
             )
+        }
+    }
+
+    private fun extractRatioInBackground(articleId: Int, file: File) {
+        if (_uiState.value.videoAspectRatios.containsKey(articleId)) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val retriever = android.media.MediaMetadataRetriever()
+                retriever.setDataSource(file.absolutePath)
+                val wStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+                val hStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+                val rotStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                retriever.release()
+                val w = wStr?.toFloatOrNull() ?: 0f
+                val h = hStr?.toFloatOrNull() ?: 0f
+                val rot = rotStr?.toIntOrNull() ?: 0
+                val ratio = if (w > 0f && h > 0f) {
+                    if (rot == 90 || rot == 270) h / w else w / h
+                } else 16f / 9f
+                withContext(Dispatchers.Main) {
+                    _uiState.value = _uiState.value.copy(
+                        videoAspectRatios = _uiState.value.videoAspectRatios + (articleId to ratio)
+                    )
+                }
+            } catch (e: Exception) {
+                // Ignore
+            }
         }
     }
 
