@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -47,6 +48,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import com.podoc.app.ui.components.formatArticleDate
@@ -57,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.decode.SvgDecoder
@@ -140,7 +143,20 @@ fun ReaderScreen(
     }
 
     val isVideo = fileExt in listOf("mp4", "mkv", "mov", "webm", "avi", "3gp", "ts") || article?.mimeType?.startsWith("video/") == true
+    val isImage = fileExt in listOf("png", "svg", "jpg", "jpeg", "webp", "gif") || article?.mimeType?.startsWith("image/") == true
+    val isMediaViewer = isVideo || isImage
     val isAudio = fileExt in listOf("mp3", "wav", "m4a", "aac", "flac", "ogg", "wma", "opus") || article?.mimeType?.startsWith("audio/") == true
+
+    // Đổi màu icon Status Bar khi ở chế độ xem media (ảnh/video nền đen -> icon trắng)
+    val currentView = LocalView.current
+    if (!currentView.isInEditMode && isMediaViewer) {
+        SideEffect {
+            val window = (currentView.context as? Activity)?.window
+            if (window != null) {
+                WindowCompat.getInsetsController(window, currentView).isAppearanceLightStatusBars = false
+            }
+        }
+    }
     val isOfficeDoc = fileExt in listOf("doc", "docx", "xls", "xlsx", "ppt", "pptx", "rtf", "odt", "ods", "odp", "csv") ||
             article?.mimeType in listOf(
                 "application/msword",
@@ -219,129 +235,46 @@ fun ReaderScreen(
 
     Scaffold(
         topBar = {
-            if (!isVideo) {
-                Column {
-                    PoDocTopAppBar(
-                        title = article?.title?.take(25)?.let { "$it..." } ?: "Tài liệu",
-                        onBackClick = onNavigateBack,
-                        actions = {
-                            // Nếu là dạng text/markdown thì hiện tuỳ chỉnh font
-                            if (!isFile || fileExt in listOf("txt", "md", "mdf")) {
-                                IconButton(onClick = { showFontMenu = true }) {
-                                    Icon(imageVector = Icons.Default.FormatSize, contentDescription = "Cỡ chữ")
-                                }
-
-                                DropdownMenu(
-                                    expanded = showFontMenu,
-                                    onDismissRequest = { showFontMenu = false }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("Tăng cỡ chữ (+)") },
-                                        leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
-                                        onClick = { viewModel.increaseFontSize() }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Giảm cỡ chữ (-)") },
-                                        leadingIcon = { Icon(Icons.Default.Remove, contentDescription = null) },
-                                        onClick = { viewModel.decreaseFontSize() }
-                                    )
-                                    HorizontalDivider()
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                if (uiState.isSerif) stringResource(R.string.font_family_sans)
-                                                else stringResource(R.string.font_family_serif)
-                                            )
-                                        },
-                                        leadingIcon = { Icon(Icons.Default.FontDownload, contentDescription = null) },
-                                        onClick = { viewModel.toggleSerif() }
-                                    )
-                                }
-                            }
-
-                            // Nút Chuyển đổi sang PDF giữ nguyên định dạng gốc cho tệp Office
-                            if (isOfficeDoc) {
-                                IconButton(
-                                    onClick = {
-                                        viewModel.convertToPdf { newArticle ->
-                                            onNavigateToArticle(newArticle.id)
-                                        }
-                                    },
-                                    enabled = !uiState.isConvertingToPdf
-                                ) {
-                                    if (uiState.isConvertingToPdf) {
-                                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                                    } else {
-                                        Icon(
-                                            imageVector = Icons.Default.PictureAsPdf,
-                                            contentDescription = "Chuyển sang PDF",
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
-                            }
-
-                            // Nút Mở tệp tin bằng app ngoài (Word, WPS, v.v.)
-                            if (isFile) {
-                                IconButton(
-                                    onClick = { viewModel.openOriginalFile(context) },
-                                    enabled = !uiState.isDownloadingFile
-                                ) {
-                                    if (uiState.isDownloadingFile) {
-                                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                                    } else {
-                                        Icon(imageVector = Icons.Default.OpenInNew, contentDescription = "Mở bằng ứng dụng khác")
-                                    }
-                                }
-                            }
-
-                            // Nút Chia sẻ
-                            IconButton(
-                                onClick = {
-                                    val art = article ?: return@IconButton
-                                    val intent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(Intent.EXTRA_SUBJECT, art.title)
-                                        putExtra(Intent.EXTRA_TEXT, "${art.title}\n\n${art.sourceUrl ?: ""}")
-                                    }
-                                    context.startActivity(Intent.createChooser(intent, "Chia sẻ"))
-                                }
-                            ) {
-                                Icon(imageVector = Icons.Default.Share, contentDescription = "Chia sẻ")
-                            }
-
-                            // Nút Xoá bài viết / tệp tin
-                            IconButton(
-                                onClick = { showDeleteDialog = true }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Xoá bài viết",
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                            }
+            if (!isMediaViewer) {
+                CompactReaderTopBar(
+                    title = article?.title ?: "Tài liệu",
+                    isFile = isFile,
+                    fileExt = fileExt,
+                    isOfficeDoc = isOfficeDoc,
+                    isConvertingToPdf = uiState.isConvertingToPdf,
+                    isDownloadingFile = uiState.isDownloadingFile,
+                    showFontMenu = showFontMenu,
+                    onShowFontMenuChange = { showFontMenu = it },
+                    isSerif = uiState.isSerif,
+                    onIncreaseFontSize = viewModel::increaseFontSize,
+                    onDecreaseFontSize = viewModel::decreaseFontSize,
+                    onToggleSerif = viewModel::toggleSerif,
+                    onConvertToPdf = {
+                        viewModel.convertToPdf { newArticle ->
+                            onNavigateToArticle(newArticle.id)
                         }
-                    )
-
-                    // Thanh tiến độ đọc mảnh
-                    if (!isFile) {
-                        LinearProgressIndicator(
-                            progress = { currentProgress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(3.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                        )
-                    }
-                }
+                    },
+                    onOpenOriginalFile = { viewModel.openOriginalFile(context) },
+                    onShare = {
+                        val art = article ?: return@CompactReaderTopBar
+                        val intent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_SUBJECT, art.title)
+                            putExtra(Intent.EXTRA_TEXT, "${art.title}\n\n${art.sourceUrl ?: ""}")
+                        }
+                        context.startActivity(Intent.createChooser(intent, "Chia sẻ"))
+                    },
+                    onDelete = { showDeleteDialog = true },
+                    onBackClick = onNavigateBack,
+                    currentProgress = currentProgress
+                )
             }
         }
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(if (isVideo) PaddingValues(0.dp) else innerPadding)
+                .padding(if (isMediaViewer) PaddingValues(0.dp) else innerPadding)
         ) {
             when {
                 uiState.isLoading -> {
@@ -603,7 +536,14 @@ private fun InAppFileContent(
         isImage -> {
             val file = uiState.localFile
             if (file != null && file.exists()) {
-                InAppImageViewer(file = file, isSvg = isSvg)
+                InAppImageViewer(
+                    file = file,
+                    isSvg = isSvg,
+                    article = article,
+                    onOpenExternal = onOpenExternal,
+                    onNavigateBack = onNavigateBack,
+                    onDeleteClick = onDeleteClick
+                )
             } else {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
@@ -844,12 +784,20 @@ private fun PdfPageItem(renderer: PdfRenderer?, pageIndex: Int, pageCount: Int) 
 }
 
 /**
- * Trình xem ảnh (PNG, SVG, JPG, WEBP) hỗ trợ zoom đa điểm và kéo
+ * Trình xem ảnh (PNG, SVG, JPG, WEBP) hỗ trợ zoom đa điểm, kéo và thanh công cụ Overlay nổi tinh tế
  */
 @Composable
-private fun InAppImageViewer(file: File, isSvg: Boolean) {
+private fun InAppImageViewer(
+    file: File,
+    isSvg: Boolean,
+    article: ArticleDetail,
+    onOpenExternal: () -> Unit,
+    onNavigateBack: () -> Unit,
+    onDeleteClick: () -> Unit
+) {
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+    var showControls by remember { mutableStateOf(true) }
 
     val context = LocalContext.current
     val imageLoader = remember(isSvg) {
@@ -863,15 +811,17 @@ private fun InAppImageViewer(file: File, isSvg: Boolean) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.95f))
+            .background(Color.Black)
             .pointerInput(Unit) {
                 detectTransformGestures { _, pan, zoom, _ ->
                     scale = (scale * zoom).coerceIn(0.8f, 5f)
                     offset = if (scale > 1f) offset + pan else Offset.Zero
                 }
-            },
+            }
+            .clickable { showControls = !showControls },
         contentAlignment = Alignment.Center
     ) {
+        // Ảnh hiển thị cân bằng hoàn hảo ở chính giữa màn hình (cả chiều dọc lẫn chiều ngang)
         AsyncImage(
             model = ImageRequest.Builder(context)
                 .data(file)
@@ -889,6 +839,307 @@ private fun InAppImageViewer(file: File, isSvg: Boolean) {
                     translationY = offset.y
                 )
         )
+
+        // Thanh công cụ nổi phía trên (Overlay TopBar) mờ trong suốt, không chiếm không gian
+        AnimatedVisibility(
+            visible = showControls,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.TopCenter)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color(0xD9000000),
+                                Color(0x66000000),
+                                Color.Transparent
+                            )
+                        )
+                    )
+                    .statusBarsPadding()
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onNavigateBack,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Quay lại",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Text(
+                        text = article.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    // Nút Mở app ngoài
+                    IconButton(
+                        onClick = onOpenExternal,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.OpenInNew,
+                            contentDescription = "Mở bằng ứng dụng khác",
+                            tint = Color.White,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    // Nút Chia sẻ
+                    IconButton(
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, article.title)
+                                putExtra(Intent.EXTRA_TEXT, "${article.title}\n\n${article.sourceUrl ?: ""}")
+                            }
+                            context.startActivity(Intent.createChooser(intent, "Chia sẻ"))
+                        },
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Chia sẻ",
+                            tint = Color.White,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    // Nút Xoá
+                    IconButton(
+                        onClick = onDeleteClick,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Xoá",
+                            tint = Color(0xFFF87171),
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Thanh TopBar nhỏ gọn, thanh mảnh (chiều cao 48dp) cho chế độ đọc văn bản và tài liệu
+ */
+@Composable
+private fun CompactReaderTopBar(
+    title: String,
+    isFile: Boolean,
+    fileExt: String,
+    isOfficeDoc: Boolean,
+    isConvertingToPdf: Boolean,
+    isDownloadingFile: Boolean,
+    showFontMenu: Boolean,
+    onShowFontMenuChange: (Boolean) -> Unit,
+    isSerif: Boolean,
+    onIncreaseFontSize: () -> Unit,
+    onDecreaseFontSize: () -> Unit,
+    onToggleSerif: () -> Unit,
+    onConvertToPdf: () -> Unit,
+    onOpenOriginalFile: () -> Unit,
+    onShare: () -> Unit,
+    onDelete: () -> Unit,
+    onBackClick: () -> Unit,
+    currentProgress: Float
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .padding(horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = onBackClick,
+                modifier = Modifier.size(38.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Quay lại",
+                    tint = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(4.dp))
+
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+
+            Spacer(modifier = Modifier.width(4.dp))
+
+            // Cỡ chữ (cho markdown/text)
+            if (!isFile || fileExt in listOf("txt", "md", "mdf")) {
+                Box {
+                    IconButton(
+                        onClick = { onShowFontMenuChange(true) },
+                        modifier = Modifier.size(38.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FormatSize,
+                            contentDescription = "Cỡ chữ",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showFontMenu,
+                        onDismissRequest = { onShowFontMenuChange(false) }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Tăng cỡ chữ (+)") },
+                            leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
+                            onClick = onIncreaseFontSize
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Giảm cỡ chữ (-)") },
+                            leadingIcon = { Icon(Icons.Default.Remove, contentDescription = null) },
+                            onClick = onDecreaseFontSize
+                        )
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (isSerif) stringResource(R.string.font_family_sans)
+                                    else stringResource(R.string.font_family_serif)
+                                )
+                            },
+                            leadingIcon = { Icon(Icons.Default.FontDownload, contentDescription = null) },
+                            onClick = onToggleSerif
+                        )
+                    }
+                }
+            }
+
+            // Chuyển Office sang PDF
+            if (isOfficeDoc) {
+                IconButton(
+                    onClick = onConvertToPdf,
+                    enabled = !isConvertingToPdf,
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    if (isConvertingToPdf) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.PictureAsPdf,
+                            contentDescription = "Chuyển sang PDF",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            // Mở app ngoài
+            if (isFile) {
+                IconButton(
+                    onClick = onOpenOriginalFile,
+                    enabled = !isDownloadingFile,
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    if (isDownloadingFile) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.OpenInNew,
+                            contentDescription = "Mở bằng ứng dụng khác",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            // Chia sẻ
+            IconButton(
+                onClick = onShare,
+                modifier = Modifier.size(38.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Share,
+                    contentDescription = "Chia sẻ",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            // Xoá
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(38.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Xoá",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        // Thanh tiến độ đọc
+        if (!isFile) {
+            LinearProgressIndicator(
+                progress = { currentProgress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.5.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            )
+        }
     }
 }
 
