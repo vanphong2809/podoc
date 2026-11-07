@@ -1,8 +1,11 @@
 package com.podoc.app.ui.components
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,7 +17,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -27,6 +31,177 @@ import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import com.podoc.app.R
 import com.podoc.app.data.model.ArticleListItem
+
+// ─────────────────────────────────────────────────────────────────────
+// SHIMMER EFFECT — dùng chung cho skeleton loading
+// ─────────────────────────────────────────────────────────────────────
+
+@Composable
+fun ShimmerBrush(showShimmer: Boolean = true, targetValue: Float = 1000f): Brush {
+    return if (showShimmer) {
+        val shimmerColors = listOf(
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        )
+        val transition = rememberInfiniteTransition(label = "shimmer")
+        val translateAnimation by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = targetValue,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1200, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "shimmerTranslate"
+        )
+        Brush.linearGradient(
+            colors = shimmerColors,
+            start = Offset.Zero,
+            end = Offset(x = translateAnimation, y = translateAnimation)
+        )
+    } else {
+        Brush.linearGradient(
+            colors = listOf(Color.Transparent, Color.Transparent)
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// ARTICLE CARD SKELETON — Shimmer placeholder khi đang tải
+// ─────────────────────────────────────────────────────────────────────
+
+@Composable
+fun ArticleCardSkeleton() {
+    val shimmerBrush = ShimmerBrush()
+    ElevatedCard(
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Badge placeholder
+            Row {
+                Box(
+                    modifier = Modifier
+                        .width(60.dp)
+                        .height(20.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(shimmerBrush)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .width(44.dp)
+                        .height(20.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(shimmerBrush)
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(shimmerBrush)
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.weight(1f)) {
+                    // Title lines
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.9f)
+                            .height(16.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(shimmerBrush)
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.6f)
+                            .height(16.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(shimmerBrush)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    // Excerpt lines
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(13.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(shimmerBrush)
+                    )
+                    Spacer(modifier = Modifier.height(5.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.75f)
+                            .height(13.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(shimmerBrush)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Box(
+                    modifier = Modifier
+                        .size(width = 104.dp, height = 82.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(shimmerBrush)
+                )
+            }
+            Spacer(modifier = Modifier.height(14.dp))
+            // Footer row
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(shimmerBrush)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .width(80.dp)
+                        .height(12.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(shimmerBrush)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .width(60.dp)
+                        .height(12.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(shimmerBrush)
+                )
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// BADGE TOKENS
+// ─────────────────────────────────────────────────────────────────────
+
+private val categoryBadgeBg   = Color(0xFFEEF2FF)
+private val categoryBadgeText = Color(0xFF3730A3)
+private val webBadgeBg        = Color(0xFFF5F3FF)
+private val webBadgeText      = Color(0xFF7C3AED)
+private val videoBadgeBg      = Color(0xFFFFF1F2)
+private val videoBadgeText    = Color(0xFFBE123C)
+private val audioBadgeBg      = Color(0xFFECFDF5)
+private val audioBadgeText    = Color(0xFF065F46)
+private val fileBadgeBg       = Color(0xFFF8FAFC)
+private val fileBadgeText     = Color(0xFF475569)
+private val imageBadgeBg      = Color(0xFFFDF4FF)
+private val imageBadgeText    = Color(0xFF86198F)
+
+// ─────────────────────────────────────────────────────────────────────
+// ARTICLE CARD — Entry point
+// ─────────────────────────────────────────────────────────────────────
 
 @Composable
 fun ArticleCard(
@@ -44,350 +219,415 @@ fun ArticleCard(
     val context = LocalContext.current
     var isImageValid by remember(article.imageUrl) { mutableStateOf(!article.imageUrl.isNullOrBlank()) }
 
-    // Màu sắc badge chuẩn thiết kế hiện đại
-    val categoryBadgeBg = Color(0xFFE0EDFF)
-    val categoryBadgeText = Color(0xFF1D4ED8)
-    val webBadgeBg = Color(0xFFF3E8FF)
-    val webBadgeText = Color(0xFF7E22CE)
-    val imageBadgeBg = Color(0xFFF3E8FF)
-    val imageBadgeText = Color(0xFF7E22CE)
-    val videoBadgeBg = Color(0xFFFEE2E2)
-    val videoBadgeText = Color(0xFFDC2626)
-    val audioBadgeBg = Color(0xFFCCFBF1)
-    val audioBadgeText = Color(0xFF0F766E)
-    val fileBadgeBg = Color(0xFFE2E8F0)
-    val fileBadgeText = Color(0xFF334155)
-
     // Xác định badge loại nội dung
-    val (typeBadgeText, typeBadgeBg, typeBadgeColor) = when {
-        article.sourceType == "FILE" -> {
-            val lowerName = (article.fileName ?: "").lowercase()
-            val isVideo = article.mimeType?.startsWith("video/") == true ||
-                    lowerName.endsWith(".mp4") || lowerName.endsWith(".mkv") ||
-                    lowerName.endsWith(".mov") || lowerName.endsWith(".webm")
-            val isAudio = article.mimeType?.startsWith("audio/") == true ||
-                    lowerName.endsWith(".mp3") || lowerName.endsWith(".wav") ||
-                    lowerName.endsWith(".m4a") || lowerName.endsWith(".aac") ||
-                    lowerName.endsWith(".flac") || lowerName.endsWith(".ogg") ||
-                    lowerName.endsWith(".wma") || lowerName.endsWith(".opus")
-            val isImage = article.mimeType?.startsWith("image/") == true ||
-                    lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg") ||
-                    lowerName.endsWith(".png") || lowerName.endsWith(".webp") ||
-                    lowerName.endsWith(".gif") || lowerName.endsWith(".svg")
-            when {
-                isVideo -> Triple("VIDEO", videoBadgeBg, videoBadgeText)
-                isAudio -> Triple("ÂM THANH", audioBadgeBg, audioBadgeText)
-                isImage -> Triple("HÌNH ẢNH", imageBadgeBg, imageBadgeText)
-                else -> Triple("TỆP TIN", fileBadgeBg, fileBadgeText)
+    val (typeBadgeText, typeBadgeBg, typeBadgeColor) = remember(article) {
+        when {
+            article.sourceType == "FILE" -> {
+                val lowerName = (article.fileName ?: "").lowercase()
+                val isVideo = article.mimeType?.startsWith("video/") == true ||
+                        lowerName.endsWith(".mp4") || lowerName.endsWith(".mkv") ||
+                        lowerName.endsWith(".mov") || lowerName.endsWith(".webm")
+                val isAudio = article.mimeType?.startsWith("audio/") == true ||
+                        lowerName.endsWith(".mp3") || lowerName.endsWith(".wav") ||
+                        lowerName.endsWith(".m4a") || lowerName.endsWith(".aac") ||
+                        lowerName.endsWith(".flac") || lowerName.endsWith(".ogg") ||
+                        lowerName.endsWith(".wma") || lowerName.endsWith(".opus")
+                val isImage = article.mimeType?.startsWith("image/") == true ||
+                        lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg") ||
+                        lowerName.endsWith(".png") || lowerName.endsWith(".webp") ||
+                        lowerName.endsWith(".gif") || lowerName.endsWith(".svg")
+                when {
+                    isVideo -> Triple("VIDEO", videoBadgeBg, videoBadgeText)
+                    isAudio -> Triple("ÂM THANH", audioBadgeBg, audioBadgeText)
+                    isImage -> Triple("HÌNH ẢNH", imageBadgeBg, imageBadgeText)
+                    else    -> Triple("TỆP TIN", fileBadgeBg, fileBadgeText)
+                }
             }
+            article.mimeType == "text/html-web" || article.sourceType == "URL" ->
+                Triple("TRANG WEB", webBadgeBg, webBadgeText)
+            else -> Triple(null, Color.Transparent, Color.Transparent)
         }
-        article.mimeType == "text/html-web" -> Triple("TRANG WEB", webBadgeBg, webBadgeText)
-        article.sourceType == "URL" -> Triple("TRANG WEB", webBadgeBg, webBadgeText)
-        else -> Triple(null, Color.Transparent, Color.Transparent)
     }
 
-    Card(
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(
+    val cardBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+
+    ElevatedCard(
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.5.dp, pressedElevation = 4.dp),
+        colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.8.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
             .clickable(onClick = onClick)
     ) {
-        if (isHeroBanner && !article.imageUrl.isNullOrBlank() && isImageValid) {
-            // KIỂU 1: HERO BANNER (Đúng như Card 1 trong ảnh thiết kế)
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(175.dp)
-                ) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(article.imageUrl)
-                            .crossfade(true)
-                            .build(),
-                        contentDescription = article.title,
-                        contentScale = ContentScale.Crop,
-                        onState = { state ->
-                            if (state is AsyncImagePainter.State.Error) {
-                                isImageValid = false
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
-                            .background(Color(0xFFE5E7EB))
-                    )
-
-                    // Overlay Badges & Menu 3 chấm trên đỉnh ảnh
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (!article.categoryName.isNullOrBlank()) {
-                            Surface(
-                                color = categoryBadgeBg,
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text(
-                                    text = article.categoryName,
-                                    fontSize = 11.5.sp,
-                                    color = categoryBadgeText,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(6.dp))
-                        }
-
-                        if (typeBadgeText != null) {
-                            Surface(
-                                color = typeBadgeBg,
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text(
-                                    text = typeBadgeText,
-                                    fontSize = 11.5.sp,
-                                    color = typeBadgeColor,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.weight(1f))
-
-                        // Nút 3 chấm trên nền tròn trắng mờ
-                        Box {
-                            IconButton(
-                                onClick = { showMenu = true },
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.White.copy(alpha = 0.9f))
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "Thao tác",
-                                    tint = Color(0xFF374151),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-
-                            ArticleActionDropdownMenu(
-                                expanded = showMenu,
-                                onDismiss = { showMenu = false },
-                                onEditTitle = onEditTitle,
-                                onChangeCategory = onChangeCategory,
-                                onOpenSource = onOpenSource,
-                                onShare = onShare,
-                                onDelete = onDelete
-                            )
-                        }
-                    }
-                }
-
-                // Phần nội dung bên dưới Hero Image
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                    Text(
-                        text = article.title,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontSize = 17.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            lineHeight = 23.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    if (!article.excerpt.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = article.excerpt,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = 13.5.sp,
-                                lineHeight = 19.sp
-                            ),
-                            color = Color(0xFF6B7280),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    ArticleCardFooter(
-                        createdAt = article.createdAt,
-                        readingMinutes = article.readingMinutes,
-                        readProgress = article.readProgress,
-                        isFavorite = article.isFavorite,
-                        onToggleFavorite = onToggleFavorite
-                    )
-                }
-            }
-        } else {
-            // KIỂU 2: CARD NỘI DUNG CHUẨN (VỚI THUMBNAIL BÊN PHẢI - Đúng như Card 2 & 3)
-            Column(modifier = Modifier.padding(16.dp)) {
-                // Header: Badges + Tên nguồn + Nút 3 chấm
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (!article.categoryName.isNullOrBlank()) {
-                        Surface(
-                            color = categoryBadgeBg,
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                text = article.categoryName,
-                                fontSize = 11.5.sp,
-                                color = categoryBadgeText,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(6.dp))
-                    }
-
-                    if (typeBadgeText != null) {
-                        Surface(
-                            color = typeBadgeBg,
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                text = typeBadgeText,
-                                fontSize = 11.5.sp,
-                                color = typeBadgeColor,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                    }
-
-                    val sourceLabel = article.siteName ?: if (article.sourceType == "FILE") "File máy" else "Web"
-                    Text(
-                        text = sourceLabel,
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
-                        color = Color(0xFF6B7280),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    Box {
-                        IconButton(
-                            onClick = { showMenu = true },
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = "Thao tác",
-                                tint = Color(0xFF6B7280),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        ArticleActionDropdownMenu(
-                            expanded = showMenu,
-                            onDismiss = { showMenu = false },
-                            onEditTitle = onEditTitle,
-                            onChangeCategory = onChangeCategory,
-                            onOpenSource = onOpenSource,
-                            onShare = onShare,
-                            onDelete = onDelete
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Body: Bên trái là Tiêu đề + Trích dẫn, Bên phải là Thumbnail chuẩn thiết kế
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = article.title,
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontSize = 16.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                lineHeight = 22.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-
-                        if (!article.excerpt.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = article.excerpt,
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontSize = 13.sp,
-                                    lineHeight = 18.5.sp
-                                ),
-                                color = Color(0xFF6B7280),
-                                maxLines = 3,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-
-                    // Thumbnail bên phải sắc nét (104dp x 82dp, bo góc 14dp, tỉ lệ Crop)
-                    if (!article.imageUrl.isNullOrBlank() && isImageValid) {
-                        Spacer(modifier = Modifier.width(12.dp))
-                        AsyncImage(
-                            model = ImageRequest.Builder(context)
-                                .data(article.imageUrl)
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = article.title,
-                            contentScale = ContentScale.Crop,
-                            onState = { state ->
-                                when (state) {
-                                    is AsyncImagePainter.State.Error -> {
-                                        isImageValid = false
-                                    }
-                                    is AsyncImagePainter.State.Success -> {
-                                        val size = state.painter.intrinsicSize
-                                        // Loại bỏ tracking pixel 1x1 hoặc ảnh rác siêu nhỏ (< 32px)
-                                        if (size.width < 32f || size.height < 32f) {
-                                            isImageValid = false
-                                        }
-                                    }
-                                    else -> {}
-                                }
-                            },
-                            modifier = Modifier
-                                .size(width = 104.dp, height = 82.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(Color(0xFFF3F4F6))
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                ArticleCardFooter(
-                    createdAt = article.createdAt,
-                    readingMinutes = article.readingMinutes,
-                    readProgress = article.readProgress,
-                    isFavorite = article.isFavorite,
-                    onToggleFavorite = onToggleFavorite
+        // Viền mờ tinh tế
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, cardBorderColor),
+            color = Color.Transparent
+        ) {
+            if (isHeroBanner && !article.imageUrl.isNullOrBlank() && isImageValid) {
+                HeroBannerContent(
+                    article = article,
+                    typeBadgeText = typeBadgeText,
+                    typeBadgeBg = typeBadgeBg,
+                    typeBadgeColor = typeBadgeColor,
+                    isImageValid = isImageValid,
+                    onImageError = { isImageValid = false },
+                    showMenu = showMenu,
+                    onShowMenu = { showMenu = true },
+                    onDismissMenu = { showMenu = false },
+                    onToggleFavorite = onToggleFavorite,
+                    onEditTitle = onEditTitle,
+                    onChangeCategory = onChangeCategory,
+                    onOpenSource = onOpenSource,
+                    onShare = onShare,
+                    onDelete = onDelete
+                )
+            } else {
+                StandardCardContent(
+                    article = article,
+                    typeBadgeText = typeBadgeText,
+                    typeBadgeBg = typeBadgeBg,
+                    typeBadgeColor = typeBadgeColor,
+                    isImageValid = isImageValid,
+                    onImageError = { isImageValid = false },
+                    showMenu = showMenu,
+                    onShowMenu = { showMenu = true },
+                    onDismissMenu = { showMenu = false },
+                    onToggleFavorite = onToggleFavorite,
+                    onEditTitle = onEditTitle,
+                    onChangeCategory = onChangeCategory,
+                    onOpenSource = onOpenSource,
+                    onShare = onShare,
+                    onDelete = onDelete
                 )
             }
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// HERO BANNER CARD CONTENT
+// ─────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun HeroBannerContent(
+    article: ArticleListItem,
+    typeBadgeText: String?,
+    typeBadgeBg: Color,
+    typeBadgeColor: Color,
+    isImageValid: Boolean,
+    onImageError: () -> Unit,
+    showMenu: Boolean,
+    onShowMenu: () -> Unit,
+    onDismissMenu: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onEditTitle: () -> Unit,
+    onChangeCategory: () -> Unit,
+    onOpenSource: () -> Unit,
+    onShare: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val context = LocalContext.current
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(188.dp)
+        ) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(article.imageUrl)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = article.title,
+                contentScale = ContentScale.Crop,
+                onState = { state ->
+                    if (state is AsyncImagePainter.State.Error) onImageError()
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+            )
+
+            // Gradient scrim ở bottom để badge + tên dễ đọc
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = 0.0f),
+                                Color.Black.copy(alpha = 0.0f),
+                                Color.Black.copy(alpha = 0.35f)
+                            )
+                        )
+                    )
+            )
+
+            // Top overlay: Badges + Menu
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (!article.categoryName.isNullOrBlank()) {
+                    ArticleBadge(
+                        text = article.categoryName,
+                        bgColor = Color.White.copy(alpha = 0.92f),
+                        textColor = Color(0xFF1E293B)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                }
+                if (typeBadgeText != null) {
+                    ArticleBadge(
+                        text = typeBadgeText,
+                        bgColor = typeBadgeBg.copy(alpha = 0.92f),
+                        textColor = typeBadgeColor
+                    )
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                Box {
+                    IconButton(
+                        onClick = onShowMenu,
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.90f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Thao tác",
+                            tint = Color(0xFF374151),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    ArticleActionDropdownMenu(
+                        expanded = showMenu,
+                        onDismiss = onDismissMenu,
+                        onEditTitle = onEditTitle,
+                        onChangeCategory = onChangeCategory,
+                        onOpenSource = onOpenSource,
+                        onShare = onShare,
+                        onDelete = onDelete
+                    )
+                }
+            }
+        }
+
+        // Content below image
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            Text(
+                text = article.title,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    lineHeight = 24.sp,
+                    letterSpacing = (-0.1).sp
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (!article.excerpt.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = article.excerpt,
+                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 19.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            ArticleCardFooter(
+                createdAt = article.createdAt,
+                readingMinutes = article.readingMinutes,
+                readProgress = article.readProgress,
+                isFavorite = article.isFavorite,
+                onToggleFavorite = onToggleFavorite
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// STANDARD CARD CONTENT
+// ─────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun StandardCardContent(
+    article: ArticleListItem,
+    typeBadgeText: String?,
+    typeBadgeBg: Color,
+    typeBadgeColor: Color,
+    isImageValid: Boolean,
+    onImageError: () -> Unit,
+    showMenu: Boolean,
+    onShowMenu: () -> Unit,
+    onDismissMenu: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onEditTitle: () -> Unit,
+    onChangeCategory: () -> Unit,
+    onOpenSource: () -> Unit,
+    onShare: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val context = LocalContext.current
+    Column(modifier = Modifier.padding(16.dp)) {
+        // Header: Badges + source + menu
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (!article.categoryName.isNullOrBlank()) {
+                ArticleBadge(
+                    text = article.categoryName,
+                    bgColor = categoryBadgeBg,
+                    textColor = categoryBadgeText
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+            }
+            if (typeBadgeText != null) {
+                ArticleBadge(
+                    text = typeBadgeText,
+                    bgColor = typeBadgeBg,
+                    textColor = typeBadgeColor
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            val sourceLabel = article.siteName
+                ?: if (article.sourceType == "FILE") "File máy" else "Web"
+            Text(
+                text = sourceLabel,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            Box {
+                IconButton(
+                    onClick = onShowMenu,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Thao tác",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                ArticleActionDropdownMenu(
+                    expanded = showMenu,
+                    onDismiss = onDismissMenu,
+                    onEditTitle = onEditTitle,
+                    onChangeCategory = onChangeCategory,
+                    onOpenSource = onOpenSource,
+                    onShare = onShare,
+                    onDelete = onDelete
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Body: Text left + Thumbnail right
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = article.title,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        lineHeight = 22.sp,
+                        letterSpacing = (-0.1).sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (!article.excerpt.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = article.excerpt,
+                        style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            if (!article.imageUrl.isNullOrBlank() && isImageValid) {
+                Spacer(modifier = Modifier.width(12.dp))
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(article.imageUrl)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = article.title,
+                    contentScale = ContentScale.Crop,
+                    onState = { state ->
+                        when (state) {
+                            is AsyncImagePainter.State.Error -> onImageError()
+                            is AsyncImagePainter.State.Success -> {
+                                val size = state.painter.intrinsicSize
+                                if (size.width < 32f || size.height < 32f) onImageError()
+                            }
+                            else -> {}
+                        }
+                    },
+                    modifier = Modifier
+                        .size(width = 104.dp, height = 82.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        ArticleCardFooter(
+            createdAt = article.createdAt,
+            readingMinutes = article.readingMinutes,
+            readProgress = article.readProgress,
+            isFavorite = article.isFavorite,
+            onToggleFavorite = onToggleFavorite
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// BADGE ATOM
+// ─────────────────────────────────────────────────────────────────────
+
+@Composable
+fun ArticleBadge(
+    text: String,
+    bgColor: Color,
+    textColor: Color
+) {
+    Surface(
+        color = bgColor,
+        shape = RoundedCornerShape(7.dp)
+    ) {
+        Text(
+            text = text,
+            fontSize = 11.sp,
+            color = textColor,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.1.sp,
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.5.dp)
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// CARD FOOTER
+// ─────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun ArticleCardFooter(
@@ -399,11 +639,17 @@ private fun ArticleCardFooter(
 ) {
     val formattedDate = remember(createdAt) { formatArticleDate(createdAt) }
 
+    // Animated heart color
+    val heartColor by animateColorAsState(
+        targetValue = if (isFavorite) Color(0xFFEF4444) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+        animationSpec = tween(durationMillis = 250),
+        label = "heartColor"
+    )
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth()
     ) {
-        // Icon trái tim yêu thích đẩy sang BÊN TRÁI
         IconButton(
             onClick = onToggleFavorite,
             modifier = Modifier.size(28.dp)
@@ -411,55 +657,47 @@ private fun ArticleCardFooter(
             Icon(
                 imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
                 contentDescription = stringResource(if (isFavorite) R.string.action_unfavorite else R.string.action_favorite),
-                tint = if (isFavorite) Color(0xFFEF4444) else Color(0xFF9CA3AF),
-                modifier = Modifier.size(19.dp)
+                tint = heartColor,
+                modifier = Modifier.size(18.dp)
             )
         }
 
-        Spacer(modifier = Modifier.width(6.dp))
+        Spacer(modifier = Modifier.width(4.dp))
 
-        // Thời gian đăng Article
         if (!formattedDate.isNullOrBlank()) {
             Icon(
                 imageVector = Icons.Default.AccessTime,
                 contentDescription = null,
-                tint = Color(0xFF6B7280),
-                modifier = Modifier.size(14.dp)
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.size(13.dp)
             )
-            Spacer(modifier = Modifier.width(4.dp))
+            Spacer(modifier = Modifier.width(3.dp))
             Text(
                 text = formattedDate,
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = 12.sp,
-                    color = Color(0xFF6B7280)
-                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 maxLines = 1
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = "•",
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = 12.sp,
-                    color = Color(0xFF9CA3AF)
-                )
+                text = "·",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
             )
             Spacer(modifier = Modifier.width(6.dp))
         }
 
-        // Thời gian đọc
         Icon(
             imageVector = Icons.Default.Schedule,
             contentDescription = null,
-            tint = Color(0xFF6B7280),
-            modifier = Modifier.size(14.dp)
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            modifier = Modifier.size(13.dp)
         )
-        Spacer(modifier = Modifier.width(4.dp))
+        Spacer(modifier = Modifier.width(3.dp))
         Text(
             text = stringResource(R.string.reading_time_format, readingMinutes),
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 12.sp,
-                color = Color(0xFF6B7280)
-            ),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             maxLines = 1
         )
 
@@ -469,23 +707,27 @@ private fun ArticleCardFooter(
                 progress = { readProgress },
                 modifier = Modifier
                     .weight(1f)
-                    .height(4.dp)
+                    .height(3.dp)
                     .clip(RoundedCornerShape(2.dp)),
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
-            Spacer(modifier = Modifier.width(6.dp))
+            Spacer(modifier = Modifier.width(5.dp))
             Text(
                 text = "${(readProgress * 100).toInt()}%",
                 style = MaterialTheme.typography.labelSmall,
                 fontSize = 10.sp,
-                color = Color(0xFF6B7280)
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
             )
         } else {
             Spacer(modifier = Modifier.weight(1f))
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// DROPDOWN MENU
+// ─────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun ArticleActionDropdownMenu(
@@ -499,66 +741,42 @@ private fun ArticleActionDropdownMenu(
 ) {
     DropdownMenu(
         expanded = expanded,
-        onDismissRequest = onDismiss
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(14.dp)
     ) {
         DropdownMenuItem(
             text = { Text(stringResource(R.string.action_edit_title)) },
             leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
-            onClick = {
-                onDismiss()
-                onEditTitle()
-            }
+            onClick = { onDismiss(); onEditTitle() }
         )
         DropdownMenuItem(
             text = { Text(stringResource(R.string.action_change_category)) },
             leadingIcon = { Icon(Icons.Default.Folder, contentDescription = null) },
-            onClick = {
-                onDismiss()
-                onChangeCategory()
-            }
+            onClick = { onDismiss(); onChangeCategory() }
         )
         DropdownMenuItem(
             text = { Text(stringResource(R.string.action_open_source)) },
             leadingIcon = { Icon(Icons.Default.OpenInBrowser, contentDescription = null) },
-            onClick = {
-                onDismiss()
-                onOpenSource()
-            }
+            onClick = { onDismiss(); onOpenSource() }
         )
         DropdownMenuItem(
             text = { Text(stringResource(R.string.action_share)) },
             leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
-            onClick = {
-                onDismiss()
-                onShare()
-            }
+            onClick = { onDismiss(); onShare() }
         )
-        HorizontalDivider()
+        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
         DropdownMenuItem(
-            text = {
-                Text(
-                    stringResource(R.string.action_delete),
-                    color = MaterialTheme.colorScheme.error
-                )
-            },
-            leadingIcon = {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
-                )
-            },
-            onClick = {
-                onDismiss()
-                onDelete()
-            }
+            text = { Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error) },
+            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+            onClick = { onDismiss(); onDelete() }
         )
     }
 }
 
-/**
- * Định dạng thời gian đăng bài viết sang dạng đọc thân thiện tiếng Việt
- */
+// ─────────────────────────────────────────────────────────────────────
+// DATE FORMATTER — không thay đổi logic
+// ─────────────────────────────────────────────────────────────────────
+
 fun formatArticleDate(isoString: String?): String? {
     if (isoString.isNullOrBlank()) return null
     return try {
@@ -579,11 +797,11 @@ fun formatArticleDate(isoString: String?): String? {
         val diffSeconds = java.time.Duration.between(instant, now).seconds
 
         when {
-            diffSeconds < 60 -> "Vừa xong"
-            diffSeconds < 3600 -> "${(diffSeconds / 60).coerceAtLeast(1)} phút trước"
-            diffSeconds < 86400 -> "${(diffSeconds / 3600).coerceAtLeast(1)} giờ trước"
-            diffSeconds < 86400 * 2 -> "Hôm qua"
-            diffSeconds < 86400 * 7 -> "${diffSeconds / 86400} ngày trước"
+            diffSeconds < 60              -> "Vừa xong"
+            diffSeconds < 3600            -> "${(diffSeconds / 60).coerceAtLeast(1)} phút trước"
+            diffSeconds < 86400           -> "${(diffSeconds / 3600).coerceAtLeast(1)} giờ trước"
+            diffSeconds < 86400 * 2       -> "Hôm qua"
+            diffSeconds < 86400 * 7       -> "${diffSeconds / 86400} ngày trước"
             else -> {
                 val zdt = instant.atZone(java.time.ZoneId.systemDefault())
                 val currentYear = java.time.LocalDate.now().year
@@ -594,7 +812,5 @@ fun formatArticleDate(isoString: String?): String? {
                 }
             }
         }
-    } catch (_: Exception) {
-        null
-    }
+    } catch (_: Exception) { null }
 }
