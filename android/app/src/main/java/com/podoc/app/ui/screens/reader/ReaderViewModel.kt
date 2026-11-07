@@ -2,6 +2,7 @@ package com.podoc.app.ui.screens.reader
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,6 +10,7 @@ import com.podoc.app.data.local.DataStoreManager
 import com.podoc.app.data.model.ArticleDetail
 import com.podoc.app.data.model.ArticleListItem
 import com.podoc.app.data.repository.ArticleRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -53,6 +55,8 @@ class ReaderViewModel(
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
 
     private var progressSyncJob: Job? = null
+    private val videoFileCache = VideoFileCache(viewModelScope)
+    private val metadataRequests = mutableSetOf<Int>()
 
     init {
         viewModelScope.launch {
@@ -71,16 +75,13 @@ class ReaderViewModel(
                         article = detail,
                         readProgress = detail.readProgress
                     )
-                    // Nếu là tệp tin, tự động nạp file về cache để mở trực tiếp trên app
-                    if (detail.sourceType == "FILE" || !detail.fileName.isNullOrBlank()) {
-                        loadFileForInApp(context, detail)
-                    }
-
-                    // Nếu là tệp Video, chuẩn bị danh sách Video Feed để hỗ trợ vuốt TikTok
+                    // Video uses the shared feed cache so initial playback and prefetch never write the same file twice.
                     val rawExt = (detail.fileName ?: detail.filePath ?: "").let { if (it.contains('.')) it.substringAfterLast('.', "").lowercase() else "" }
                     val isVideo = rawExt in listOf("mp4", "mkv", "mov", "webm", "avi", "3gp", "ts") || detail.mimeType?.startsWith("video/") == true
                     if (isVideo) {
                         loadVideoFeed(detail.id, detail.categoryId, context)
+                    } else if (detail.sourceType == "FILE" || !detail.fileName.isNullOrBlank()) {
+                        loadFileForInApp(context, detail)
                     }
                 },
                 onFailure = { error ->
@@ -374,91 +375,90 @@ class ReaderViewModel(
                 currentVideoIndex = startIndex
             )
 
-            // Tải trước tối đa 3-4 video tiếp theo để sẵn sàng phát tức thì 0ms
-            for (i in startIndex until (startIndex + 4).coerceAtMost(finalFeed.size)) {
-                preloadVideo(i, finalFeed, context)
-            }
+            // Fetch the selected file first; adjacent files are requested by the pager.
+            preloadVideo(startIndex, finalFeed, context)
         }
     }
 
     fun preloadVideo(index: Int, feed: List<ArticleListItem>, context: Context) {
         if (index !in feed.indices) return
-        val item = feed[index]
-        getVideoFile(context, item) { file ->
-            // Pre-prepare trước MediaPlayer để khi vuốt sang là phát tức thì trong 0ms
-            com.podoc.app.service.MediaPlaybackManager.preloadNext(file.absolutePath)
-        }
+        getVideoFile(context, feed[index]) { }
     }
 
     fun getVideoFile(context: Context, item: ArticleListItem, onReady: (File) -> Unit) {
-        val cached = _uiState.value.videoFilesCache[item.id]
-        if (cached != null && cached.exists() && cached.length() > 0) {
-            extractMetadataAndThumbnailInBackground(item.id, cached)
-            onReady(cached)
-            return
-        }
-
-        val rawExt = (item.fileName ?: item.filePath ?: "").let { if (it.contains('.')) it.substringAfterLast('.', "").lowercase() else "mp4" }
-        val safeExt = if (rawExt.isNotBlank()) ".$rawExt" else ".mp4"
-        val fileName = item.fileName?.let { if (it.contains('.')) it else "$it$safeExt" } ?: "video_${item.id}$safeExt"
-        val cacheFile = File(context.cacheDir, "podoc_doc_${item.id}_$fileName")
-        if (cacheFile.exists() && cacheFile.length() > 0) {
-            _uiState.value = _uiState.value.copy(
-                videoFilesCache = _uiState.value.videoFilesCache + (item.id to cacheFile)
-            )
-            extractMetadataAndThumbnailInBackground(item.id, cacheFile)
-            onReady(cacheFile)
-            return
-        }
-
-        viewModelScope.launch(Dispatchers.IO) {
-            articleRepository.downloadArticleFile(item.id, inline = true).fold(
-                onSuccess = { responseBody ->
-                    try {
-                        cacheFile.outputStream().use { output ->
-                            responseBody.byteStream().use { input -> input.copyTo(output) }
-                        }
-                        withContext(Dispatchers.Main) {
-                            _uiState.value = _uiState.value.copy(
-                                videoFilesCache = _uiState.value.videoFilesCache + (item.id to cacheFile)
-                            )
-                            extractMetadataAndThumbnailInBackground(item.id, cacheFile)
-                            onReady(cacheFile)
-                        }
-                    } catch (e: Exception) {
-                        // Bỏ qua lỗi ghi cache
-                    }
-                },
-                onFailure = { /* Bỏ qua */ }
-            )
+        viewModelScope.launch {
+            try {
+                onReady(awaitVideoFile(context, item))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Background prefetch is retried when the page is selected.
+            }
         }
     }
 
-    private fun extractMetadataAndThumbnailInBackground(articleId: Int, file: File) {
-        if (_uiState.value.videoAspectRatios.containsKey(articleId) && _uiState.value.videoThumbnails.containsKey(articleId)) return
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val retriever = android.media.MediaMetadataRetriever()
-                retriever.setDataSource(file.absolutePath)
-                val wStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
-                val hStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
-                val rotStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
-                val bmp = retriever.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                retriever.release()
-                val w = wStr?.toFloatOrNull() ?: 0f
-                val h = hStr?.toFloatOrNull() ?: 0f
-                val rot = rotStr?.toIntOrNull() ?: 0
-                val ratio = if (w > 0f && h > 0f) {
-                    if (rot == 90 || rot == 270) h / w else w / h
-                } else 16f / 9f
-                withContext(Dispatchers.Main) {
-                    _uiState.value = _uiState.value.copy(
-                        videoAspectRatios = _uiState.value.videoAspectRatios + (articleId to ratio),
-                        videoThumbnails = if (bmp != null) _uiState.value.videoThumbnails + (articleId to bmp) else _uiState.value.videoThumbnails
-                    )
+    suspend fun awaitVideoFile(context: Context, item: ArticleListItem): File {
+        val rawExt = (item.fileName ?: item.filePath ?: "").substringAfterLast('.', "mp4").lowercase()
+        val safeExt = ".${rawExt.ifBlank { "mp4" }}"
+        val fileName = item.fileName?.let { if (it.contains('.')) it else "$it$safeExt" }
+            ?: "video_${item.id}$safeExt"
+        val cacheFile = File(context.cacheDir, "podoc_doc_${item.id}_$fileName")
+        val file = videoFileCache.get(cacheFile) { partial ->
+            articleRepository.downloadArticleFile(item.id, inline = true).getOrThrow().use { body ->
+                partial.outputStream().use { output ->
+                    body.byteStream().use { input -> input.copyTo(output) }
                 }
-            } catch (e: Exception) {
-                // Ignore
+            }
+        }
+        _uiState.value = _uiState.value.copy(
+            videoFilesCache = _uiState.value.videoFilesCache + (item.id to file),
+            localFile = if (item.id == _uiState.value.article?.id) file else _uiState.value.localFile
+        )
+        extractMetadataAndThumbnailInBackground(item.id, file)
+        return file
+    }
+
+    private fun extractMetadataAndThumbnailInBackground(articleId: Int, file: File) {
+        if (_uiState.value.videoThumbnails.containsKey(articleId) || !metadataRequests.add(articleId)) return
+        viewModelScope.launch {
+            try {
+                val (ratio, bitmap) = withContext(Dispatchers.IO) {
+                    val retriever = android.media.MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(file.absolutePath)
+                        val width = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toFloatOrNull() ?: 0f
+                        val height = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toFloatOrNull() ?: 0f
+                        val rotation = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+                        val ratio = if (width > 0f && height > 0f) {
+                            if (rotation == 90 || rotation == 270) height / width else width / height
+                        } else 16f / 9f
+                        // A full-resolution 4K frame per page can exhaust memory and stall rendering.
+                        val scale = 640f / maxOf(width, height, 640f)
+                        val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                            retriever.getScaledFrameAtTime(
+                                0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                                (width * scale).toInt().coerceAtLeast(1),
+                                (height * scale).toInt().coerceAtLeast(1)
+                            )
+                        } else null // API 26 uses the server thumbnail instead of decoding a full-size frame.
+                        ratio to bitmap
+                    } finally {
+                        retriever.release()
+                    }
+                }
+                _uiState.value = _uiState.value.copy(
+                    videoAspectRatios = _uiState.value.videoAspectRatios + (articleId to ratio),
+                    videoThumbnails = if (bitmap != null) {
+                        (_uiState.value.videoThumbnails + (articleId to bitmap)).entries.toList().takeLast(5)
+                            .associate { it.toPair() }
+                    } else _uiState.value.videoThumbnails
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // The server thumbnail remains available if local frame extraction fails.
+            } finally {
+                metadataRequests.remove(articleId)
             }
         }
     }

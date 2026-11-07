@@ -13,7 +13,6 @@ import android.graphics.Color as AndroidColor
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
-import android.view.SurfaceHolder
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -78,6 +77,8 @@ import com.podoc.app.data.model.ArticleDetail
 import com.podoc.app.data.model.ArticleListItem
 import com.podoc.app.ui.components.PoDocTopAppBar
 import com.podoc.app.service.MediaPlaybackManager
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -1456,7 +1457,7 @@ private fun splitMarkdownIntoBlocks(markdown: String): List<String> {
  * - Tiếp tục phát âm thanh liên tục trong nền ngay cả khi tắt màn hình điện thoại.
  */
 @Composable
-private fun TikTokVideoFeedViewer(
+internal fun TikTokVideoFeedViewer(
     initialArticle: ArticleDetail,
     uiState: ReaderUiState,
     viewModel: ReaderViewModel,
@@ -1468,10 +1469,16 @@ private fun TikTokVideoFeedViewer(
     val isRepeatMode by MediaPlaybackManager.isRepeatMode.collectAsState()
     val videoSize by MediaPlaybackManager.videoSize.collectAsState()
     val currentPlayingArticleId by MediaPlaybackManager.currentArticleId.collectAsState()
+    val renderedArticleId by MediaPlaybackManager.renderedArticleId.collectAsState()
+    val failedArticleId by MediaPlaybackManager.failedArticleId.collectAsState()
 
     var itemToDelete by remember { mutableStateOf<ArticleListItem?>(null) }
     var showHint by remember { mutableStateOf(true) }
     var isManuallyPaused by remember { mutableStateOf(false) }
+    var feedInitialized by remember(initialArticle.id) { mutableStateOf(false) }
+    var videoLoadError by remember { mutableStateOf<String?>(null) }
+    var retryCount by remember { mutableIntStateOf(0) }
+    var autoPausedArticleId by remember { mutableStateOf<Int?>(null) }
 
     // Tự động tắt gợi ý vuốt sau 3 giây
     LaunchedEffect(Unit) {
@@ -1484,6 +1491,10 @@ private fun TikTokVideoFeedViewer(
         if (isPlaying) {
             isManuallyPaused = false
         }
+    }
+
+    LaunchedEffect(currentPlayingArticleId) {
+        if (currentPlayingArticleId != autoPausedArticleId) autoPausedArticleId = null
     }
 
     // Danh sách các video trong feed
@@ -1521,59 +1532,78 @@ private fun TikTokVideoFeedViewer(
         pageCount = { feedList.size }
     )
 
-    // Tinh chỉnh hiệu ứng lướt bắt dính nhanh, dứt khoát 120 FPS như TikTok
+    // The full feed arrives after the initial one-item page. Keep the opened video selected.
+    LaunchedEffect(uiState.videoFeed) {
+        if (!feedInitialized && uiState.videoFeed.isNotEmpty()) {
+            val index = feedList.indexOfFirst { it.id == initialArticle.id }.coerceAtLeast(0)
+            pagerState.scrollToPage(index)
+            feedInitialized = true
+        }
+    }
+    val isFeedReady = uiState.videoFeed.isEmpty() || feedInitialized
     val flingBehavior = PagerDefaults.flingBehavior(
         state = pagerState,
         snapAnimationSpec = spring(
             dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMediumLow
+            stiffness = Spring.StiffnessMedium
         )
     )
 
-    // Ngay khi ngón tay bắt đầu vuốt kéo chuyển trang: Lập tức tạm dừng video cũ trong 0ms
-    // Triệt tiêu hoàn toàn hiện tượng video cũ chạy lấn sang video tiếp theo
-    LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.isScrollInProgress }
-            .collect { isScrolling ->
-                if (isScrolling) {
-                    MediaPlaybackManager.pauseDirect(context)
+    // Keep the outgoing frame moving with the drag. Switch playback only when a page settles.
+    // collectLatest cancels a pending selection as soon as another drag starts.
+    LaunchedEffect(pagerState, feedList, isFeedReady, retryCount) {
+        if (!isFeedReady) return@LaunchedEffect
+        snapshotFlow { if (pagerState.isScrollInProgress) null else pagerState.settledPage }
+            .collectLatest { pageIndex ->
+                if (pageIndex == null || pageIndex !in feedList.indices) return@collectLatest
+                val item = feedList[pageIndex]
+                videoLoadError = null
+                MediaPlaybackManager.selectVideo(item.id)
+                if (MediaPlaybackManager.currentArticleId.value == item.id &&
+                    MediaPlaybackManager.failedArticleId.value != item.id) {
+                    if (autoPausedArticleId == item.id) {
+                        MediaPlaybackManager.resume(context)
+                        autoPausedArticleId = null
+                    }
+                    return@collectLatest
+                }
+                isManuallyPaused = false
+                if (MediaPlaybackManager.isPlaying.value) {
+                    autoPausedArticleId = MediaPlaybackManager.currentArticleId.value
+                }
+                MediaPlaybackManager.pauseDirect()
+                try {
+                    val file = viewModel.awaitVideoFile(context, item)
+                    MediaPlaybackManager.startPlay(context, file.absolutePath, item.title, item.id, true)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    videoLoadError = "Không thể tải video. Chạm để thử lại."
                 }
             }
     }
 
-    // Kích hoạt phát video ngay khi chuyển sang trang mới (không chờ trễ vài trăm ms)
-    LaunchedEffect(pagerState, feedList) {
-        snapshotFlow { pagerState.currentPage }
-            .collect { pageIndex ->
-                if (feedList.isEmpty() || pageIndex !in feedList.indices) return@collect
-                val targetItem = feedList[pageIndex]
-
-                // Nếu video đang phát là video của bài trước: cắt ngay trong 0ms
-                if (MediaPlaybackManager.currentArticleId.value != targetItem.id) {
-                    MediaPlaybackManager.pauseDirect(context)
-                    MediaPlaybackManager.detachSurface()
+    // Disk prefetch and decoder prefetch are separate. Only the predicted destination
+    // (or the next page while idle) may occupy the single warm decoder slot.
+    LaunchedEffect(pagerState, feedList, isFeedReady, currentPlayingArticleId) {
+        if (!isFeedReady) return@LaunchedEffect
+        snapshotFlow { Triple(pagerState.settledPage, pagerState.targetPage, pagerState.isScrollInProgress) }
+            .collectLatest { (settled, target, scrolling) ->
+                val predicted = if (scrolling && target != settled) target else settled + 1
+                val neighbours = listOf(predicted, settled - 1, settled + 1, settled + 2).distinct()
+                neighbours.filter { it in feedList.indices }.forEach {
+                    viewModel.preloadVideo(it, feedList, context)
                 }
-
-                // Chuyển trang mới: đảm bảo không hiện nút tam giác pause giữa màn hình
-                isManuallyPaused = false
-
-                // Phát ngay video trang mới
-                viewModel.getVideoFile(context, targetItem) { file ->
-                    MediaPlaybackManager.startPlay(
-                        context = context,
-                        filePath = file.absolutePath,
-                        title = targetItem.title,
-                        articleId = targetItem.id,
-                        isVideo = true
-                    )
-                }
-
-                // Tải trước (preload) video tiếp theo và video trước để lướt siêu mượt
-                if (pageIndex + 1 < feedList.size) {
-                    viewModel.preloadVideo(pageIndex + 1, feedList, context)
-                }
-                if (pageIndex - 1 >= 0) {
-                    viewModel.preloadVideo(pageIndex - 1, feedList, context)
+                val canPrepare = scrolling || currentPlayingArticleId == feedList.getOrNull(settled)?.id
+                if (canPrepare && predicted in feedList.indices) {
+                    try {
+                        val file = viewModel.awaitVideoFile(context, feedList[predicted])
+                        MediaPlaybackManager.preloadNext(file.absolutePath)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // Playback reports a retry if the selected file cannot be loaded.
+                    }
                 }
             }
     }
@@ -1597,18 +1627,7 @@ private fun TikTokVideoFeedViewer(
             val item = feedList[pageIndex]
             val isCurrentPage = (pageIndex == pagerState.currentPage)
             val isThisVideoActive = (currentPlayingArticleId == item.id)
-            val videoFile = uiState.videoFilesCache[item.id]
-                ?: if (item.id == initialArticle.id) uiState.localFile else null
-
-            var localSurfaceHolder by remember { mutableStateOf<SurfaceHolder?>(null) }
-
-            // Gắn Surface tức thì ngay khi video này active hoặc surface được tạo
-            LaunchedEffect(isCurrentPage, isThisVideoActive, localSurfaceHolder) {
-                if (isCurrentPage && isThisVideoActive && localSurfaceHolder != null) {
-                    MediaPlaybackManager.attachSurface(localSurfaceHolder!!)
-                }
-            }
-
+            val pageError = if (failedArticleId == item.id) "Không thể phát video. Chạm để thử lại." else videoLoadError
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1616,14 +1635,18 @@ private fun TikTokVideoFeedViewer(
                     .clickable {
                         // Nếu đang phát mà click thì người dùng chủ động muốn pause -> hiện nút tam giác
                         // Nếu đang dừng mà click thì người dùng muốn play tiếp -> ẩn nút tam giác
-                        isManuallyPaused = isPlaying
-                        MediaPlaybackManager.togglePlayPause(context)
+                        if (pageError != null && isCurrentPage) {
+                            retryCount++
+                        } else if (isCurrentPage && isThisVideoActive) {
+                            isManuallyPaused = isPlaying
+                            MediaPlaybackManager.togglePlayPause(context)
+                        }
                     },
                 contentAlignment = Alignment.Center
             ) {
                 // Tỉ lệ khung hình chuẩn được lấy trực tiếp từ cache ViewModel (zero disk I/O)
                 val nativeVideoRatio = uiState.videoAspectRatios[item.id]
-                    ?: if (videoSize.first > 0 && videoSize.second > 0) {
+                    ?: if (isThisVideoActive && videoSize.first > 0 && videoSize.second > 0) {
                         videoSize.first.toFloat() / videoSize.second.toFloat()
                     } else {
                         16f / 9f
@@ -1647,54 +1670,48 @@ private fun TikTokVideoFeedViewer(
                             .aspectRatio(nativeVideoRatio)
                     }
 
-                    // 1. Thumbnail khung hình đầu tiên hiển thị NGAY LẬP TỨC (0ms) bên dưới SurfaceView
-                    // Giúp mắt người dùng không bao giờ thấy màn hình đen hay vòng xoay tải!
-                    val thumbnail = uiState.videoThumbnails[item.id]
-                    if (thumbnail != null) {
-                        Image(
-                            bitmap = thumbnail.asImageBitmap(),
-                            contentDescription = null,
-                            contentScale = ContentScale.Fit,
-                            modifier = surfaceModifier
-                        )
-                    }
-
-                    // 2. Khung SurfaceView kết nối trực tiếp với MediaPlayer
-                    AndroidView(
-                        factory = { ctx ->
-                            android.view.SurfaceView(ctx).apply {
-                                holder.setKeepScreenOn(true)
-                                holder.addCallback(object : SurfaceHolder.Callback {
-                                    override fun surfaceCreated(holder: SurfaceHolder) {
-                                        localSurfaceHolder = holder
-                                        if (isCurrentPage && isThisVideoActive) {
-                                            MediaPlaybackManager.attachSurface(holder)
-                                        }
-                                    }
-                                    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
-                                    override fun surfaceDestroyed(holder: SurfaceHolder) {
-                                        localSurfaceHolder = null
-                                        if (isCurrentPage) {
-                                            MediaPlaybackManager.detachSurface()
-                                        }
-                                    }
-                                })
-                            }
-                        },
-                        update = { view ->
-                            localSurfaceHolder = view.holder
-                            if (isCurrentPage && isThisVideoActive) {
-                                MediaPlaybackManager.attachSurface(view.holder)
-                            }
-                        },
+                    FeedVideoSurface(
+                        articleId = item.id,
+                        isActive = isThisVideoActive,
                         modifier = surfaceModifier
+                    )
+
+                    // Keep the cover ABOVE the texture until this player renders its first frame.
+                    if (!isThisVideoActive || renderedArticleId != item.id) {
+                        val thumbnail = uiState.videoThumbnails[item.id]
+                        if (thumbnail != null) {
+                            Image(
+                                bitmap = thumbnail.asImageBitmap(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
+                                modifier = surfaceModifier
+                            )
+                        } else {
+                            AsyncImage(
+                                model = item.imageUrl,
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
+                                modifier = surfaceModifier
+                            )
+                        }
+                    }
+                }
+
+                if (isCurrentPage && pageError != null) {
+                    Text(
+                        text = pageError,
+                        color = Color.White,
+                        modifier = Modifier.align(Alignment.Center)
+                            .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                            .clickable { retryCount++ }
+                            .padding(16.dp)
                     )
                 }
 
                 // 2. Icon Play to tròn ở trung tâm màn hình CHỈ KHI người dùng chủ động chạm tạm dừng (chuẩn TikTok)
                 // Tuyệt đối không hiển thị khi vừa vuốt sang video mới
                 AnimatedVisibility(
-                    visible = isCurrentPage && isManuallyPaused && !isPlaying,
+                    visible = isCurrentPage && isThisVideoActive && isManuallyPaused && !isPlaying,
                     enter = fadeIn(spring()),
                     exit = fadeOut(spring()),
                     modifier = Modifier.align(Alignment.Center)
@@ -1833,7 +1850,7 @@ private fun TikTokVideoFeedViewer(
 
                 // 6. Thanh tua tiến độ đáy (Được tách thành composable riêng biệt để tránh recompose toàn trang)
                 TikTokBottomProgressBar(
-                    isCurrentPage = isCurrentPage,
+                    isCurrentPage = isCurrentPage && isThisVideoActive,
                     onSeek = { newPos -> MediaPlaybackManager.seekTo(context, newPos) },
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )

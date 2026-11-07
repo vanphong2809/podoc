@@ -11,17 +11,20 @@ import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.os.Build
+import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
 import android.os.PowerManager
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
-import android.view.SurfaceHolder
+import android.view.Surface
 import androidx.core.app.NotificationCompat
 import androidx.media.app.NotificationCompat.MediaStyle
 import com.podoc.app.MainActivity
 import kotlinx.coroutines.*
+import kotlinx.coroutines.android.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -64,9 +67,15 @@ object MediaPlaybackManager {
     internal val _videoSize = MutableStateFlow(Pair(0, 0))
     val videoSize: StateFlow<Pair<Int, Int>> = _videoSize.asStateFlow()
 
-    internal var currentHolder: SurfaceHolder? = null
-    internal var mediaPlayer: MediaPlayer? = null
-    internal var serviceInstance: MediaPlaybackService? = null
+    internal val _renderedArticleId = MutableStateFlow<Int?>(null)
+    val renderedArticleId: StateFlow<Int?> = _renderedArticleId.asStateFlow()
+    internal val _failedArticleId = MutableStateFlow<Int?>(null)
+    val failedArticleId: StateFlow<Int?> = _failedArticleId.asStateFlow()
+
+    internal data class VideoSurface(val articleId: Int, val surface: Surface)
+    @Volatile internal var videoSurface: VideoSurface? = null
+    @Volatile internal var serviceInstance: MediaPlaybackService? = null
+    @Volatile internal var selectedVideoArticleId: Int? = null
 
     /**
      * Bật / tắt chế độ lặp lại (Loop / Repeat)
@@ -74,11 +83,7 @@ object MediaPlaybackManager {
     fun toggleRepeatMode() {
         val next = !_isRepeatMode.value
         _isRepeatMode.value = next
-        try {
-            mediaPlayer?.isLooping = next
-        } catch (e: Exception) {
-            Log.w(TAG, "Lỗi toggle repeat: ${e.message}")
-        }
+        serviceInstance?.setRepeatMode(next)
     }
 
     /**
@@ -92,63 +97,40 @@ object MediaPlaybackManager {
         context.startService(intent)
     }
 
-    /**
-     * Gắn SurfaceHolder để MediaPlayer render khung hình video.
-     * Khi màn hình bật lại, SurfaceView được tái tạo và gọi hàm này.
-     */
-    fun attachSurface(holder: SurfaceHolder) {
-        currentHolder = holder
-        try {
-            mediaPlayer?.setDisplay(holder)
-        } catch (e: Exception) {
-            Log.w(TAG, "Lỗi gắn surface: ${e.message}")
-        }
+    /** Each page owns its surface; disposing a neighbour must not detach the active page. */
+    fun attachSurface(surface: Surface, articleId: Int) {
+        if (videoSurface?.surface === surface && videoSurface?.articleId == articleId) return
+        videoSurface = VideoSurface(articleId, surface)
+        serviceInstance?.refreshSurface()
     }
 
-    /**
-     * Gỡ SurfaceHolder khi màn hình tắt hoặc view bị ẩn.
-     * MediaPlayer tiếp tục chạy trong nền (âm thanh vẫn phát liên tục).
-     */
-    fun detachSurface() {
-        currentHolder = null
-        try {
-            mediaPlayer?.setDisplay(null)
-        } catch (e: Exception) {
-            Log.w(TAG, "Lỗi gỡ surface: ${e.message}")
-        }
+    fun detachSurface(surface: Surface) {
+        if (videoSurface?.surface !== surface) return
+        videoSurface = null
+        serviceInstance?.refreshSurface()
     }
 
-    /**
-     * Tạm dừng trực tiếp ngay lập tức MediaPlayer (0ms delay) và thông báo Service cập nhật
-     */
-    fun pauseDirect(context: Context? = null) {
-        try {
-            if (mediaPlayer?.isPlaying == true) {
-                mediaPlayer?.pause()
-            }
-            _isPlaying.value = false
-        } catch (e: Exception) {
-            Log.w(TAG, "Lỗi pauseDirect: ${e.message}")
-        }
-        context?.let { ctx ->
-            try {
-                val intent = Intent(ctx, MediaPlaybackService::class.java).apply {
-                    action = MediaPlaybackService.ACTION_PAUSE
-                }
-                ctx.startService(intent)
-            } catch (e: Exception) {
-                // Ignore
-            }
-        }
+    fun releaseSurface(surface: Surface) {
+        detachSurface(surface)
+        val service = serviceInstance
+        if (service != null) service.releaseSurface(surface) else surface.release()
+    }
+
+    fun selectVideo(articleId: Int) {
+        selectedVideoArticleId = articleId
+    }
+
+    fun pauseDirect() {
+        serviceInstance?.pause()
+    }
+
+    fun resume(context: Context) {
+        context.startService(Intent(context, MediaPlaybackService::class.java).apply {
+            action = MediaPlaybackService.ACTION_PLAY
+        })
     }
 
     fun startPlay(context: Context, filePath: String, title: String, articleId: Int, isVideo: Boolean) {
-        _isCompleted.value = false
-        _currentTitle.value = title
-        _currentArticleId.value = articleId
-        _currentFilePath.value = filePath
-        _isVideoMode.value = isVideo
-
         val intent = Intent(context, MediaPlaybackService::class.java).apply {
             action = MediaPlaybackService.ACTION_START
             putExtra(MediaPlaybackService.EXTRA_FILE_PATH, filePath)
@@ -247,9 +229,18 @@ class MediaPlaybackService : Service() {
     private var mediaPlayer: MediaPlayer? = null
     private var preloadedPlayer: MediaPlayer? = null
     private var preloadedFilePath: String? = null
+    private var preloadedPrepared = false
+    private var activePrepared = false
+    private var playWhenReady = true
+    private var activeFilePath: String? = null
+    private var boundSurface: Surface? = null
+    // MediaPlayer creation, callbacks and every access stay on this Looper.
+    private val playerThread = HandlerThread("PoDocPlayback").apply { start() }
+    private val playerHandler = Handler(playerThread.looper)
+    @Volatile private var latestPlaybackStartId = 0
     private var mediaSession: MediaSessionCompat? = null
     private var progressJob: Job? = null
-    private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
+    private val serviceScope = CoroutineScope(playerHandler.asCoroutineDispatcher() + SupervisorJob())
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -280,11 +271,12 @@ class MediaPlaybackService : Service() {
                         val isLoop = repeatMode != PlaybackStateCompat.REPEAT_MODE_NONE
                         MediaPlaybackManager._isRepeatMode.value = isLoop
                         try {
-                            mediaPlayer?.isLooping = isLoop
+                            if (activePrepared) mediaPlayer?.isLooping = isLoop
                         } catch (_: Exception) {}
                     }
 
                     override fun onSeekTo(pos: Long) {
+                        if (!activePrepared) return
                         try {
                             mediaPlayer?.seekTo(pos.toInt())
                             MediaPlaybackManager._currentPosition.value = pos.toInt()
@@ -298,6 +290,7 @@ class MediaPlaybackService : Service() {
                     }
 
                     override fun onFastForward() {
+                        if (!activePrepared) return
                         val cur = mediaPlayer?.currentPosition ?: 0
                         val dur = mediaPlayer?.duration ?: 0
                         val target = (cur + 10000).coerceAtMost(dur)
@@ -310,6 +303,7 @@ class MediaPlaybackService : Service() {
                     }
 
                     override fun onRewind() {
+                        if (!activePrepared) return
                         val cur = mediaPlayer?.currentPosition ?: 0
                         val target = (cur - 10000).coerceAtLeast(0)
                         mediaPlayer?.seekTo(target)
@@ -321,7 +315,7 @@ class MediaPlaybackService : Service() {
                     override fun onStop() {
                         stopPlayback()
                     }
-                })
+                }, playerHandler)
                 isActive = true
             }
         } catch (e: Exception) {
@@ -330,22 +324,38 @@ class MediaPlaybackService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val action = intent?.action ?: return START_NOT_STICKY
+        if (intent == null) return START_NOT_STICKY
+        // Meet the foreground-service deadline before queuing any codec work.
+        if (intent.action == ACTION_START) {
+            latestPlaybackStartId = startId
+            startForegroundNotification(intent.getStringExtra(EXTRA_TITLE) ?: "Tệp media", true)
+        }
+        playerHandler.post {
+            try {
+                handleCommand(intent, startId)
+            } catch (e: Exception) {
+                reportPlaybackError(e)
+            }
+        }
+        return START_NOT_STICKY
+    }
 
-        when (action) {
+    private fun handleCommand(intent: Intent, startId: Int) {
+        when (intent.action) {
             ACTION_START -> {
-                val filePath = intent.getStringExtra(EXTRA_FILE_PATH) ?: return START_NOT_STICKY
+                val filePath = intent.getStringExtra(EXTRA_FILE_PATH) ?: return
                 val title = intent.getStringExtra(EXTRA_TITLE) ?: "Tệp media"
                 val articleId = intent.getIntExtra(EXTRA_ARTICLE_ID, -1)
                 val isVideo = intent.getBooleanExtra(EXTRA_IS_VIDEO, false)
 
+                if (isVideo && MediaPlaybackManager.selectedVideoArticleId != articleId) return
+                if (activeFilePath == filePath && MediaPlaybackManager._currentArticleId.value == articleId) return
                 MediaPlaybackManager._currentTitle.value = title
                 MediaPlaybackManager._currentArticleId.value = if (articleId != -1) articleId else null
                 MediaPlaybackManager._currentFilePath.value = filePath
                 MediaPlaybackManager._isVideoMode.value = isVideo
 
-                startForegroundNotification(title, isPlaying = true)
-                playFile(filePath, isVideo)
+                playFile(filePath)
             }
 
             ACTION_PLAY -> {
@@ -357,7 +367,7 @@ class MediaPlaybackService : Service() {
             }
 
             ACTION_TOGGLE -> {
-                if (mediaPlayer?.isPlaying == true) {
+                if (playWhenReady) {
                     pausePlayback()
                 } else {
                     resumePlayback()
@@ -369,6 +379,7 @@ class MediaPlaybackService : Service() {
             }
 
             ACTION_SEEK -> {
+                if (!activePrepared) return
                 val pos = intent.getIntExtra(EXTRA_SEEK_POS, 0)
                 try {
                     mediaPlayer?.seekTo(pos)
@@ -384,178 +395,200 @@ class MediaPlaybackService : Service() {
             }
 
             ACTION_STOP -> {
-                stopPlayback()
+                // Leaving one reader must not stop a newer playback request already delivered.
+                if (startId >= latestPlaybackStartId) stopPlayback(stopStartId = startId)
             }
         }
 
-        return START_NOT_STICKY
     }
 
-    private fun playFile(filePath: String, isVideo: Boolean) {
+    private fun playFile(filePath: String) {
+        progressJob?.cancel()
+        MediaPlaybackManager._isPlaying.value = false
+        MediaPlaybackManager._isCompleted.value = false
+        MediaPlaybackManager._currentPosition.value = 0
+        MediaPlaybackManager._duration.value = 0
+        MediaPlaybackManager._videoSize.value = 0 to 0
+        MediaPlaybackManager._renderedArticleId.value = null
+        MediaPlaybackManager._failedArticleId.value = null
+        activePrepared = false
+        playWhenReady = true
+        activeFilePath = filePath
         try {
-            // KIỂM TRA PRELOAD PLAYER ĐÃ SẴN SÀNG -> PHÁT TỨC THÌ TRONG 0MS!
-            if (preloadedPlayer != null && preloadedFilePath == filePath) {
-                mediaPlayer?.release()
+            mediaPlayer?.release()
+            boundSurface = null
+            if (preloadedFilePath == filePath && preloadedPlayer != null) {
                 mediaPlayer = preloadedPlayer
+                activePrepared = preloadedPrepared
                 preloadedPlayer = null
                 preloadedFilePath = null
-                MediaPlaybackManager.mediaPlayer = mediaPlayer
-
-                mediaPlayer?.apply {
-                    isLooping = MediaPlaybackManager._isRepeatMode.value
-                    if (videoWidth > 0 && videoHeight > 0) {
-                        MediaPlaybackManager._videoSize.value = Pair(videoWidth, videoHeight)
-                    }
-                    if (isVideo && MediaPlaybackManager.currentHolder != null) {
-                        try {
-                            setDisplay(MediaPlaybackManager.currentHolder)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Lỗi gắn surface cho preloaded player: ${e.message}")
-                        }
-                    }
-                    start()
-                    MediaPlaybackManager._isPlaying.value = true
-                    MediaPlaybackManager._isCompleted.value = false
-                    MediaPlaybackManager._duration.value = duration
-
-                    updateMetadata(MediaPlaybackManager._currentTitle.value, duration.toLong())
-                    updatePlaybackState(0, isPlaying = true)
-                    updateNotification(MediaPlaybackManager._currentTitle.value, true)
-                    startProgressTracker()
-                }
-                return
+                preloadedPrepared = false
+                refreshSurfaceOnPlayerThread()
+                // A promoted player may still be Preparing. Its callback starts it later.
+                if (activePrepared) startPreparedPlayer()
+            } else {
+                mediaPlayer = createPlayer(filePath)
+                refreshSurfaceOnPlayerThread()
+                mediaPlayer?.prepareAsync()
             }
-
-            preloadedPlayer?.release()
-            preloadedPlayer = null
-            preloadedFilePath = null
-
-            mediaPlayer?.release()
-            mediaPlayer = MediaPlayer().apply {
-                setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK)
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .build()
-                )
-                setDataSource(filePath)
-                setOnPreparedListener { mp ->
-                    mp.isLooping = MediaPlaybackManager._isRepeatMode.value
-                    if (mp.videoWidth > 0 && mp.videoHeight > 0) {
-                        MediaPlaybackManager._videoSize.value = Pair(mp.videoWidth, mp.videoHeight)
-                    }
-                    if (isVideo && MediaPlaybackManager.currentHolder != null) {
-                        try {
-                            mp.setDisplay(MediaPlaybackManager.currentHolder)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Lỗi gán surface listener: ${e.message}")
-                        }
-                    }
-                    mp.start()
-                    MediaPlaybackManager._isPlaying.value = true
-                    MediaPlaybackManager._isCompleted.value = false
-                    MediaPlaybackManager._duration.value = mp.duration
-
-                    updateMetadata(MediaPlaybackManager._currentTitle.value, mp.duration.toLong())
-                    updatePlaybackState(0, isPlaying = true)
-                    updateNotification(MediaPlaybackManager._currentTitle.value, true)
-                    startProgressTracker()
-                }
-                setOnCompletionListener { mp ->
-                    if (MediaPlaybackManager._isRepeatMode.value) {
-                        try {
-                            mp.seekTo(0)
-                            mp.start()
-                            MediaPlaybackManager._isPlaying.value = true
-                            MediaPlaybackManager._isCompleted.value = false
-                            MediaPlaybackManager._currentPosition.value = 0
-                            updatePlaybackState(0, isPlaying = true)
-                            updateNotification(MediaPlaybackManager._currentTitle.value, true)
-                            startProgressTracker()
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Lỗi loop media: ${e.message}")
-                        }
-                    } else {
-                        MediaPlaybackManager._isPlaying.value = false
-                        MediaPlaybackManager._isCompleted.value = true
-                        MediaPlaybackManager._currentPosition.value = mp.duration
-                        updatePlaybackState(mp.duration, isPlaying = false)
-                        updateNotification(MediaPlaybackManager._currentTitle.value, false)
-                    }
-                }
-                setOnVideoSizeChangedListener { _, width, height ->
-                    MediaPlaybackManager._videoSize.value = Pair(width, height)
-                }
-                setOnErrorListener { _, what, extra ->
-                    Log.e(TAG, "MediaPlayer error: what=$what, extra=$extra")
-                    MediaPlaybackManager._isPlaying.value = false
-                    updatePlaybackState(0, isPlaying = false)
-                    false
-                }
-                prepareAsync()
-            }
-            MediaPlaybackManager.mediaPlayer = mediaPlayer
         } catch (e: Exception) {
-            Log.e(TAG, "Lỗi khởi tạo MediaPlayer", e)
+            reportPlaybackError(e)
         }
     }
 
-    /**
-     * Chuẩn bị sẵn (pre-prepare) MediaPlayer cho video kế tiếp trong nền
-     */
-    fun preloadNext(filePath: String) {
-        if (preloadedFilePath == filePath && preloadedPlayer != null) return
+    private fun createPlayer(filePath: String): MediaPlayer {
+        val player = MediaPlayer()
         try {
-            preloadedPlayer?.release()
-            preloadedPlayer = null
-            preloadedFilePath = null
-
-            val p = MediaPlayer().apply {
-                setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK)
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .build()
-                )
-                setDataSource(filePath)
-                setOnPreparedListener { mp ->
-                    if (mp.videoWidth > 0 && mp.videoHeight > 0) {
-                        MediaPlaybackManager._videoSize.value = Pair(mp.videoWidth, mp.videoHeight)
-                    }
-                }
-                setOnCompletionListener { mp ->
-                    if (MediaPlaybackManager._isRepeatMode.value) {
+            player.setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK)
+            player.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .build()
+            )
+            player.setDataSource(filePath)
+            player.setOnPreparedListener { prepared ->
+                when (prepared) {
+                    mediaPlayer -> {
+                        activePrepared = true
                         try {
-                            mp.seekTo(0)
-                            mp.start()
-                            MediaPlaybackManager._isPlaying.value = true
-                        } catch (e: Exception) {}
-                    } else {
-                        MediaPlaybackManager._isPlaying.value = false
-                        MediaPlaybackManager._isCompleted.value = true
+                            startPreparedPlayer()
+                        } catch (e: Exception) {
+                            reportPlaybackError(e)
+                        }
                     }
+                    preloadedPlayer -> preloadedPrepared = true
                 }
-                setOnVideoSizeChangedListener { _, width, height ->
-                    MediaPlaybackManager._videoSize.value = Pair(width, height)
-                }
-                setOnErrorListener { _, _, _ ->
-                    preloadedPlayer?.release()
-                    preloadedPlayer = null
-                    preloadedFilePath = null
-                    false
-                }
-                prepareAsync()
             }
-            preloadedPlayer = p
-            preloadedFilePath = filePath
+            player.setOnVideoSizeChangedListener { source, width, height ->
+                if (source === mediaPlayer) MediaPlaybackManager._videoSize.value = width to height
+            }
+            player.setOnInfoListener { source, what, _ ->
+                if (source === mediaPlayer && what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
+                    MediaPlaybackManager._renderedArticleId.value = MediaPlaybackManager._currentArticleId.value
+                }
+                false
+            }
+            player.setOnCompletionListener { source ->
+                if (source === mediaPlayer) {
+                    MediaPlaybackManager._isPlaying.value = false
+                    MediaPlaybackManager._isCompleted.value = true
+                    MediaPlaybackManager._currentPosition.value = source.duration
+                    updatePlaybackState(source.duration, false)
+                    updateNotification(MediaPlaybackManager._currentTitle.value, false)
+                }
+            }
+            player.setOnErrorListener { source, what, extra ->
+                Log.e(TAG, "MediaPlayer error: what=$what, extra=$extra")
+                if (source === mediaPlayer) {
+                    reportPlaybackError(IllegalStateException("MediaPlayer error $what/$extra"))
+                } else if (source === preloadedPlayer) {
+                    clearPreloadedPlayer()
+                }
+                true
+            }
+            return player
         } catch (e: Exception) {
-            Log.w(TAG, "Lỗi preload video kế tiếp: ${e.message}")
+            player.release()
+            throw e
         }
+    }
+
+    private fun startPreparedPlayer() {
+        val player = mediaPlayer ?: return
+        player.isLooping = MediaPlaybackManager._isRepeatMode.value
+        MediaPlaybackManager._videoSize.value = player.videoWidth to player.videoHeight
+        MediaPlaybackManager._duration.value = player.duration
+        refreshSurfaceOnPlayerThread()
+        if (playWhenReady) player.start()
+        MediaPlaybackManager._isPlaying.value = playWhenReady
+        updateMetadata(MediaPlaybackManager._currentTitle.value, player.duration.toLong())
+        updatePlaybackState(player.currentPosition, playWhenReady)
+        updateNotification(MediaPlaybackManager._currentTitle.value, playWhenReady)
+        startProgressTracker()
+    }
+
+    private fun reportPlaybackError(error: Exception) {
+        Log.e(TAG, "Không thể phát media", error)
+        activePrepared = false
+        activeFilePath = null
+        playWhenReady = false
+        MediaPlaybackManager._isPlaying.value = false
+        MediaPlaybackManager._renderedArticleId.value = null
+        MediaPlaybackManager._failedArticleId.value = MediaPlaybackManager._currentArticleId.value
+        updatePlaybackState(0, false)
+        updateNotification(MediaPlaybackManager._currentTitle.value, false)
+    }
+
+    /** Only the pager's predicted next video gets a decoder, not every cached file. */
+    fun preloadNext(filePath: String) {
+        playerHandler.post {
+            if (activeFilePath == filePath || preloadedFilePath == filePath) return@post
+            clearPreloadedPlayer()
+            try {
+                preloadedPlayer = createPlayer(filePath)
+                preloadedFilePath = filePath
+                preloadedPlayer?.prepareAsync()
+            } catch (e: Exception) {
+                clearPreloadedPlayer()
+                Log.w(TAG, "Lỗi preload video: ${e.message}")
+            }
+        }
+    }
+
+    private fun clearPreloadedPlayer() {
+        val previous = preloadedPlayer
+        preloadedPlayer = null
+        preloadedFilePath = null
+        preloadedPrepared = false
+        previous?.release()
+    }
+
+    fun refreshSurface() {
+        playerHandler.post { refreshSurfaceOnPlayerThread() }
+    }
+
+    private fun refreshSurfaceOnPlayerThread() {
+        val target = MediaPlaybackManager.videoSurface?.takeIf {
+            it.articleId == MediaPlaybackManager._currentArticleId.value && it.surface.isValid
+        }?.surface
+        if (target === boundSurface) return
+        try {
+            mediaPlayer?.setSurface(target)
+            boundSurface = target
+        } catch (e: Exception) {
+            Log.w(TAG, "Lỗi gắn surface: ${e.message}")
+        }
+    }
+
+    fun releaseSurface(surface: Surface) {
+        playerHandler.post {
+            try {
+                if (boundSurface === surface) {
+                    mediaPlayer?.setSurface(null)
+                    boundSurface = null
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Lỗi gỡ surface: ${e.message}")
+            } finally {
+                surface.release()
+            }
+        }
+    }
+
+    fun setRepeatMode(repeat: Boolean) {
+        playerHandler.post {
+            if (activePrepared) mediaPlayer?.isLooping = repeat
+        }
+    }
+
+    fun pause() {
+        playerHandler.post { pausePlayback() }
     }
 
     private fun resumePlayback() {
+        playWhenReady = true
+        if (!activePrepared) return
         try {
             if (MediaPlaybackManager._isCompleted.value) {
                 replayPlayback()
@@ -573,6 +606,8 @@ class MediaPlaybackService : Service() {
     }
 
     private fun replayPlayback() {
+        playWhenReady = true
+        if (!activePrepared) return
         try {
             MediaPlaybackManager._isCompleted.value = false
             mediaPlayer?.seekTo(0)
@@ -588,8 +623,10 @@ class MediaPlaybackService : Service() {
     }
 
     private fun pausePlayback() {
+        playWhenReady = false
+        if (!activePrepared) return
         try {
-            mediaPlayer?.pause()
+            if (mediaPlayer?.isPlaying == true) mediaPlayer?.pause()
             MediaPlaybackManager._isPlaying.value = false
             val pos = mediaPlayer?.currentPosition ?: 0
             updatePlaybackState(pos, isPlaying = false)
@@ -599,25 +636,36 @@ class MediaPlaybackService : Service() {
         }
     }
 
-    private fun stopPlayback() {
+    private fun stopPlayback(stopService: Boolean = true, stopStartId: Int? = null) {
         progressJob?.cancel()
         try {
-            mediaPlayer?.stop()
             mediaPlayer?.release()
         } catch (_: Exception) {}
         mediaPlayer = null
-        MediaPlaybackManager.mediaPlayer = null
-        MediaPlaybackManager._isPlaying.value = false
-        MediaPlaybackManager._isCompleted.value = false
-        MediaPlaybackManager._currentArticleId.value = null
-        MediaPlaybackManager._currentFilePath.value = null
-        MediaPlaybackManager.currentHolder = null
+        activePrepared = false
+        activeFilePath = null
+        boundSurface = null
+        clearPreloadedPlayer()
+        if (MediaPlaybackManager.serviceInstance == null || MediaPlaybackManager.serviceInstance === this) {
+            MediaPlaybackManager._isPlaying.value = false
+            MediaPlaybackManager._isCompleted.value = false
+            MediaPlaybackManager._currentArticleId.value = null
+            MediaPlaybackManager._currentFilePath.value = null
+            MediaPlaybackManager._renderedArticleId.value = null
+            MediaPlaybackManager._failedArticleId.value = null
+            MediaPlaybackManager._currentPosition.value = 0
+            MediaPlaybackManager._duration.value = 0
+        }
 
         updatePlaybackState(0, isPlaying = false)
         mediaSession?.isActive = false
 
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        if (stopService) {
+            if (stopStartId == null || stopSelfResult(stopStartId)) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                if (stopStartId == null) stopSelf()
+            }
+        }
     }
 
     private fun updateMetadata(title: String, durationMs: Long) {
@@ -771,19 +819,15 @@ class MediaPlaybackService : Service() {
     }
 
     override fun onDestroy() {
-        MediaPlaybackManager.serviceInstance = null
-        stopPlayback()
-        try {
-            preloadedPlayer?.release()
-            preloadedPlayer = null
-            preloadedFilePath = null
-        } catch (e: Exception) {
-            // Ignore
+        if (MediaPlaybackManager.serviceInstance === this) MediaPlaybackManager.serviceInstance = null
+        playerHandler.post {
+            stopPlayback(stopService = false)
+            serviceScope.cancel()
+            mediaSession?.isActive = false
+            mediaSession?.release()
+            mediaSession = null
+            playerThread.quitSafely()
         }
-        serviceScope.cancel()
-        mediaSession?.isActive = false
-        mediaSession?.release()
-        mediaSession = null
         super.onDestroy()
     }
 }
