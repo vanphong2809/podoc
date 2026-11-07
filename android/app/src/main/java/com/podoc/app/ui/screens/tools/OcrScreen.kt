@@ -412,14 +412,14 @@ fun OcrScreen(
                                     containerColor = Color(0xFFEEF2FF),
                                     contentColor = Color(0xFF4338CA)
                                 ),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(40.dp)
                             ) {
-                                Icon(imageVector = Icons.Default.Crop, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Khoanh vùng", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+                                Icon(imageVector = Icons.Default.Crop, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Khoanh vùng", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             }
 
                             Button(
@@ -429,7 +429,7 @@ fun OcrScreen(
                                     containerColor = if (viewModel.isEnhanceContrastEnabled) Color(0xFF4F46E5) else Color(0xFFEEF2FF),
                                     contentColor = if (viewModel.isEnhanceContrastEnabled) Color.White else Color(0xFF4338CA)
                                 ),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(40.dp)
@@ -437,10 +437,10 @@ fun OcrScreen(
                                 Icon(
                                     imageVector = if (viewModel.isEnhanceContrastEnabled) Icons.Default.Contrast else Icons.Default.FilterNone,
                                     contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(15.dp)
                                 )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Tăng nét", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Tăng nét", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             }
 
                             OutlinedButton(
@@ -453,14 +453,14 @@ fun OcrScreen(
                                 },
                                 shape = RoundedCornerShape(12.dp),
                                 border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(40.dp)
                             ) {
-                                Icon(imageVector = Icons.Default.SwapHoriz, contentDescription = null, tint = Color(0xFF4338CA), modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Đổi ảnh", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF4338CA), maxLines = 1, softWrap = false)
+                                Icon(imageVector = Icons.Default.SwapHoriz, contentDescription = null, tint = Color(0xFF4338CA), modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("Đổi ảnh", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF4338CA), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             }
                         }
                     }

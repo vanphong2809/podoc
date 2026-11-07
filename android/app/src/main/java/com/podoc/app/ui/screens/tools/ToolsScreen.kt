@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -666,13 +667,20 @@ fun ToolsScreen(
                                     modifier = Modifier.weight(1f).height(36.dp)
                                 ) {
                                     Row(
-                                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                                        modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.Center
                                     ) {
                                         Icon(Icons.Default.Translate, contentDescription = null, tint = Color(0xFF2563EB), modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Tiếng Việt", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Tiếng Việt",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
                                 }
 
@@ -683,13 +691,20 @@ fun ToolsScreen(
                                     modifier = Modifier.weight(1f).height(36.dp)
                                 ) {
                                     Row(
-                                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                                        modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.Center
                                     ) {
                                         Icon(Icons.Default.Crop, contentDescription = null, tint = Color(0xFF0891B2), modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Khoanh vùng ROI", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Khoanh vùng",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
                                 }
                             }
@@ -705,13 +720,20 @@ fun ToolsScreen(
                                     modifier = Modifier.weight(1f).height(36.dp)
                                 ) {
                                     Row(
-                                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                                        modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.Center
                                     ) {
                                         Icon(Icons.Default.Edit, contentDescription = null, tint = Color(0xFF059669), modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Sửa lỗi chính tả", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Sửa chính tả",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
                                 }
 
@@ -722,13 +744,20 @@ fun ToolsScreen(
                                     modifier = Modifier.weight(1f).height(36.dp)
                                 ) {
                                     Row(
-                                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                                        modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.Center
                                     ) {
                                         Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Offline", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Offline",
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
                                 }
                             }

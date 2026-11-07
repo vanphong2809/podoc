@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -362,7 +363,7 @@ fun RoiCropDialog(
                         ) {
                             Icon(Icons.Default.CreditCard, null, tint = Color(0xFFE2E8F0), modifier = Modifier.size(13.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Mẫu CCCD/Thẻ", fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = Color.White, maxLines = 1, softWrap = false)
+                            Text("Mẫu CCCD/Thẻ", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
 
@@ -385,7 +386,7 @@ fun RoiCropDialog(
                         ) {
                             Icon(Icons.AutoMirrored.Filled.ShortText, null, tint = Color(0xFFE2E8F0), modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("1-2 Dòng chữ", fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = Color.White, maxLines = 1, softWrap = false)
+                            Text("1-2 Dòng chữ", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
 
@@ -408,7 +409,7 @@ fun RoiCropDialog(
                         ) {
                             Icon(Icons.Default.SelectAll, null, tint = Color(0xFFE2E8F0), modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Toàn ảnh", fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = Color.White, maxLines = 1, softWrap = false)
+                            Text("Toàn ảnh", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
