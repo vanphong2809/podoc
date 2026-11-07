@@ -1600,6 +1600,15 @@ private fun TikTokVideoFeedViewer(
             val videoFile = uiState.videoFilesCache[item.id]
                 ?: if (item.id == initialArticle.id) uiState.localFile else null
 
+            var localSurfaceHolder by remember { mutableStateOf<SurfaceHolder?>(null) }
+
+            // Gắn Surface tức thì ngay khi video này active hoặc surface được tạo
+            LaunchedEffect(isCurrentPage, isThisVideoActive, localSurfaceHolder) {
+                if (isCurrentPage && isThisVideoActive && localSurfaceHolder != null) {
+                    MediaPlaybackManager.attachSurface(localSurfaceHolder!!)
+                }
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1612,66 +1621,74 @@ private fun TikTokVideoFeedViewer(
                     },
                 contentAlignment = Alignment.Center
             ) {
-                // 1. Khung hiển thị SurfaceView Video với tỉ lệ khung hình chuẩn
-                // Chỉ gắn Surface khi trang này là trang hiện tại VÀ MediaPlayer đang phát đúng video của trang này
-                // Tuyệt đối không hiển thị khung hình của video cũ lên trang mới
-                if (videoFile != null && videoFile.exists()) {
-                    val nativeVideoRatio = uiState.videoAspectRatios[item.id]
-                        ?: if (videoSize.first > 0 && videoSize.second > 0) {
-                            videoSize.first.toFloat() / videoSize.second.toFloat()
-                        } else {
-                            16f / 9f
-                        }
+                // Tỉ lệ khung hình chuẩn được lấy trực tiếp từ cache ViewModel (zero disk I/O)
+                val nativeVideoRatio = uiState.videoAspectRatios[item.id]
+                    ?: if (videoSize.first > 0 && videoSize.second > 0) {
+                        videoSize.first.toFloat() / videoSize.second.toFloat()
+                    } else {
+                        16f / 9f
+                    }
 
-                    BoxWithConstraints(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        val containerWidth = maxWidth.value
-                        val containerHeight = maxHeight.value
-                        val containerRatio = if (containerHeight > 0f) containerWidth / containerHeight else 1f
+                BoxWithConstraints(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val containerWidth = maxWidth.value
+                    val containerHeight = maxHeight.value
+                    val containerRatio = if (containerHeight > 0f) containerWidth / containerHeight else 1f
 
-                        val surfaceModifier = if (nativeVideoRatio > containerRatio) {
-                            Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(nativeVideoRatio)
-                        } else {
-                            Modifier
-                                .fillMaxHeight()
-                                .aspectRatio(nativeVideoRatio)
-                        }
+                    val surfaceModifier = if (nativeVideoRatio > containerRatio) {
+                        Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(nativeVideoRatio)
+                    } else {
+                        Modifier
+                            .fillMaxHeight()
+                            .aspectRatio(nativeVideoRatio)
+                    }
 
-                        AndroidView(
-                            factory = { ctx ->
-                                android.view.SurfaceView(ctx).apply {
-                                    holder.setKeepScreenOn(true)
-                                    holder.addCallback(object : SurfaceHolder.Callback {
-                                        override fun surfaceCreated(holder: SurfaceHolder) {
-                                            if (isCurrentPage && isThisVideoActive) {
-                                                MediaPlaybackManager.attachSurface(holder)
-                                            }
-                                        }
-                                        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
-                                        override fun surfaceDestroyed(holder: SurfaceHolder) {
-                                            if (isCurrentPage) {
-                                                MediaPlaybackManager.detachSurface()
-                                            }
-                                        }
-                                    })
-                                }
-                            },
-                            update = { view ->
-                                if (isCurrentPage && isThisVideoActive) {
-                                    MediaPlaybackManager.attachSurface(view.holder)
-                                }
-                            },
+                    // 1. Thumbnail khung hình đầu tiên hiển thị NGAY LẬP TỨC (0ms) bên dưới SurfaceView
+                    // Giúp mắt người dùng không bao giờ thấy màn hình đen hay vòng xoay tải!
+                    val thumbnail = uiState.videoThumbnails[item.id]
+                    if (thumbnail != null) {
+                        Image(
+                            bitmap = thumbnail.asImageBitmap(),
+                            contentDescription = null,
+                            contentScale = ContentScale.Fit,
                             modifier = surfaceModifier
                         )
                     }
-                } else {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp)
-                    }
+
+                    // 2. Khung SurfaceView kết nối trực tiếp với MediaPlayer
+                    AndroidView(
+                        factory = { ctx ->
+                            android.view.SurfaceView(ctx).apply {
+                                holder.setKeepScreenOn(true)
+                                holder.addCallback(object : SurfaceHolder.Callback {
+                                    override fun surfaceCreated(holder: SurfaceHolder) {
+                                        localSurfaceHolder = holder
+                                        if (isCurrentPage && isThisVideoActive) {
+                                            MediaPlaybackManager.attachSurface(holder)
+                                        }
+                                    }
+                                    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+                                    override fun surfaceDestroyed(holder: SurfaceHolder) {
+                                        localSurfaceHolder = null
+                                        if (isCurrentPage) {
+                                            MediaPlaybackManager.detachSurface()
+                                        }
+                                    }
+                                })
+                            }
+                        },
+                        update = { view ->
+                            localSurfaceHolder = view.holder
+                            if (isCurrentPage && isThisVideoActive) {
+                                MediaPlaybackManager.attachSurface(view.holder)
+                            }
+                        },
+                        modifier = surfaceModifier
+                    )
                 }
 
                 // 2. Icon Play to tròn ở trung tâm màn hình CHỈ KHI người dùng chủ động chạm tạm dừng (chuẩn TikTok)

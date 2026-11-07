@@ -40,7 +40,8 @@ data class ReaderUiState(
     val videoFeed: List<ArticleListItem> = emptyList(),
     val currentVideoIndex: Int = 0,
     val videoFilesCache: Map<Int, File> = emptyMap(),
-    val videoAspectRatios: Map<Int, Float> = emptyMap()
+    val videoAspectRatios: Map<Int, Float> = emptyMap(),
+    val videoThumbnails: Map<Int, android.graphics.Bitmap> = emptyMap()
 )
 
 class ReaderViewModel(
@@ -177,7 +178,7 @@ class ReaderViewModel(
         val isVid = ext in listOf("mp4", "mkv", "mov", "webm", "avi", "3gp", "ts")
         val curId = _uiState.value.article?.id
         if (isVid && curId != null) {
-            extractRatioInBackground(curId, file)
+            extractMetadataAndThumbnailInBackground(curId, file)
         }
 
         withContext(Dispatchers.Main) {
@@ -373,10 +374,9 @@ class ReaderViewModel(
                 currentVideoIndex = startIndex
             )
 
-            // Tải trước video hiện tại và video kế tiếp để sẵn sàng phát tức thì
-            preloadVideo(startIndex, finalFeed, context)
-            if (startIndex + 1 < finalFeed.size) {
-                preloadVideo(startIndex + 1, finalFeed, context)
+            // Tải trước tối đa 3-4 video tiếp theo để sẵn sàng phát tức thì 0ms
+            for (i in startIndex until (startIndex + 4).coerceAtMost(finalFeed.size)) {
+                preloadVideo(i, finalFeed, context)
             }
         }
     }
@@ -393,6 +393,7 @@ class ReaderViewModel(
     fun getVideoFile(context: Context, item: ArticleListItem, onReady: (File) -> Unit) {
         val cached = _uiState.value.videoFilesCache[item.id]
         if (cached != null && cached.exists() && cached.length() > 0) {
+            extractMetadataAndThumbnailInBackground(item.id, cached)
             onReady(cached)
             return
         }
@@ -405,7 +406,7 @@ class ReaderViewModel(
             _uiState.value = _uiState.value.copy(
                 videoFilesCache = _uiState.value.videoFilesCache + (item.id to cacheFile)
             )
-            extractRatioInBackground(item.id, cacheFile)
+            extractMetadataAndThumbnailInBackground(item.id, cacheFile)
             onReady(cacheFile)
             return
         }
@@ -421,7 +422,7 @@ class ReaderViewModel(
                             _uiState.value = _uiState.value.copy(
                                 videoFilesCache = _uiState.value.videoFilesCache + (item.id to cacheFile)
                             )
-                            extractRatioInBackground(item.id, cacheFile)
+                            extractMetadataAndThumbnailInBackground(item.id, cacheFile)
                             onReady(cacheFile)
                         }
                     } catch (e: Exception) {
@@ -433,8 +434,8 @@ class ReaderViewModel(
         }
     }
 
-    private fun extractRatioInBackground(articleId: Int, file: File) {
-        if (_uiState.value.videoAspectRatios.containsKey(articleId)) return
+    private fun extractMetadataAndThumbnailInBackground(articleId: Int, file: File) {
+        if (_uiState.value.videoAspectRatios.containsKey(articleId) && _uiState.value.videoThumbnails.containsKey(articleId)) return
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val retriever = android.media.MediaMetadataRetriever()
@@ -442,6 +443,7 @@ class ReaderViewModel(
                 val wStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
                 val hStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
                 val rotStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                val bmp = retriever.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                 retriever.release()
                 val w = wStr?.toFloatOrNull() ?: 0f
                 val h = hStr?.toFloatOrNull() ?: 0f
@@ -451,7 +453,8 @@ class ReaderViewModel(
                 } else 16f / 9f
                 withContext(Dispatchers.Main) {
                     _uiState.value = _uiState.value.copy(
-                        videoAspectRatios = _uiState.value.videoAspectRatios + (articleId to ratio)
+                        videoAspectRatios = _uiState.value.videoAspectRatios + (articleId to ratio),
+                        videoThumbnails = if (bmp != null) _uiState.value.videoThumbnails + (articleId to bmp) else _uiState.value.videoThumbnails
                     )
                 }
             } catch (e: Exception) {
