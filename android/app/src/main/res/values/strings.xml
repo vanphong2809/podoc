@@ -133,7 +133,7 @@
     <string name="logged_in_as">Tài khoản: %s</string>
 
     <string name="section_about">Về ứng dụng</string>
-    <string name="app_version">Phiên bản: 1.6.6</string>
+    <string name="app_version">Phiên bản: 1.6.7</string>
     <string name="app_description">PoDoc là ứng dụng lưu trữ và quản lý tài liệu cá nhân độc lập, tự chủ hoàn toàn trên máy chủ riêng của bạn.</string>
 
     <!-- OCR Tool -->

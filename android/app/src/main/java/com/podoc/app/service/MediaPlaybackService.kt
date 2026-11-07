@@ -118,6 +118,30 @@ object MediaPlaybackManager {
         }
     }
 
+    /**
+     * Tạm dừng trực tiếp ngay lập tức MediaPlayer (0ms delay) và thông báo Service cập nhật
+     */
+    fun pauseDirect(context: Context? = null) {
+        try {
+            if (mediaPlayer?.isPlaying == true) {
+                mediaPlayer?.pause()
+            }
+            _isPlaying.value = false
+        } catch (e: Exception) {
+            Log.w(TAG, "Lỗi pauseDirect: ${e.message}")
+        }
+        context?.let { ctx ->
+            try {
+                val intent = Intent(ctx, MediaPlaybackService::class.java).apply {
+                    action = MediaPlaybackService.ACTION_PAUSE
+                }
+                ctx.startService(intent)
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
+    }
+
     fun startPlay(context: Context, filePath: String, title: String, articleId: Int, isVideo: Boolean) {
         _isCompleted.value = false
         val intent = Intent(context, MediaPlaybackService::class.java).apply {

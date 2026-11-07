@@ -1467,6 +1467,7 @@ private fun TikTokVideoFeedViewer(
     val isPlaying by MediaPlaybackManager.isPlaying.collectAsState()
     val isRepeatMode by MediaPlaybackManager.isRepeatMode.collectAsState()
     val videoSize by MediaPlaybackManager.videoSize.collectAsState()
+    val currentPlayingArticleId by MediaPlaybackManager.currentArticleId.collectAsState()
 
     var itemToDelete by remember { mutableStateOf<ArticleListItem?>(null) }
     var showHint by remember { mutableStateOf(true) }
@@ -1521,30 +1522,47 @@ private fun TikTokVideoFeedViewer(
         )
     )
 
-    // CHỈ kích hoạt phát video khi trang đã dừng cuộn dứt khoát (settledPage)
-    // Giúp animation vuốt đạt trọn vẹn 120 FPS không bị frame drop do MediaPlayer decode giữa chừng
-    LaunchedEffect(pagerState, feedList) {
-        snapshotFlow { pagerState.settledPage }
-            .collect { settledPage ->
-                if (feedList.isEmpty() || settledPage !in feedList.indices) return@collect
-                val currentItem = feedList[settledPage]
+    // Ngay khi ngón tay bắt đầu vuốt kéo chuyển trang: Lập tức tạm dừng video cũ trong 0ms
+    // Triệt tiêu hoàn toàn hiện tượng video cũ chạy lấn sang video tiếp theo
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.isScrollInProgress }
+            .collect { isScrolling ->
+                if (isScrolling) {
+                    MediaPlaybackManager.pauseDirect(context)
+                }
+            }
+    }
 
-                viewModel.getVideoFile(context, currentItem) { file ->
+    // Kích hoạt phát video ngay khi chuyển sang trang mới (không chờ trễ vài trăm ms)
+    LaunchedEffect(pagerState, feedList) {
+        snapshotFlow { pagerState.currentPage }
+            .collect { pageIndex ->
+                if (feedList.isEmpty() || pageIndex !in feedList.indices) return@collect
+                val targetItem = feedList[pageIndex]
+
+                // Nếu video đang phát là video của bài trước: cắt ngay trong 0ms
+                if (MediaPlaybackManager.currentArticleId.value != targetItem.id) {
+                    MediaPlaybackManager.pauseDirect(context)
+                    MediaPlaybackManager.detachSurface()
+                }
+
+                // Phát ngay video trang mới
+                viewModel.getVideoFile(context, targetItem) { file ->
                     MediaPlaybackManager.startPlay(
                         context = context,
                         filePath = file.absolutePath,
-                        title = currentItem.title,
-                        articleId = currentItem.id,
+                        title = targetItem.title,
+                        articleId = targetItem.id,
                         isVideo = true
                     )
                 }
 
-                // Tải trước (preload) video tiếp theo và video trước để vuốt là có ngay
-                if (settledPage + 1 < feedList.size) {
-                    viewModel.preloadVideo(settledPage + 1, feedList, context)
+                // Tải trước (preload) video tiếp theo và video trước để lướt siêu mượt
+                if (pageIndex + 1 < feedList.size) {
+                    viewModel.preloadVideo(pageIndex + 1, feedList, context)
                 }
-                if (settledPage - 1 >= 0) {
-                    viewModel.preloadVideo(settledPage - 1, feedList, context)
+                if (pageIndex - 1 >= 0) {
+                    viewModel.preloadVideo(pageIndex - 1, feedList, context)
                 }
             }
     }
@@ -1567,6 +1585,7 @@ private fun TikTokVideoFeedViewer(
         ) { pageIndex ->
             val item = feedList[pageIndex]
             val isCurrentPage = (pageIndex == pagerState.currentPage)
+            val isThisVideoActive = (currentPlayingArticleId == item.id)
             val videoFile = uiState.videoFilesCache[item.id]
                 ?: if (item.id == initialArticle.id) uiState.localFile else null
 
@@ -1580,7 +1599,8 @@ private fun TikTokVideoFeedViewer(
                 contentAlignment = Alignment.Center
             ) {
                 // 1. Khung hiển thị SurfaceView Video với tỉ lệ khung hình chuẩn
-                // KHÔNG đọc I/O trên Main Thread - tỉ lệ đã được cache sẵn trong ViewModel
+                // Chỉ gắn Surface khi trang này là trang hiện tại VÀ MediaPlayer đang phát đúng video của trang này
+                // Tuyệt đối không hiển thị khung hình của video cũ lên trang mới
                 if (videoFile != null && videoFile.exists()) {
                     val nativeVideoRatio = uiState.videoAspectRatios[item.id]
                         ?: if (videoSize.first > 0 && videoSize.second > 0) {
@@ -1613,7 +1633,7 @@ private fun TikTokVideoFeedViewer(
                                     holder.setKeepScreenOn(true)
                                     holder.addCallback(object : SurfaceHolder.Callback {
                                         override fun surfaceCreated(holder: SurfaceHolder) {
-                                            if (isCurrentPage) {
+                                            if (isCurrentPage && isThisVideoActive) {
                                                 MediaPlaybackManager.attachSurface(holder)
                                             }
                                         }
@@ -1627,7 +1647,7 @@ private fun TikTokVideoFeedViewer(
                                 }
                             },
                             update = { view ->
-                                if (isCurrentPage) {
+                                if (isCurrentPage && isThisVideoActive) {
                                     MediaPlaybackManager.attachSurface(view.holder)
                                 }
                             },
