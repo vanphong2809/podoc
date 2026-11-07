@@ -354,19 +354,19 @@ class OcrViewModel(
                     onSuccess = { res ->
                         recognizedText = res.text
                         rawRecognizedText = res.text
-                        readerNotice = "Trích xuất bởi ${res.modelUsed} Vision (Chính xác 100%)"
+                        readerNotice = "Xử lý bởi ${res.modelUsed}"
                         isReadingWithGemini = false
                         isRecognizing = false
 
                         val firstLine = res.text.lineSequence().firstOrNull { it.isNotBlank() }?.take(40)
                         val timeStr = SimpleDateFormat("HH:mm dd/MM", Locale.getDefault()).format(Date())
-                        documentTitle = firstLine ?: "Tài liệu Gemini Vision ($timeStr)"
+                        documentTitle = firstLine ?: "Tài liệu ($timeStr)"
                     },
                     onFailure = { error ->
                         isReadingWithGemini = false
                         isRecognizing = false
                         val current = activeBitmap ?: originalBitmap ?: bitmap
-                        readerNotice = "⚠️ AI Vision hết hạn mức hoặc lỗi mạng. Đã tự động chuyển sang đọc bằng ML Kit OCR thiết bị."
+                        readerNotice = "Xử lý bởi OCR thiết bị"
                         recognizeWithMlKitOcr(current)
                     }
                 )
@@ -396,12 +396,12 @@ class OcrViewModel(
                     if (response.text.isNotBlank()) {
                         recognizedText = response.text
                         rawRecognizedText = response.text
-                        readerNotice = "Trích xuất bởi ${response.modelUsed} Vision (Chính xác 100%)"
+                        readerNotice = "Xử lý bởi ${GeminiDirectVisionService.formatModelDisplayName(response.modelUsed)}"
                         backendSuccess = true
 
                         val firstLine = response.text.lineSequence().firstOrNull { it.isNotBlank() }?.take(40)
                         val timeStr = SimpleDateFormat("HH:mm dd/MM", Locale.getDefault()).format(Date())
-                        documentTitle = firstLine ?: "Tài liệu AI ($timeStr)"
+                        documentTitle = firstLine ?: "Tài liệu ($timeStr)"
                     }
                 } catch (e: Exception) {
                     backendSuccess = false

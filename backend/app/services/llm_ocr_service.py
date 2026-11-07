@@ -448,6 +448,7 @@ async def read_image_with_gemini(
         raise ValueError("Chưa cấu hình Google Gemini API Key. Bạn hãy bấm biểu tượng chìa khóa ở góc trên để nhập API Key từ Google AI Studio.")
 
     targets_to_try = [
+        ("gemini-3.8-flash", "v1beta"),
         ("gemini-2.0-flash", "v1beta"),
         ("gemini-2.0-flash-exp", "v1beta"),
         ("gemini-1.5-flash", "v1"),
@@ -456,7 +457,6 @@ async def read_image_with_gemini(
         ("gemini-1.5-flash-002", "v1"),
         ("gemini-1.5-pro", "v1"),
         ("gemini-1.5-pro", "v1beta"),
-        ("gemini-3.8-flash", "v1beta"),
     ]
 
     clean_b64 = image_base64

@@ -2,6 +2,7 @@ package com.podoc.app.ui.screens.tools.ocr
 
 import android.graphics.Bitmap
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -9,7 +10,6 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.Collections
 import java.util.concurrent.TimeUnit
 
 data class GeminiVisionResult(
@@ -26,18 +26,15 @@ object GeminiDirectVisionService {
 
     private val httpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(35, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
             .build()
     }
 
-    // Cache danh sách model khả dụng theo API Key để tránh gọi lặp lại nhiều lần
+    // Cache danh sách model khả dụng theo API Key để tăng tốc độ phản hồi
     private var cachedTargets: List<GeminiModelTarget> = emptyList()
     private var cachedApiKey: String = ""
-
-    // Đánh dấu các model đã hết hạn mức Quota (429) trong phiên làm việc để ưu tiên model còn hạn mức
-    private val exhaustedQuotaModels = Collections.synchronizedSet(mutableSetOf<String>())
 
     private val DEFAULT_PROMPT = """
         Hãy đọc và trích xuất TOÀN BỘ văn bản chữ viết có trong hình ảnh này một cách chính xác và trung thực nhất.
@@ -48,14 +45,25 @@ object GeminiDirectVisionService {
     """.trimIndent()
 
     fun resetQuotaCache() {
-        exhaustedQuotaModels.clear()
         cachedApiKey = ""
         cachedTargets = emptyList()
     }
 
+    fun formatModelDisplayName(model: String): String {
+        val clean = model.removePrefix("models/")
+        return when {
+            clean.contains("3.8-flash", ignoreCase = true) -> "Gemini 3.8 Flash"
+            clean.contains("2.0-flash", ignoreCase = true) -> "Gemini 2.0 Flash"
+            clean.contains("1.5-flash", ignoreCase = true) -> "Gemini 1.5 Flash"
+            clean.contains("1.5-pro", ignoreCase = true) -> "Gemini 1.5 Pro"
+            clean.contains("pro", ignoreCase = true) -> "Gemini Pro"
+            else -> clean
+        }
+    }
+
     /**
-     * Tự động truy vấn danh sách mô hình thực tế mà API Key này được cấp phép từ Google ModelService (ListModels).
-     * Quét cả v1beta và v1 để lấy chính xác các model đang hoạt động, loại trừ hoàn toàn lỗi 404.
+     * Tự động truy vấn danh sách mô hình thực tế từ Google ModelService (ListModels).
+     * Luôn luôn ưu tiên Gemini 3.8 Flash ở vị trí đầu tiên.
      */
     suspend fun getAvailableModelTargets(apiKey: String): List<GeminiModelTarget> = withContext(Dispatchers.IO) {
         val cleanKey = apiKey.trim()
@@ -100,7 +108,6 @@ object GeminiDirectVisionService {
                                 rawName
                             }
 
-                            // Chỉ chọn các model text/multimodal, bỏ qua model embedding
                             val lower = cleanName.lowercase()
                             val isEmbeddingOrAqa = lower.contains("embedding") || lower.contains("aqa")
                             val keyName = "$apiVersion/$cleanName"
@@ -117,11 +124,16 @@ object GeminiDirectVisionService {
             }
         }
 
-        // Sắp xếp các model theo thứ tự ưu tiên tối ưu nhất cho Vision OCR
+        // Sắp xếp các model: Gemini 3.8 Flash luôn đứng đầu
         val sorted = discovered.sortedWith { t1, t2 ->
             val s1 = scoreModelTarget(t1)
             val s2 = scoreModelTarget(t2)
             s2.compareTo(s1)
+        }.toMutableList()
+
+        // Đảm bảo gemini-3.8-flash luôn ở vị trí số 1 kể cả khi Google ListModels chưa hiển thị
+        if (!sorted.any { it.model.contains("3.8-flash", ignoreCase = true) }) {
+            sorted.add(0, GeminiModelTarget("gemini-3.8-flash", "v1beta"))
         }
 
         if (sorted.isNotEmpty()) {
@@ -134,8 +146,8 @@ object GeminiDirectVisionService {
 
     private fun scoreModelTarget(target: GeminiModelTarget): Int {
         val lower = target.model.lowercase()
-        var baseScore = when {
-            lower.contains("3.8-flash") -> 120
+        val baseScore = when {
+            lower.contains("3.8-flash") -> 1000 // Điểm cao nhất tuyệt đối
             lower.contains("2.5-flash") -> 110
             lower.contains("2.0-flash") -> 100
             lower.contains("2.0-flash-exp") -> 95
@@ -148,12 +160,6 @@ object GeminiDirectVisionService {
             lower.contains("gemini") -> 50
             else -> 10
         }
-
-        // Nếu model này đã báo lỗi hết Quota (429), giảm mạnh độ ưu tiên để model còn quota được gọi trước
-        if (exhaustedQuotaModels.contains(target.model)) {
-            baseScore -= 1000
-        }
-
         val versionBonus = if (target.apiVersion == "v1beta" && (lower.contains("2.0") || lower.contains("3.8"))) 5 else 0
         return baseScore + versionBonus
     }
@@ -170,7 +176,7 @@ object GeminiDirectVisionService {
         try {
             val targets = getAvailableModelTargets(cleanKey)
             if (targets.isNotEmpty()) {
-                val modelNames = targets.map { "${it.model} (${it.apiVersion})" }.distinct()
+                val modelNames = targets.map { formatModelDisplayName(it.model) }.distinct()
                 Result.success(modelNames)
             } else {
                 val testUrl = "https://generativelanguage.googleapis.com/v1beta/models?key=$cleanKey"
@@ -193,11 +199,9 @@ object GeminiDirectVisionService {
     }
 
     /**
-     * Gọi TRỰC TIẾP Google Gemini API từ thiết bị để trích xuất văn bản từ ảnh:
-     * - Tự thích ứng 100% bằng cách truy vấn danh sách model đang hoạt động của chính API Key đó.
-     * - Tự động nhảy sang model tiếp theo (gemini-2.0-flash, gemini-1.5-flash) nếu model trước đó hết hạn mức Quota (429).
-     * - Tránh hoàn toàn lỗi 404 do lệch version/model.
-     * - Đọc chính xác 100% tiếng Việt có dấu, số, ký hiệu như khi chat trên Google AI Studio.
+     * Trích xuất văn bản từ hình ảnh:
+     * - LUÔN LUÔN ưu tiên chạy Gemini 3.8 Flash ở lượt quét đầu tiên.
+     * - Nếu 3.8 Flash gặp lỗi hoặc hết hạn mức trong lần quét đó, tự động chuyển tiếp mượt mà sang Gemini 2.0 Flash / 1.5 Flash.
      */
     suspend fun extractTextFromBitmap(
         bitmap: Bitmap,
@@ -207,40 +211,42 @@ object GeminiDirectVisionService {
         val cleanKey = apiKey.trim()
         if (cleanKey.isBlank()) {
             return@withContext Result.failure(
-                IllegalArgumentException("Chưa có API Key Google AI Studio. Vui lòng bấm biểu tượng chìa khóa để nhập key.")
+                IllegalArgumentException("Chưa cấu hình API Key. Vui lòng bấm biểu tượng chìa khóa để nhập key.")
             )
         }
 
-        val base64Image = ImagePreprocessor.bitmapToBase64(bitmap, maxDimension = 2048, quality = 90)
+        val base64Image = ImagePreprocessor.bitmapToBase64(bitmap, maxDimension = 1920, quality = 85)
         val prompt = customPrompt ?: DEFAULT_PROMPT
 
-        // Bước 1: Lấy danh sách model thực tế được Google cấp phép cho key này
-        var targetsToTry = getAvailableModelTargets(cleanKey)
-        if (targetsToTry.isEmpty()) {
-            // Danh sách dự phòng đa dạng kết hợp cả v1 và v1beta
-            targetsToTry = listOf(
-                GeminiModelTarget("gemini-2.0-flash", "v1beta"),
-                GeminiModelTarget("gemini-2.0-flash-exp", "v1beta"),
-                GeminiModelTarget("gemini-1.5-flash", "v1"),
-                GeminiModelTarget("gemini-1.5-flash", "v1beta"),
-                GeminiModelTarget("gemini-1.5-flash-latest", "v1beta"),
-                GeminiModelTarget("gemini-1.5-flash-002", "v1"),
-                GeminiModelTarget("gemini-1.5-pro", "v1"),
-                GeminiModelTarget("gemini-1.5-pro", "v1beta"),
-                GeminiModelTarget("gemini-3.8-flash", "v1beta")
-            )
+        val discoveredTargets = getAvailableModelTargets(cleanKey).toMutableList()
+
+        // Đảm bảo gemini-3.8-flash luôn là mục tiêu đầu tiên được thử
+        val targetsToTry = mutableListOf<GeminiModelTarget>()
+        targetsToTry.add(GeminiModelTarget("gemini-3.8-flash", "v1beta"))
+
+        for (target in discoveredTargets) {
+            if (target.model != "gemini-3.8-flash" && !targetsToTry.any { it.model == target.model }) {
+                targetsToTry.add(target)
+            }
         }
 
-        // Tái sắp xếp targets theo mức độ ưu tiên hiện tại (đưa model đã cạn quota xuống cuối)
-        targetsToTry = targetsToTry.sortedWith { t1, t2 ->
-            val s1 = scoreModelTarget(t1)
-            val s2 = scoreModelTarget(t2)
-            s2.compareTo(s1)
+        // Bổ sung các model dự phòng tiêu chuẩn nếu danh sách chưa có
+        val fallbackModels = listOf(
+            GeminiModelTarget("gemini-2.0-flash", "v1beta"),
+            GeminiModelTarget("gemini-2.0-flash-exp", "v1beta"),
+            GeminiModelTarget("gemini-1.5-flash", "v1"),
+            GeminiModelTarget("gemini-1.5-flash", "v1beta"),
+            GeminiModelTarget("gemini-1.5-flash-latest", "v1beta"),
+            GeminiModelTarget("gemini-1.5-pro", "v1")
+        )
+        for (fb in fallbackModels) {
+            if (!targetsToTry.any { it.model == fb.model }) {
+                targetsToTry.add(fb)
+            }
         }
 
         var lastError: Exception? = null
 
-        // Payload JSON chuẩn theo Google Generative Language REST API
         val payloadJson = JSONObject().apply {
             val partsArray = JSONArray().apply {
                 put(JSONObject().apply {
@@ -277,8 +283,18 @@ object GeminiDirectVisionService {
                     .post(requestBody)
                     .build()
 
-                val response = httpClient.newCall(request).execute()
-                val responseString = response.body?.string().orEmpty()
+                var response = httpClient.newCall(request).execute()
+                var responseString = response.body?.string().orEmpty()
+
+                // Nếu 3.8 Flash gặp rate limit ngắn hạn (429 theo phút), chờ nhẹ 1.2s và thử lại 1 lần duy nhất
+                if (response.code == 429 && target.model.contains("3.8-flash")) {
+                    val isDailyLimit = responseString.contains("per day", ignoreCase = true) || responseString.contains("Please retry in", ignoreCase = true)
+                    if (!isDailyLimit) {
+                        delay(1200)
+                        response = httpClient.newCall(request).execute()
+                        responseString = response.body?.string().orEmpty()
+                    }
+                }
 
                 if (!response.isSuccessful) {
                     val errorMsg = try {
@@ -288,21 +304,12 @@ object GeminiDirectVisionService {
                         "HTTP ${response.code}: $responseString"
                     }
 
-                    // Nếu 429: Hết hạn mức lượt gọi (Quota Exceeded / Free Tier daily limit) của model này
-                    // Ghi nhận và tự động thử ngay model tiếp theo (ví dụ từ 3.8-flash -> 2.0-flash / 1.5-flash)
-                    if (response.code == 429) {
-                        exhaustedQuotaModels.add(target.model)
-                        lastError = Exception("Mô hình ${target.model} (${target.apiVersion}) hết hạn mức ngày (429 Quota Exceeded), tự động chuyển sang mô hình tiếp theo.")
-                        continue
-                    }
-
-                    // Nếu 404 (model chưa hỗ trợ endpoint này), 503 (quá tải), 400 (lỗi param), 403 (cần billing riêng)
+                    // Nếu 429 (hết hạn mức) hoặc 404, 503, 400: chuyển tiếp ngay sang model tiếp theo (2.0-flash, 1.5-flash)
                     val isKeyInvalid = errorMsg.contains("API_KEY_INVALID", ignoreCase = true) || errorMsg.contains("API key not valid", ignoreCase = true)
-                    if (!isKeyInvalid && (response.code == 404 || response.code == 503 || response.code == 400 || response.code == 403)) {
-                        lastError = Exception("Mô hình ${target.model} (${target.apiVersion}) trả về mã ${response.code}: $errorMsg")
+                    if (!isKeyInvalid && (response.code == 429 || response.code == 404 || response.code == 503 || response.code == 400 || response.code == 403)) {
+                        lastError = Exception("${formatModelDisplayName(target.model)} (${response.code}): $errorMsg")
                         continue
                     } else {
-                        // Lỗi khóa API hoàn toàn không hợp lệ
                         return@withContext Result.failure(Exception("Lỗi Google API: $errorMsg"))
                     }
                 }
@@ -310,7 +317,7 @@ object GeminiDirectVisionService {
                 val jsonRes = JSONObject(responseString)
                 val candidates = jsonRes.optJSONArray("candidates")
                 if (candidates == null || candidates.length() == 0) {
-                    lastError = Exception("${target.model} không trả về kết quả.")
+                    lastError = Exception("${formatModelDisplayName(target.model)} không trả về kết quả.")
                     continue
                 }
 
@@ -318,7 +325,7 @@ object GeminiDirectVisionService {
                 val content = firstCand.optJSONObject("content")
                 val parts = content?.optJSONArray("parts")
                 if (parts == null || parts.length() == 0) {
-                    lastError = Exception("${target.model} trả về nội dung rỗng.")
+                    lastError = Exception("${formatModelDisplayName(target.model)} trả về nội dung rỗng.")
                     continue
                 }
 
@@ -334,7 +341,7 @@ object GeminiDirectVisionService {
                     return@withContext Result.success(
                         GeminiVisionResult(
                             text = extractedText,
-                            modelUsed = target.model
+                            modelUsed = formatModelDisplayName(target.model)
                         )
                     )
                 }
@@ -343,6 +350,6 @@ object GeminiDirectVisionService {
             }
         }
 
-        Result.failure(lastError ?: Exception("Không thể đọc ảnh bằng Gemini Vision. Vui lòng kiểm tra lại kết nối mạng hoặc API Key."))
+        Result.failure(lastError ?: Exception("Không thể đọc ảnh bằng AI. Vui lòng kiểm tra lại kết nối mạng hoặc API Key."))
     }
 }

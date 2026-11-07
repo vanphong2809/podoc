@@ -83,7 +83,7 @@ fun OcrScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Gemini 3.8 Flash Vision (Chính xác) + Fallback OCR",
+                            text = "Số hóa tài liệu & bóc tách dữ liệu",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -174,7 +174,7 @@ fun OcrScreen(
                         Spacer(modifier = Modifier.height(4.dp))
 
                         Text(
-                            text = "Chụp hoặc chọn ảnh tài liệu, CCCD, hóa đơn. Hỗ trợ khoanh vùng ROI viền xanh chỉ quét thông tin mong muốn và AI bóc tách JSON theo schema.",
+                            text = "Chụp hoặc chọn ảnh tài liệu, giấy tờ, hóa đơn để quét và số hóa nội dung.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 8.dp)
@@ -193,21 +193,25 @@ fun OcrScreen(
                                     containerColor = Color(0xFF7C3AED),
                                     contentColor = Color.White
                                 ),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp)
                             ) {
                                 Icon(imageVector = Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Chụp ảnh", fontWeight = FontWeight.Bold)
+                                Text("Chụp ảnh", fontWeight = FontWeight.SemiBold)
                             }
 
                             OutlinedButton(
                                 onClick = { imagePickerLauncher.launch("image/*") },
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp)
                             ) {
                                 Icon(imageVector = Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Chọn từ máy", fontWeight = FontWeight.Bold)
+                                Text("Chọn từ máy", fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
@@ -248,7 +252,7 @@ fun OcrScreen(
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = "Đang quét vùng chọn ROI (Đã lọc viền thừa)",
+                                            text = "Vùng quét tùy chọn (ROI)",
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.SemiBold,
                                             color = Color(0xFF00838F)
@@ -260,7 +264,7 @@ fun OcrScreen(
                                         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                                         modifier = Modifier.height(28.dp)
                                     ) {
-                                        Text("Khôi phục ảnh gốc", fontSize = 11.sp, color = Color(0xFF00838F))
+                                        Text("Bỏ chọn vùng", fontSize = 11.sp, color = Color(0xFF00838F))
                                     }
                                 }
                             }
@@ -300,25 +304,21 @@ fun OcrScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Button(
+                            FilledTonalButton(
                                 onClick = { viewModel.openCropDialog() },
                                 shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF00E5FF).copy(alpha = 0.15f),
-                                    contentColor = Color(0xFF00838F)
-                                ),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                modifier = Modifier.height(34.dp)
+                                modifier = Modifier.height(36.dp)
                             ) {
                                 Icon(imageVector = Icons.Default.Crop, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Khoanh vùng (ROI)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("Khoanh vùng", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             }
 
                             FilterChip(
                                 selected = viewModel.isEnhanceContrastEnabled,
                                 onClick = { viewModel.toggleEnhanceContrast() },
-                                label = { Text("Tăng nét", fontSize = 11.sp) },
+                                label = { Text("Tăng nét", fontSize = 12.sp) },
                                 leadingIcon = {
                                     Icon(
                                         imageVector = if (viewModel.isEnhanceContrastEnabled) Icons.Default.Contrast else Icons.Default.FilterNone,
@@ -326,10 +326,10 @@ fun OcrScreen(
                                         modifier = Modifier.size(14.dp)
                                     )
                                 },
-                                modifier = Modifier.height(34.dp)
+                                modifier = Modifier.height(36.dp)
                             )
 
-                            TextButton(
+                            OutlinedButton(
                                 onClick = {
                                     if (viewModel.originalBitmap != null) {
                                         cameraLauncher.launch(null)
@@ -337,8 +337,9 @@ fun OcrScreen(
                                         imagePickerLauncher.launch("image/*")
                                     }
                                 },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                modifier = Modifier.height(34.dp)
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(36.dp)
                             ) {
                                 Icon(imageVector = Icons.Default.SwapHoriz, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
@@ -372,15 +373,15 @@ fun OcrScreen(
                         Spacer(modifier = Modifier.width(14.dp))
                         Column {
                             Text(
-                                text = if (isGemini) "Gemini 3.8 Flash đang đọc văn bản..." else "Đang nhận dạng văn bản bằng OCR thiết bị...",
+                                text = if (isGemini) "Đang đọc văn bản với AI Vision..." else "Đang nhận dạng văn bản...",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF7C3AED)
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = if (isGemini) "Multimodal Vision đọc trực tiếp ảnh (chính xác như trong chat)"
-                                else "Sử dụng Google ML Kit nội bộ + Tiền xử lý + Sửa lỗi",
+                                text = if (isGemini) "Phân tích và trích xuất chi tiết từ hình ảnh"
+                                else "Sử dụng công cụ nhận dạng trên thiết bị",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -410,14 +411,14 @@ fun OcrScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "BÓC TÁCH THÔNG TIN AI (KIE)",
+                                text = "TRÍCH XUẤT DỮ LIỆU CẤU TRÚC",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF7C3AED)
                             )
 
                             Text(
-                                text = if (viewModel.geminiApiKey.isNotBlank()) "Gemini 3.8 Flash" else "Chế độ Heuristic",
+                                text = if (viewModel.geminiApiKey.isNotBlank()) "Gemini 3.8 Flash" else "Chế độ ngoại tuyến",
                                 fontSize = 11.sp,
                                 color = if (viewModel.geminiApiKey.isNotBlank()) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -440,12 +441,12 @@ fun OcrScreen(
                                 FilterChip(
                                     selected = selected,
                                     onClick = { viewModel.setDocType(typeKey) },
-                                    label = { Text(label, fontSize = 11.sp) },
+                                    label = { Text(label, fontSize = 12.sp) },
                                     colors = FilterChipDefaults.filterChipColors(
                                         selectedContainerColor = Color(0xFF7C3AED),
                                         selectedLabelColor = Color.White
                                     ),
-                                    modifier = Modifier.height(32.dp)
+                                    modifier = Modifier.height(34.dp)
                                 )
                             }
                         }
@@ -461,22 +462,24 @@ fun OcrScreen(
                                 contentColor = Color.White
                             ),
                             enabled = !viewModel.isExtractingAi,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
                         ) {
                             if (viewModel.isExtractingAi) {
-                                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp))
+                                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("AI đang bóc tách & sửa lỗi ngữ cảnh...", fontWeight = FontWeight.Bold)
+                                Text("Đang phân tích & trích xuất dữ liệu...", fontWeight = FontWeight.SemiBold)
                             } else {
                                 Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Bóc tách & Chuẩn hóa theo Schema (AI)", fontWeight = FontWeight.Bold)
+                                Text("Trích xuất thông tin chi tiết", fontWeight = FontWeight.Bold)
                             }
                         }
                     }
                 }
 
-                // TAB CHUYỂN ĐỔI: [Văn bản sạch] vs [Dữ liệu bóc tách AI]
+                // TAB CHUYỂN ĐỔI: [Văn bản] vs [Thông tin chi tiết]
                 TabRow(
                     selectedTabIndex = viewModel.activeTab,
                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
@@ -488,14 +491,14 @@ fun OcrScreen(
                     Tab(
                         selected = viewModel.activeTab == 0,
                         onClick = { viewModel.switchTab(0) },
-                        text = { Text("Văn bản sạch (${viewModel.recognizedText.lines().filter { it.isNotBlank() }.size} dòng)") }
+                        text = { Text("Văn bản (${viewModel.recognizedText.lines().filter { it.isNotBlank() }.size} dòng)") }
                     )
                     Tab(
                         selected = viewModel.activeTab == 1,
                         onClick = { viewModel.switchTab(1) },
                         text = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Dữ liệu bóc tách (AI)")
+                                Text("Thông tin chi tiết")
                                 if (viewModel.structuredResult != null) {
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Icon(
@@ -575,7 +578,7 @@ fun OcrScreen(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "Đã tự động sửa ${viewModel.corrections.size} điểm nhầm lẫn chính tả / số liệu",
+                                        text = "Đã chuẩn hóa ${viewModel.corrections.size} lỗi chính tả & định dạng",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = Color(0xFF047857)
@@ -591,7 +594,7 @@ fun OcrScreen(
                         }
                     }
 
-                    // Chuyển đổi qua lại giữa Văn bản sạch và Văn bản gốc
+                    // Chuyển đổi qua lại giữa Văn bản chuẩn hóa và Văn bản gốc
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -607,7 +610,7 @@ fun OcrScreen(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "Tự động sửa lỗi",
+                                text = "Tự động chuẩn hóa lỗi",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Medium
                             )
@@ -625,7 +628,7 @@ fun OcrScreen(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = if (viewModel.isShowingCleaned) "Xem bản OCR gốc" else "Xem bản đã sửa",
+                                text = if (viewModel.isShowingCleaned) "Xem bản gốc" else "Xem bản chuẩn hóa",
                                 fontSize = 11.sp
                             )
                         }
@@ -656,11 +659,13 @@ fun OcrScreen(
                                 Toast.makeText(context, "Đã sao chép văn bản", Toast.LENGTH_SHORT).show()
                             },
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
                         ) {
                             Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Sao chép", maxLines = 1)
+                            Text("Sao chép", maxLines = 1, fontWeight = FontWeight.SemiBold)
                         }
 
                         OutlinedButton(
@@ -672,11 +677,13 @@ fun OcrScreen(
                                 context.startActivity(Intent.createChooser(shareIntent, "Chia sẻ văn bản OCR"))
                             },
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
                         ) {
                             Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Chia sẻ", maxLines = 1)
+                            Text("Chia sẻ", maxLines = 1, fontWeight = FontWeight.SemiBold)
                         }
 
                         Button(
@@ -689,7 +696,9 @@ fun OcrScreen(
                                 containerColor = Color(0xFF7C3AED),
                                 contentColor = Color.White
                             ),
-                            modifier = Modifier.weight(1.3f)
+                            modifier = Modifier
+                                .weight(1.3f)
+                                .height(44.dp)
                         ) {
                             Icon(imageVector = Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
@@ -726,7 +735,7 @@ fun OcrScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Hãy bấm nút 'Bóc tách & Chuẩn hóa theo Schema (AI)' phía trên để AI tự động lọc bỏ văn bản rác và điền vào các trường chuẩn.",
+                                    text = "Bấm nút 'Trích xuất thông tin chi tiết' phía trên để hệ thống tự động phân loại và trích xuất các trường thông tin quan trọng.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -857,7 +866,7 @@ fun OcrScreen(
                             ) {
                                 Column(modifier = Modifier.padding(10.dp)) {
                                     Text(
-                                        text = "Ghi chú sửa lỗi chính tả ngữ cảnh:",
+                                        text = "Ghi chú chuẩn hóa dữ liệu:",
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -889,11 +898,13 @@ fun OcrScreen(
                                     Toast.makeText(context, "Đã sao chép JSON vào bộ nhớ tạm", Toast.LENGTH_SHORT).show()
                                 },
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp)
                             ) {
                                 Icon(imageVector = Icons.Default.Code, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Copy JSON", maxLines = 1)
+                                Text("Sao chép JSON", maxLines = 1, fontWeight = FontWeight.SemiBold)
                             }
 
                             Button(
@@ -906,11 +917,13 @@ fun OcrScreen(
                                     containerColor = Color(0xFF7C3AED),
                                     contentColor = Color.White
                                 ),
-                                modifier = Modifier.weight(1.4f)
+                                modifier = Modifier
+                                    .weight(1.3f)
+                                    .height(44.dp)
                             ) {
                                 Icon(imageVector = Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Lưu bảng vào Thư viện", maxLines = 1, fontWeight = FontWeight.Bold)
+                                Text("Lưu vào Thư viện", maxLines = 1, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -945,12 +958,12 @@ fun OcrScreen(
                 )
             },
             title = {
-                Text("Cấu hình Google Gemini 3.8 Flash API", fontWeight = FontWeight.Bold)
+                Text("Cấu hình Gemini API Key", fontWeight = FontWeight.Bold)
             },
             text = {
                 Column {
                     Text(
-                        text = "Nhập Google AI Studio API Key cá nhân của bạn để sử dụng mô hình Gemini Multimodal Vision đọc chính xác 100% tiếng Việt trực tiếp từ thiết bị:",
+                        text = "Nhập Google Gemini API Key của bạn để sử dụng mô hình AI Vision nhận dạng trực tiếp từ hình ảnh:",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1016,7 +1029,7 @@ fun OcrScreen(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Hệ thống sẽ tự động phát hiện model Gemini tốt nhất (3.8-Flash / 2.0-Flash / 1.5-Flash) được cấp phép cho key của bạn.",
+                        text = "Hệ thống luôn ưu tiên sử dụng model Gemini tốt nhất (3.8 Flash) và tự động tối ưu hóa khi quét tài liệu.",
                         style = MaterialTheme.typography.bodySmall,
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1135,7 +1148,7 @@ fun OcrScreen(
             onDismissRequest = { showSaveDialog = false },
             title = {
                 Text(
-                    text = if (saveAsStructured) "Lưu bảng dữ liệu vào Thư viện" else "Lưu văn bản vào Thư viện",
+                    text = if (saveAsStructured) "Lưu bảng dữ liệu" else "Lưu văn bản",
                     fontWeight = FontWeight.Bold
                 )
             },
@@ -1274,7 +1287,7 @@ fun OcrScreen(
                             },
                             shape = RoundedCornerShape(10.dp)
                         ) {
-                            Text("Dùng OCR máy")
+                            Text("Dùng OCR thiết bị")
                         }
                     }
 
