@@ -12,7 +12,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
@@ -196,12 +205,25 @@ class MainActivity : ComponentActivity() {
                     },
                     floatingActionButton = {
                         if (currentRoute in listOf(Screen.Library.route, Screen.Categories.route)) {
-                            FloatingActionButton(
-                                onClick = { showAddSheet = true },
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            Box(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .shadow(elevation = 8.dp, shape = CircleShape, spotColor = Color(0x664F46E5))
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(Color(0xFF6366F1), Color(0xFF4338CA))
+                                        )
+                                    )
+                                    .clickable { showAddSheet = true },
+                                contentAlignment = Alignment.Center
                             ) {
-                                Icon(imageVector = Icons.Default.Add, contentDescription = "Thêm mới")
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Thêm mới",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(28.dp)
+                                )
                             }
                         }
                     }

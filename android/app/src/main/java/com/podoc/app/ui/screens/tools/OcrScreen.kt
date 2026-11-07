@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -130,14 +131,15 @@ fun OcrScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
 
-            // Khu vực chọn/chụp ảnh ban đầu
+            // Khu vực chọn/chụp ảnh ban đầu (theo redesign 05_ocr_screen_main_redesign.png)
             if (viewModel.activeBitmap == null && viewModel.originalBitmap == null && viewModel.imageUri == null) {
                 Card(
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(24.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                        containerColor = MaterialTheme.colorScheme.surface
                     ),
-                    border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                    border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 16.dp)
@@ -145,76 +147,123 @@ fun OcrScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(24.dp),
+                            .padding(28.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        // Đồ họa minh họa 3D tài liệu kính mờ
                         Box(
                             modifier = Modifier
-                                .size(64.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF7C3AED).copy(alpha = 0.12f)),
+                                .size(88.dp)
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(
+                                    androidx.compose.ui.graphics.Brush.linearGradient(
+                                        listOf(Color(0xFFEEF2FF), Color(0xFFE0E7FF))
+                                    )
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.DocumentScanner,
-                                contentDescription = null,
-                                tint = Color(0xFF7C3AED),
-                                modifier = Modifier.size(36.dp)
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(54.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(
+                                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                                            listOf(Color(0xFF6366F1), Color(0xFF4338CA))
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DocumentScanner,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(30.dp)
+                                )
+                            }
                         }
 
-                        Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(18.dp))
 
                         Text(
                             text = "Chọn hình ảnh cần nhận dạng",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp
                         )
 
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
 
                         Text(
                             text = "Chụp hoặc chọn ảnh tài liệu, giấy tờ, hóa đơn để quét và số hóa nội dung.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 8.dp)
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 12.dp)
                         )
 
-                        Spacer(modifier = Modifier.height(20.dp))
+                        Spacer(modifier = Modifier.height(24.dp))
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Button(
                                 onClick = { cameraLauncher.launch(null) },
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(14.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF7C3AED),
+                                    containerColor = Color(0xFF4F46E5),
                                     contentColor = Color.White
                                 ),
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(44.dp)
+                                    .height(46.dp)
                             ) {
                                 Icon(imageVector = Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Chụp ảnh", fontWeight = FontWeight.SemiBold)
+                                Text("Chụp ảnh", fontWeight = FontWeight.Bold)
                             }
 
                             OutlinedButton(
                                 onClick = { imagePickerLauncher.launch("image/*") },
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.2.dp, Color(0xFFCBD5E1)),
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(44.dp)
+                                    .height(46.dp)
                             ) {
-                                Icon(imageVector = Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Icon(
+                                    imageVector = Icons.Default.PhotoLibrary,
+                                    contentDescription = null,
+                                    tint = Color(0xFF4F46E5),
+                                    modifier = Modifier.size(18.dp)
+                                )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Chọn từ máy", fontWeight = FontWeight.SemiBold)
+                                Text("Chọn từ máy", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                             }
                         }
                     }
+                }
+
+                // Thanh 3 tính năng bảo mật / tốc độ dưới cùng
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FeatureBadgeItem(
+                        icon = Icons.Default.Security,
+                        label = "Bảo mật trên máy"
+                    )
+                    FeatureBadgeItem(
+                        icon = Icons.Default.Bolt,
+                        label = "Nhanh & chính xác"
+                    )
+                    FeatureBadgeItem(
+                        icon = Icons.Default.WifiOff,
+                        label = "Ngoại tuyến"
+                    )
                 }
             } else {
                 // Card xem trước hình ảnh và thanh công cụ xử lý ảnh
@@ -395,36 +444,37 @@ fun OcrScreen(
 
                 // KHỐI CHỌN LOẠI TÀI LIỆU VÀ NÚT GỌI AI BÓC TÁCH KIE
                 Card(
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFF7C3AED).copy(alpha = 0.06f)
+                        containerColor = Color(0xFFEEF2FF)
                     ),
-                    border = BorderStroke(1.2.dp, Color(0xFF7C3AED).copy(alpha = 0.25f)),
+                    border = BorderStroke(1.2.dp, Color(0xFFC7D2FE)),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 14.dp)
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
+                    Column(modifier = Modifier.padding(16.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "TRÍCH XUẤT DỮ LIỆU CẤU TRÚC",
+                                text = "TRÍCH XUẤT DỮ LIỆU CẤU TRÚC (KIE)",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF7C3AED)
+                                color = Color(0xFF4338CA)
                             )
 
                             Text(
                                 text = if (viewModel.geminiApiKey.isNotBlank()) "Gemini 3.8 Flash" else "Chế độ ngoại tuyến",
-                                fontSize = 11.sp,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.SemiBold,
                                 color = if (viewModel.geminiApiKey.isNotBlank()) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
                         // Chọn loại tài liệu (Chung, CCCD, Hóa đơn, Danh thiếp)
                         Row(
@@ -442,8 +492,9 @@ fun OcrScreen(
                                     selected = selected,
                                     onClick = { viewModel.setDocType(typeKey) },
                                     label = { Text(label, fontSize = 12.sp) },
+                                    shape = RoundedCornerShape(10.dp),
                                     colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = Color(0xFF7C3AED),
+                                        selectedContainerColor = Color(0xFF4F46E5),
                                         selectedLabelColor = Color.White
                                     ),
                                     modifier = Modifier.height(34.dp)
@@ -451,14 +502,14 @@ fun OcrScreen(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         // Nút kích hoạt AI Trích xuất
                         Button(
                             onClick = { viewModel.extractStructuredWithAi() },
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(14.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF7C3AED),
+                                containerColor = Color(0xFF4F46E5),
                                 contentColor = Color.White
                             ),
                             enabled = !viewModel.isExtractingAi,
@@ -482,23 +533,39 @@ fun OcrScreen(
                 // TAB CHUYỂN ĐỔI: [Văn bản] vs [Thông tin chi tiết]
                 TabRow(
                     selectedTabIndex = viewModel.activeTab,
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    indicator = { tabPositions ->
+                        TabRowDefaults.SecondaryIndicator(
+                            Modifier.tabIndicatorOffset(tabPositions[viewModel.activeTab]),
+                            color = Color(0xFF4F46E5)
+                        )
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(14.dp))
                         .padding(bottom = 12.dp)
                 ) {
                     Tab(
                         selected = viewModel.activeTab == 0,
                         onClick = { viewModel.switchTab(0) },
-                        text = { Text("Văn bản (${viewModel.recognizedText.lines().filter { it.isNotBlank() }.size} dòng)") }
+                        text = {
+                            Text(
+                                "Văn bản (${viewModel.recognizedText.lines().filter { it.isNotBlank() }.size} dòng)",
+                                fontWeight = if (viewModel.activeTab == 0) FontWeight.Bold else FontWeight.Normal,
+                                color = if (viewModel.activeTab == 0) Color(0xFF4F46E5) else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     )
                     Tab(
                         selected = viewModel.activeTab == 1,
                         onClick = { viewModel.switchTab(1) },
                         text = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Thông tin chi tiết")
+                                Text(
+                                    "Dữ liệu cấu trúc",
+                                    fontWeight = if (viewModel.activeTab == 1) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (viewModel.activeTab == 1) Color(0xFF4F46E5) else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                                 if (viewModel.structuredResult != null) {
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Icon(
@@ -516,15 +583,43 @@ fun OcrScreen(
                 // NỘI DUNG THEO TAB ĐANG CHỌN
                 if (viewModel.activeTab == 0) {
                     // TAB 0: VĂN BẢN SẠCH & SỬA LỖI HEURISTIC
-                    val words = viewModel.recognizedText.split("\\s+".toRegex()).filter { it.isNotBlank() }.size
                     val lines = viewModel.recognizedText.lines().filter { it.isNotBlank() }.size
+
+                    // Tiêu đề khu vực văn bản và Badge số dòng
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Nội dung văn bản đã nhận dạng",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        Surface(
+                            color = Color(0xFFEEF2FF),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(
+                                text = "$lines dòng",
+                                color = Color(0xFF4338CA),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
 
                     // Huy hiệu thông báo nguồn nhận dạng (Gemini 3.8 Flash hoặc ML Kit)
                     if (viewModel.readerNotice != null) {
                         Surface(
-                            color = Color(0xFF7C3AED).copy(alpha = 0.09f),
+                            color = Color(0xFFEEF2FF),
                             shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.dp, Color(0xFF7C3AED).copy(alpha = 0.25f)),
+                            border = BorderStroke(1.dp, Color(0xFFC7D2FE)),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = 10.dp)
@@ -536,7 +631,7 @@ fun OcrScreen(
                                 Icon(
                                     imageVector = Icons.Default.AutoAwesome,
                                     contentDescription = null,
-                                    tint = Color(0xFF7C3AED),
+                                    tint = Color(0xFF4F46E5),
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
@@ -544,7 +639,7 @@ fun OcrScreen(
                                     text = viewModel.readerNotice ?: "",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFF7C3AED)
+                                    color = Color(0xFF4338CA)
                                 )
                             }
                         }
@@ -638,7 +733,7 @@ fun OcrScreen(
                     OutlinedTextField(
                         value = viewModel.recognizedText,
                         onValueChange = { viewModel.updateRecognizedText(it) },
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(18.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 160.dp, max = 340.dp)
@@ -646,7 +741,7 @@ fun OcrScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Các nút tác vụ nhanh cho văn bản thuần
+                    // Các nút tác vụ nhanh cho văn bản thuần (theo redesign 09_ocr_actions_screen_redesign.png)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -658,10 +753,11 @@ fun OcrScreen(
                                 clipboard?.setPrimaryClip(clip)
                                 Toast.makeText(context, "Đã sao chép văn bản", Toast.LENGTH_SHORT).show()
                             },
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
                             modifier = Modifier
                                 .weight(1f)
-                                .height(44.dp)
+                                .height(46.dp)
                         ) {
                             Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
@@ -676,10 +772,11 @@ fun OcrScreen(
                                 }
                                 context.startActivity(Intent.createChooser(shareIntent, "Chia sẻ văn bản OCR"))
                             },
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
                             modifier = Modifier
                                 .weight(1f)
-                                .height(44.dp)
+                                .height(46.dp)
                         ) {
                             Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
@@ -691,14 +788,14 @@ fun OcrScreen(
                                 saveAsStructured = false
                                 showSaveDialog = true
                             },
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(14.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF7C3AED),
+                                containerColor = Color(0xFF4F46E5),
                                 contentColor = Color.White
                             ),
                             modifier = Modifier
                                 .weight(1.3f)
-                                .height(44.dp)
+                                .height(46.dp)
                         ) {
                             Icon(imageVector = Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
@@ -712,7 +809,7 @@ fun OcrScreen(
                     if (result == null) {
                         Surface(
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(14.dp),
+                            shape = RoundedCornerShape(16.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 20.dp)
@@ -721,22 +818,31 @@ fun OcrScreen(
                                 modifier = Modifier.padding(24.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.AutoAwesome,
-                                    contentDescription = null,
-                                    tint = Color(0xFF7C3AED),
-                                    modifier = Modifier.size(36.dp)
-                                )
-                                Spacer(modifier = Modifier.height(10.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFEEF2FF)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AutoAwesome,
+                                        contentDescription = null,
+                                        tint = Color(0xFF4F46E5),
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
                                 Text(
-                                    text = "Chưa có dữ liệu bóc tách",
+                                    text = "Chưa có dữ liệu cấu trúc",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp
+                                    fontSize = 16.sp
                                 )
-                                Spacer(modifier = Modifier.height(4.dp))
+                                Spacer(modifier = Modifier.height(6.dp))
                                 Text(
-                                    text = "Bấm nút 'Trích xuất thông tin chi tiết' phía trên để hệ thống tự động phân loại và trích xuất các trường thông tin quan trọng.",
+                                    text = "Bấm nút 'Trích xuất thông tin chi tiết' phía trên để hệ thống tự động phân loại và bóc tách các trường thông tin quan trọng.",
                                     style = MaterialTheme.typography.bodySmall,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
@@ -744,18 +850,18 @@ fun OcrScreen(
                     } else {
                         // Thẻ kết quả Validation
                         Surface(
-                            color = if (result.validation.isValid) Color(0xFF10B981).copy(alpha = 0.12f) else Color(0xFFF59E0B).copy(alpha = 0.12f),
-                            shape = RoundedCornerShape(12.dp),
+                            color = if (result.validation.isValid) Color(0xFFECFDF5) else Color(0xFFFFFBEB),
+                            shape = RoundedCornerShape(14.dp),
                             border = BorderStroke(
                                 1.dp,
-                                if (result.validation.isValid) Color(0xFF10B981).copy(alpha = 0.4f) else Color(0xFFF59E0B).copy(alpha = 0.4f)
+                                if (result.validation.isValid) Color(0xFFA7F3D0) else Color(0xFFFDE68A)
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = 12.dp)
                         ) {
                             Row(
-                                modifier = Modifier.padding(12.dp),
+                                modifier = Modifier.padding(14.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
@@ -766,12 +872,12 @@ fun OcrScreen(
                                         tint = if (result.validation.isValid) Color(0xFF059669) else Color(0xFFD97706),
                                         modifier = Modifier.size(22.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Spacer(modifier = Modifier.width(10.dp))
                                     Column {
                                         Text(
                                             text = if (result.validation.isValid) "Dữ liệu hợp lệ theo quy chuẩn" else "Cần kiểm tra lại một số trường",
                                             fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp,
+                                            fontSize = 13.5.sp,
                                             color = if (result.validation.isValid) Color(0xFF047857) else Color(0xFFB45309)
                                         )
                                         if (result.validation.warnings.isNotEmpty()) {
@@ -785,14 +891,15 @@ fun OcrScreen(
                                 }
 
                                 Surface(
-                                    color = Color.White.copy(alpha = 0.8f),
-                                    shape = RoundedCornerShape(6.dp)
+                                    color = Color.White.copy(alpha = 0.9f),
+                                    shape = RoundedCornerShape(8.dp)
                                 ) {
                                     Text(
                                         text = "${(result.validation.score * 100).toInt()}% tin cậy",
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 11.sp,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        fontSize = 11.5.sp,
+                                        color = if (result.validation.isValid) Color(0xFF047857) else Color(0xFFB45309),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                     )
                                 }
                             }
@@ -807,16 +914,17 @@ fun OcrScreen(
                                 val valueStr = jsonElem.jsonPrimitive.contentOrNull ?: jsonElem.toString().replace("\"", "")
                                 if (valueStr.isNotBlank() && valueStr != "null") {
                                     Card(
-                                        shape = RoundedCornerShape(12.dp),
+                                        shape = RoundedCornerShape(14.dp),
                                         colors = CardDefaults.cardColors(
-                                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                            containerColor = MaterialTheme.colorScheme.surface
                                         ),
+                                        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                                .padding(horizontal = 14.dp, vertical = 12.dp),
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
@@ -824,14 +932,14 @@ fun OcrScreen(
                                                 Text(
                                                     text = mapFieldKeyToLabel(key),
                                                     style = MaterialTheme.typography.labelSmall,
-                                                    color = Color(0xFF7C3AED),
-                                                    fontWeight = FontWeight.SemiBold
+                                                    color = Color(0xFF4F46E5),
+                                                    fontWeight = FontWeight.Bold
                                                 )
                                                 Spacer(modifier = Modifier.height(2.dp))
                                                 Text(
                                                     text = valueStr,
                                                     style = MaterialTheme.typography.bodyMedium,
-                                                    fontWeight = FontWeight.Bold
+                                                    fontWeight = FontWeight.SemiBold
                                                 )
                                             }
 
@@ -847,6 +955,7 @@ fun OcrScreen(
                                                 Icon(
                                                     imageVector = Icons.Default.ContentCopy,
                                                     contentDescription = "Sao chép trường này",
+                                                    tint = Color(0xFF64748B),
                                                     modifier = Modifier.size(16.dp)
                                                 )
                                             }
@@ -861,21 +970,22 @@ fun OcrScreen(
                             Spacer(modifier = Modifier.height(10.dp))
                             Surface(
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(modifier = Modifier.padding(10.dp)) {
+                                Column(modifier = Modifier.padding(12.dp)) {
                                     Text(
                                         text = "Ghi chú chuẩn hóa dữ liệu:",
                                         style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Spacer(modifier = Modifier.height(4.dp))
                                     result.confidenceNotes.forEach { note ->
                                         Text(
                                             text = "• $note",
                                             style = MaterialTheme.typography.bodySmall,
-                                            fontSize = 11.sp,
+                                            fontSize = 11.5.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
@@ -897,10 +1007,11 @@ fun OcrScreen(
                                     clipboard?.setPrimaryClip(clip)
                                     Toast.makeText(context, "Đã sao chép JSON vào bộ nhớ tạm", Toast.LENGTH_SHORT).show()
                                 },
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(44.dp)
+                                    .height(46.dp)
                             ) {
                                 Icon(imageVector = Icons.Default.Code, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
@@ -912,14 +1023,14 @@ fun OcrScreen(
                                     saveAsStructured = true
                                     showSaveDialog = true
                                 },
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(14.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF7C3AED),
+                                    containerColor = Color(0xFF4F46E5),
                                     contentColor = Color.White
                                 ),
                                 modifier = Modifier
                                     .weight(1.3f)
-                                    .height(44.dp)
+                                    .height(46.dp)
                             ) {
                                 Icon(imageVector = Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
@@ -945,29 +1056,42 @@ fun OcrScreen(
         )
     }
 
-    // Dialog cấu hình Google Gemini API Key
+    // Dialog cấu hình Google Gemini API Key (theo redesign 06_ocr_api_key_dialog_redesign.png)
     if (viewModel.showApiKeyDialog) {
         AlertDialog(
             onDismissRequest = { viewModel.showApiKeyDialog = false },
             icon = {
-                Icon(
-                    imageVector = Icons.Default.Key,
-                    contentDescription = null,
-                    tint = Color(0xFF7C3AED),
-                    modifier = Modifier.size(32.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFEEF2FF)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Key,
+                        contentDescription = null,
+                        tint = Color(0xFF4F46E5),
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
             },
             title = {
-                Text("Cấu hình Gemini API Key", fontWeight = FontWeight.Bold)
+                Text(
+                    text = "Cấu hình Gemini API Key",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
             },
             text = {
                 Column {
                     Text(
-                        text = "Nhập Google Gemini API Key của bạn để sử dụng mô hình AI Vision nhận dạng trực tiếp từ hình ảnh:",
+                        text = "Nhập khóa API cá nhân của bạn để sử dụng các tính năng nâng cao (KIE, trích xuất cấu trúc):",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
                     OutlinedTextField(
                         value = tempApiKey,
                         onValueChange = {
@@ -975,11 +1099,21 @@ fun OcrScreen(
                             viewModel.clearApiKeyTestResult()
                         },
                         placeholder = { Text("AIzaSy...") },
+                        leadingIcon = {
+                            Icon(Icons.Default.Key, contentDescription = null, tint = Color(0xFF4F46E5))
+                        },
+                        trailingIcon = {
+                            if (tempApiKey.isNotEmpty()) {
+                                IconButton(onClick = { tempApiKey = "" }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Xóa")
+                                }
+                            }
+                        },
                         singleLine = true,
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.Start,
@@ -988,7 +1122,7 @@ fun OcrScreen(
                         OutlinedButton(
                             onClick = { viewModel.testGeminiApiKey(tempApiKey) },
                             enabled = !viewModel.isTestingApiKey && tempApiKey.isNotBlank(),
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(10.dp)
                         ) {
                             if (viewModel.isTestingApiKey) {
                                 CircularProgressIndicator(
@@ -1015,7 +1149,7 @@ fun OcrScreen(
                             colors = CardDefaults.cardColors(
                                 containerColor = if (isOk) Color(0xFFECFDF5) else Color(0xFFFEF2F2)
                             ),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
@@ -1027,22 +1161,40 @@ fun OcrScreen(
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Hệ thống luôn ưu tiên sử dụng model Gemini tốt nhất (3.8 Flash) và tự động tối ưu hóa khi quét tài liệu.",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Surface(
+                        color = Color(0xFFEEF2FF),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF4F46E5), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Khóa API được lưu cục bộ an toàn trên thiết bị của bạn.",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.5.sp,
+                                color = Color(0xFF4338CA)
+                            )
+                        }
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = { viewModel.saveGeminiApiKey(tempApiKey) },
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF4F46E5),
+                        contentColor = Color.White
+                    )
                 ) {
-                    Text("Lưu API Key")
+                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Lưu API Key", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -1224,14 +1376,14 @@ fun OcrScreen(
                             onOpenArticle(article.id)
                         }
                     },
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5)),
                     enabled = !viewModel.isSaving
                 ) {
                     if (viewModel.isSaving) {
                         CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp))
                     } else {
-                        Text("Lưu & Mở đọc")
+                        Text("Lưu & Mở đọc", fontWeight = FontWeight.Bold)
                     }
                 }
             },
@@ -1254,7 +1406,7 @@ fun OcrScreen(
                 Icon(
                     imageVector = Icons.Default.Info,
                     contentDescription = null,
-                    tint = Color(0xFF7C3AED),
+                    tint = Color(0xFF4F46E5),
                     modifier = Modifier.size(32.dp)
                 )
             },
@@ -1273,7 +1425,7 @@ fun OcrScreen(
                                 viewModel.showApiKeyDialog = true
                             },
                             shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5))
                         ) {
                             Text("Nhập API Key")
                         }
@@ -1325,6 +1477,34 @@ fun OcrScreen(
                     Text("Đóng")
                 }
             }
+        )
+    }
+}
+
+@Composable
+private fun FeatureBadgeItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFFEEF2FF))
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = Color(0xFF4F46E5),
+            modifier = Modifier.size(15.dp)
+        )
+        Spacer(modifier = Modifier.width(5.dp))
+        Text(
+            text = label,
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color(0xFF4338CA)
         )
     }
 }

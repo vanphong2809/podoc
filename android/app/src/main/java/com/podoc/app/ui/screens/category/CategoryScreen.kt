@@ -10,7 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -132,12 +132,12 @@ fun CategoryScreen(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Hàng Tiêu đề thu gọn sát lề: "Quản lý danh mục" + nút thêm (+)
+            // Hàng Tiêu đề thu gọn: "Quản lý danh mục" + nút thêm (+) tím nổi bật
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
             ) {
                 Text(
                     text = stringResource(R.string.categories_management),
@@ -149,19 +149,23 @@ fun CategoryScreen(
                     modifier = Modifier.weight(1f)
                 )
 
-                IconButton(
-                    onClick = {
-                        categoryNameInput = ""
-                        categoryColorInput = "#4F46E5"
-                        showCreateDialog = true
-                    },
-                    modifier = Modifier.size(36.dp)
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFF4F46E5))
+                        .clickable {
+                            categoryNameInput = ""
+                            categoryColorInput = "#4F46E5"
+                            showCreateDialog = true
+                        },
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "Thêm danh mục",
-                        tint = brandBlue,
-                        modifier = Modifier.size(28.dp)
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -185,12 +189,13 @@ fun CategoryScreen(
                 ) {
                     items(filteredCategories, key = { it.id }) { cat ->
                         var showItemMenu by remember { mutableStateOf(false) }
+                        val catColor = remember(cat.color) { parseHexColor(cat.color) }
 
                         Card(
                             shape = RoundedCornerShape(20.dp),
                             colors = CardDefaults.cardColors(containerColor = cardBg),
-                            elevation = CardDefaults.cardElevation(defaultElevation = if (isDark) 0.dp else 0.5.dp),
-                            border = if (isDark) BorderStroke(1.dp, Color(0xFF334155)) else null,
+                            elevation = CardDefaults.cardElevation(defaultElevation = if (isDark) 0.dp else 1.5.dp),
+                            border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFF1F5F9)),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(20.dp))
@@ -202,18 +207,18 @@ fun CategoryScreen(
                                     .padding(horizontal = 16.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Huy hiệu hình tròn có icon và màu tương ứng theo thiết kế hình 1
+                                // Huy hiệu hình vuông bo góc tròn mềm pastel theo thiết kế redesign
                                 Box(
                                     modifier = Modifier
-                                        .size(44.dp)
-                                        .clip(CircleShape)
-                                        .background(parseHexColor(cat.color)),
+                                        .size(46.dp)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(catColor.copy(alpha = 0.14f)),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
                                         imageVector = getCategoryIcon(cat.name, cat.icon),
                                         contentDescription = null,
-                                        tint = Color.White,
+                                        tint = catColor,
                                         modifier = Modifier.size(24.dp)
                                     )
                                 }
@@ -225,7 +230,7 @@ fun CategoryScreen(
                                     Text(
                                         text = cat.name,
                                         style = MaterialTheme.typography.titleMedium.copy(
-                                            fontWeight = FontWeight.SemiBold,
+                                            fontWeight = FontWeight.Bold,
                                             fontSize = 16.sp
                                         ),
                                         color = MaterialTheme.colorScheme.onSurface
@@ -238,9 +243,9 @@ fun CategoryScreen(
                                         text = "$count mục",
                                         style = MaterialTheme.typography.bodySmall.copy(
                                             fontSize = 13.sp,
-                                            fontWeight = if (count > 0) FontWeight.Medium else FontWeight.Normal
+                                            fontWeight = if (count > 0) FontWeight.Bold else FontWeight.Normal
                                         ),
-                                        color = if (count > 0) (if (isDark) Color(0xFF60A5FA) else Color(0xFF2563EB)) else (if (isDark) Color(0xFF94A3B8) else Color(0xFF9CA3AF))
+                                        color = if (count > 0) (if (isDark) Color(0xFF818CF8) else Color(0xFF4338CA)) else (if (isDark) Color(0xFF94A3B8) else Color(0xFF9CA3AF))
                                     )
                                 }
 

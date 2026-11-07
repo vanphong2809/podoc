@@ -571,11 +571,12 @@ private fun LibraryTopBar(
     ) {
         // ── Search Bar ──────────────────────────────────────────────────
         Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 2.dp,
             border = androidx.compose.foundation.BorderStroke(
                 1.dp,
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
             ),
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -583,13 +584,13 @@ private fun LibraryTopBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp)
-                    .padding(horizontal = 14.dp),
+                    .padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
                     imageVector = Icons.Default.Search,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(10.dp))
@@ -598,7 +599,7 @@ private fun LibraryTopBar(
                         Text(
                             text = "Tìm kiếm bài viết, tài liệu...",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                         )
                     }
                     androidx.compose.foundation.text.BasicTextField(
@@ -634,16 +635,16 @@ private fun LibraryTopBar(
                             modifier = Modifier.size(34.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Outlined.FilterList,
+                                imageVector = Icons.Default.Tune,
                                 contentDescription = "Bộ lọc & Sắp xếp",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                                 modifier = Modifier.size(20.dp)
                             )
                         }
                         DropdownMenu(
                             expanded = showSortMenu,
                             onDismissRequest = onDismissSortMenu,
-                            shape = RoundedCornerShape(14.dp)
+                            shape = RoundedCornerShape(16.dp)
                         ) {
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.sort_newest)) },
@@ -676,18 +677,18 @@ private fun LibraryTopBar(
                 .horizontalScroll(rememberScrollState()),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val chipShape = RoundedCornerShape(12.dp)
+            val chipShape = RoundedCornerShape(20.dp)
             val activeChipColors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                selectedContainerColor = Color(0xFF4F46E5),
                 selectedLabelColor = Color.White,
                 selectedLeadingIconColor = Color.White,
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                containerColor = MaterialTheme.colorScheme.surface,
                 labelColor = MaterialTheme.colorScheme.onSurfaceVariant
             )
             val chipBorder = FilterChipDefaults.filterChipBorder(
                 enabled = true,
                 selected = false,
-                borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                 selectedBorderColor = Color.Transparent,
                 borderWidth = 1.dp
             )

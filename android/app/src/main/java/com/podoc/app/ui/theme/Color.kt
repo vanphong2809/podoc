@@ -14,23 +14,43 @@ val PrimaryContainerDark = Color(0xFF3730A3)
 val OnPrimaryContainerDark = Color(0xFFE0E7FF)
 
 // Background & Surface
-val BackgroundLight = Color(0xFFF8FAFC)
+val BackgroundLight = Color(0xFFF2F5FB)
 val OnBackgroundLight = Color(0xFF0F172A)
 val SurfaceLight = Color(0xFFFFFFFF)
 val OnSurfaceLight = Color(0xFF0F172A)
 val SurfaceVariantLight = Color(0xFFF1F5F9)
 val OnSurfaceVariantLight = Color(0xFF475569)
 
-val BackgroundDark = Color(0xFF0F172A)
+val BackgroundDark = Color(0xFF0B0F19)
 val OnBackgroundDark = Color(0xFFF8FAFC)
-val SurfaceDark = Color(0xFF1E293B)
+val SurfaceDark = Color(0xFF161F30)
 val OnSurfaceDark = Color(0xFFF8FAFC)
-val SurfaceVariantDark = Color(0xFF334155)
+val SurfaceVariantDark = Color(0xFF222F43)
 val OnSurfaceVariantDark = Color(0xFF94A3B8)
 
 // Outline
-val OutlineLight = Color(0xFFCBD5E1)
-val OutlineDark = Color(0xFF475569)
+val OutlineLight = Color(0xFFEEF2F6)
+val OutlineDark = Color(0xFF2E3E55)
+
+// Redesign 2026 Design Tokens
+val PoDocIndigoGradientStart = Color(0xFF6366F1)
+val PoDocIndigoGradientEnd = Color(0xFF4338CA)
+val PoDocPrimary = Color(0xFF4F46E5)
+val PoDocPrimaryContainer = Color(0xFFE0E7FF)
+val PoDocPrimaryContainerText = Color(0xFF3730A3)
+
+val PoDocCardBorder = Color(0xFFEEF2F6)
+val PoDocCardBorderDark = Color(0xFF243046)
+
+// Badges
+val PoDocBadgeTechBg = Color(0xFFE0EDFF)
+val PoDocBadgeTechText = Color(0xFF2563EB)
+val PoDocBadgeVideoBg = Color(0xFFFFE8EC)
+val PoDocBadgeVideoText = Color(0xFFE11D48)
+val PoDocBadgeWebBg = Color(0xFFE0F2FE)
+val PoDocBadgeWebText = Color(0xFF0284C7)
+val PoDocBadgeSuccessBg = Color(0xFFDCFCE7)
+val PoDocBadgeSuccessText = Color(0xFF16A34A)
 
 // Predefined Accent Colors
 val AccentColors = listOf(

@@ -50,10 +50,11 @@ fun SettingsScreen(
     var showServerDialog by remember { mutableStateOf(false) }
     var editingServerUrl by remember { mutableStateOf("") }
 
-    // Màu sắc theo thiết kế chuẩn và hỗ trợ toàn diện chế độ tối
-    val brandBlue = Color(0xFF0B57D0)
-    val selectedSegmentBg = if (isDark) Color(0xFF1E3A8A) else Color(0xFFDCE4FD)
-    val selectedSegmentText = if (isDark) Color(0xFFBFDBFE) else Color(0xFF041E49)
+    // Màu sắc theo thiết kế chuẩn Indigo / Purple mới của PoDoc
+    val brandPrimary = Color(0xFF4F46E5)
+    val brandPrimaryDark = Color(0xFF4338CA)
+    val selectedSegmentBg = if (isDark) Color(0xFF312E81) else Color(0xFFEEF2FF)
+    val selectedSegmentText = if (isDark) Color(0xFFC7D2FE) else Color(0xFF4338CA)
     val screenBg = if (isDark) MaterialTheme.colorScheme.background else Color(0xFFF4F6FB)
     val cardBg = if (isDark) MaterialTheme.colorScheme.surface else Color.White
 
@@ -101,7 +102,7 @@ fun SettingsScreen(
                 Icon(
                     imageVector = Icons.Default.Settings,
                     contentDescription = null,
-                    tint = brandBlue,
+                    tint = brandPrimary,
                     modifier = Modifier.size(22.dp)
                 )
 
@@ -141,7 +142,7 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp
                             ),
-                            color = brandBlue
+                            color = brandPrimary
                         )
 
                         Spacer(modifier = Modifier.height(14.dp))
@@ -220,7 +221,7 @@ fun SettingsScreen(
                                 onCheckedChange = { viewModel.setDynamicColor(it) },
                                 colors = SwitchDefaults.colors(
                                     checkedThumbColor = Color.White,
-                                    checkedTrackColor = brandBlue,
+                                    checkedTrackColor = brandPrimary,
                                     uncheckedThumbColor = Color.White,
                                     uncheckedTrackColor = if (isDark) Color(0xFF4B5563) else Color(0xFFD1D5DB),
                                     uncheckedBorderColor = Color.Transparent
@@ -285,11 +286,11 @@ fun SettingsScreen(
                             valueRange = 14f..24f,
                             steps = 4,
                             colors = SliderDefaults.colors(
-                                thumbColor = brandBlue,
-                                activeTrackColor = brandBlue,
-                                inactiveTrackColor = if (isDark) Color(0xFF374151) else Color(0xFFDCE4FD),
+                                thumbColor = brandPrimary,
+                                activeTrackColor = brandPrimary,
+                                inactiveTrackColor = if (isDark) Color(0xFF374151) else Color(0xFFEEF2FF),
                                 activeTickColor = Color.White,
-                                inactiveTickColor = brandBlue
+                                inactiveTickColor = brandPrimary
                             ),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -310,7 +311,7 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp
                             ),
-                            color = brandBlue
+                            color = brandPrimary
                         )
 
                         Spacer(modifier = Modifier.height(8.dp))
@@ -332,9 +333,9 @@ fun SettingsScreen(
                                 exportLauncher.launch(defaultName)
                             },
                             shape = RoundedCornerShape(26.dp),
-                            border = BorderStroke(1.2.dp, brandBlue),
+                            border = BorderStroke(1.2.dp, brandPrimary),
                             colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = brandBlue
+                                contentColor = brandPrimary
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -344,7 +345,7 @@ fun SettingsScreen(
                                 modifier = Modifier
                                     .size(24.dp)
                                     .clip(CircleShape)
-                                    .background(brandBlue),
+                                    .background(brandPrimary),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
@@ -359,7 +360,7 @@ fun SettingsScreen(
                                 text = stringResource(R.string.action_export_markdown),
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 14.5.sp,
-                                color = brandBlue
+                                color = brandPrimary
                             )
                         }
                     }
@@ -383,7 +384,7 @@ fun SettingsScreen(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 18.sp
                                 ),
-                                color = brandBlue,
+                                color = brandPrimary,
                                 modifier = Modifier.weight(1f)
                             )
 
@@ -400,7 +401,7 @@ fun SettingsScreen(
                                 Icon(
                                     imageVector = Icons.Default.Edit,
                                     contentDescription = "Chỉnh sửa",
-                                    tint = brandBlue,
+                                    tint = brandPrimary,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
@@ -410,7 +411,7 @@ fun SettingsScreen(
                                         fontWeight = FontWeight.SemiBold,
                                         fontSize = 14.sp
                                     ),
-                                    color = brandBlue
+                                    color = brandPrimary
                                 )
                             }
                         }
@@ -437,7 +438,7 @@ fun SettingsScreen(
                                 Icon(
                                     imageVector = Icons.Default.Dns,
                                     contentDescription = null,
-                                    tint = if (isDark) Color(0xFF94A3B8) else Color(0xFF4B5563),
+                                    tint = brandPrimary,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
@@ -477,7 +478,7 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp
                             ),
-                            color = brandBlue
+                            color = brandPrimary
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
@@ -503,23 +504,59 @@ fun SettingsScreen(
         }
     }
 
-    // Dialog cập nhật Địa chỉ máy chủ
+    // Dialog cập nhật Địa chỉ máy chủ (theo redesign 15_settings_server_redesign.png)
     if (showServerDialog) {
         AlertDialog(
             onDismissRequest = { showServerDialog = false },
-            icon = { Icon(Icons.Default.Dns, contentDescription = null, tint = brandBlue) },
-            title = { Text("Địa chỉ máy chủ", fontWeight = FontWeight.Bold) },
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(brandPrimary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Dns,
+                        contentDescription = null,
+                        tint = brandPrimary,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            },
+            title = {
+                Text(
+                    "Cấu hình Máy chủ PoDoc",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    textAlign = TextAlign.Center
+                )
+            },
             text = {
                 Column {
-                    Text("Nhập địa chỉ máy chủ PoDoc của bạn:", style = MaterialTheme.typography.bodyMedium)
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        "Nhập địa chỉ máy chủ backend để đồng bộ và xử lý tài liệu:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
                     OutlinedTextField(
                         value = editingServerUrl,
                         onValueChange = { editingServerUrl = it },
                         label = { Text("URL máy chủ") },
                         placeholder = { Text("http://10.0.2.2:8000") },
                         singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        leadingIcon = {
+                            Icon(Icons.Default.Link, contentDescription = null, tint = brandPrimary)
+                        },
+                        trailingIcon = {
+                            if (editingServerUrl.isNotEmpty()) {
+                                IconButton(onClick = { editingServerUrl = "" }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Xóa")
+                                }
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -530,9 +567,15 @@ fun SettingsScreen(
                         showServerDialog = false
                         viewModel.setServerUrl(editingServerUrl)
                     },
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = brandPrimary,
+                        contentColor = Color.White
+                    )
                 ) {
-                    Text(stringResource(R.string.btn_confirm))
+                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(stringResource(R.string.btn_confirm), fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {

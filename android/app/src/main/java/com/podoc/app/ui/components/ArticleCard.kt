@@ -186,18 +186,18 @@ fun ArticleCardSkeleton() {
 // BADGE TOKENS
 // ─────────────────────────────────────────────────────────────────────
 
-private val categoryBadgeBg   = Color(0xFFEEF2FF)
-private val categoryBadgeText = Color(0xFF3730A3)
-private val webBadgeBg        = Color(0xFFF5F3FF)
-private val webBadgeText      = Color(0xFF7C3AED)
-private val videoBadgeBg      = Color(0xFFFFF1F2)
-private val videoBadgeText    = Color(0xFFBE123C)
-private val audioBadgeBg      = Color(0xFFECFDF5)
-private val audioBadgeText    = Color(0xFF065F46)
-private val fileBadgeBg       = Color(0xFFF8FAFC)
+private val categoryBadgeBg   = Color(0xFFE0EDFF)
+private val categoryBadgeText = Color(0xFF2563EB)
+private val webBadgeBg        = Color(0xFFE0F2FE)
+private val webBadgeText      = Color(0xFF0284C7)
+private val videoBadgeBg      = Color(0xFFFFE8EC)
+private val videoBadgeText    = Color(0xFFE11D48)
+private val audioBadgeBg      = Color(0xFFD1FAE5)
+private val audioBadgeText    = Color(0xFF059669)
+private val fileBadgeBg       = Color(0xFFF1F5F9)
 private val fileBadgeText     = Color(0xFF475569)
-private val imageBadgeBg      = Color(0xFFFDF4FF)
-private val imageBadgeText    = Color(0xFF86198F)
+private val imageBadgeBg      = Color(0xFFEDE9FE)
+private val imageBadgeText    = Color(0xFF7C3AED)
 
 // ─────────────────────────────────────────────────────────────────────
 // ARTICLE CARD — Entry point
@@ -249,11 +249,11 @@ fun ArticleCard(
         }
     }
 
-    val cardBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    val cardBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
 
     ElevatedCard(
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.5.dp, pressedElevation = 4.dp),
+        shape = RoundedCornerShape(22.dp),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp, pressedElevation = 5.dp),
         colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
@@ -263,7 +263,7 @@ fun ArticleCard(
     ) {
         // Viền mờ tinh tế
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(22.dp),
             border = androidx.compose.foundation.BorderStroke(1.dp, cardBorderColor),
             color = Color.Transparent
         ) {

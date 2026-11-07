@@ -103,7 +103,35 @@ fun RoiCropDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                // Banner hướng dẫn khoanh vùng
+                Surface(
+                    color = Color(0xFF00E5FF).copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.35f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = Color(0xFF00E5FF),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Kéo các góc hoặc cạnh viền xanh để định vị chính xác vùng tài liệu",
+                            color = Color(0xFFE0F7FA),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
 
                 // Khu vực hiển thị ảnh và lớp phủ ROI Interactive
                 BoxWithConstraints(

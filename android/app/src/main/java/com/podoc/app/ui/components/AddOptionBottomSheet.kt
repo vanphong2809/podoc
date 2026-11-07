@@ -140,7 +140,11 @@ fun AddOptionBottomSheet(
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth(),
                 leadingIcon = {
-                    Icon(imageVector = Icons.Default.Link, contentDescription = null)
+                    Icon(
+                        imageVector = Icons.Default.Link,
+                        contentDescription = null,
+                        tint = Color(0xFF4F46E5)
+                    )
                 },
                 trailingIcon = {
                     if (urlInput.isNotEmpty()) {
@@ -168,6 +172,12 @@ fun AddOptionBottomSheet(
                     },
                     enabled = urlInput.isNotBlank(),
                     shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF4F46E5),
+                        contentColor = Color.White,
+                        disabledContainerColor = Color(0xFF4F46E5).copy(alpha = 0.4f),
+                        disabledContentColor = Color.White.copy(alpha = 0.6f)
+                    ),
                     contentPadding = PaddingValues(vertical = 12.dp, horizontal = 14.dp),
                     modifier = Modifier.weight(1f)
                 ) {
@@ -179,7 +189,7 @@ fun AddOptionBottomSheet(
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = stringResource(R.string.action_extract),
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     )
                 }
@@ -196,10 +206,10 @@ fun AddOptionBottomSheet(
                     shape = RoundedCornerShape(14.dp),
                     contentPadding = PaddingValues(vertical = 12.dp, horizontal = 14.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
-                        disabledContentColor = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.4f)
+                        containerColor = Color(0xFFEEF2FF),
+                        contentColor = Color(0xFF4338CA),
+                        disabledContainerColor = Color(0xFFEEF2FF).copy(alpha = 0.5f),
+                        disabledContentColor = Color(0xFF4338CA).copy(alpha = 0.4f)
                     ),
                     modifier = Modifier.weight(1f)
                 ) {

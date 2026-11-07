@@ -8,12 +8,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -35,19 +37,52 @@ fun ToolsScreen(
     var asWebFormat by remember { mutableStateOf(false) }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.background)
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
                         text = "Công cụ",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 28.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onBackground
                     )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.size(42.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Tìm công cụ",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Các tiện ích xử lý, trích xuất và chuyển đổi tài liệu, giúp bạn làm việc hiệu quả hơn.",
+                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            )
+            }
         }
     ) { innerPadding ->
         Column(
@@ -55,74 +90,112 @@ fun ToolsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(horizontal = 16.dp, vertical = 6.dp)
         ) {
-            // Banner giới thiệu Hộp công cụ
+            // ── Banner giới thiệu 3D: "✦ Bộ công cụ tài liệu tất cả trong một" ──
             Surface(
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                shape = RoundedCornerShape(22.dp),
+                border = BorderStroke(1.dp, Color(0xFFDDD6FE).copy(alpha = 0.8f)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 20.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    Color(0xFFEDE9FE),
+                                    Color(0xFFE0E7FF),
+                                    Color(0xFFE0F2FE)
+                                )
+                            )
+                        )
+                        .padding(horizontal = 18.dp, vertical = 18.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary),
-                        contentAlignment = Alignment.Center
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Build,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Hộp công cụ tiện ích",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Các tính năng chuyển đổi, trích xuất và xử lý định dạng tài liệu độc lập.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = Color(0xFF4F46E5),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Bộ công cụ tài liệu",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1E1B4B)
+                                )
+                            }
+                            Text(
+                                text = "tất cả trong một",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1E1B4B)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Chuyển đổi, trích xuất, số hóa\nvà xử lý tài liệu nhanh chóng.",
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp,
+                                color = Color(0xFF475569)
+                            )
+                        }
+
+                        // Đồ họa khối 3D kính xếp tầng
+                        Box(
+                            modifier = Modifier
+                                .size(76.dp)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(Color(0xFF818CF8), Color(0xFF4F46E5))
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Layers,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(40.dp)
+                            )
+                        }
                     }
                 }
             }
 
-            // Nhóm 1: Chuyển đổi định dạng
+            // ── Nhóm 1: Chuyển đổi tài liệu ──
             Text(
                 text = "CHUYỂN ĐỔI TÀI LIỆU",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.5.sp,
+                    letterSpacing = 0.5.sp
+                ),
+                color = Color(0xFF475569),
+                modifier = Modifier.padding(bottom = 10.dp, start = 4.dp)
             )
 
             // Thẻ Công cụ: Chuyển Office sang PDF
             Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-                ),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 20.dp)
+                    .padding(bottom = 18.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(18.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
@@ -130,15 +203,15 @@ fun ToolsScreen(
                         Box(
                             modifier = Modifier
                                 .size(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFFE11D48).copy(alpha = 0.12f)),
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color(0xFFFFE8EC)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.PictureAsPdf,
                                 contentDescription = null,
                                 tint = Color(0xFFE11D48),
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(26.dp)
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
@@ -151,15 +224,15 @@ fun ToolsScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Surface(
-                                    color = Color(0xFF10B981).copy(alpha = 0.15f),
-                                    shape = RoundedCornerShape(6.dp)
+                                    color = Color(0xFFDCFCE7),
+                                    shape = RoundedCornerShape(8.dp)
                                 ) {
                                     Text(
                                         text = "Khả dụng",
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = Color(0xFF059669),
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        color = Color(0xFF16A34A),
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                                     )
                                 }
                             }
@@ -172,26 +245,26 @@ fun ToolsScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     Text(
-                        text = "Chuyển đổi tệp Office sang định dạng PDF giữ nguyên 100% bố cục trang, bảng tính, font chữ và hình ảnh gốc. Tệp PDF mới sẽ tự động được lưu vào Thư viện và mở để xem ngay.",
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "Chuyển đổi tệp Office sang định dạng PDF giữ nguyên bố cục, bảng tính, font chữ và hình ảnh gốc.",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 20.sp
+                        lineHeight = 18.sp
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                    // Định dạng hỗ trợ
+                    // Chips định dạng hỗ trợ
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         listOf("DOCX", "DOC", "XLSX", "XLS", "PPTX", "PPT", "RTF").forEach { ext ->
                             Surface(
-                                color = MaterialTheme.colorScheme.surface,
-                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(8.dp),
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                             ) {
                                 Text(
@@ -205,48 +278,44 @@ fun ToolsScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
+                    // Nút bấm gradient tím
                     Button(
                         onClick = onPickOfficeForPdf,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFE11D48),
+                            containerColor = Color(0xFF4F46E5),
                             contentColor = Color.White
                         ),
-                        modifier = Modifier.fillMaxWidth()
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
                     ) {
-                        Icon(imageVector = Icons.Default.PictureAsPdf, contentDescription = null)
+                        Icon(imageVector = Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Chọn tệp & Chuyển sang PDF",
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
                         )
+                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
                     }
                 }
             }
 
-            // Nhóm 2: Tiện ích nội dung web
-            Text(
-                text = "TRÍCH XUẤT NỘI DUNG",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
-            )
-
             // Thẻ Công cụ: Trích xuất bài viết Web
             Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-                ),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 20.dp)
+                    .padding(bottom = 18.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(18.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
@@ -254,15 +323,15 @@ fun ToolsScreen(
                         Box(
                             modifier = Modifier
                                 .size(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color(0xFFE0EDFF)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Language,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(28.dp)
+                                tint = Color(0xFF2563EB),
+                                modifier = Modifier.size(26.dp)
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
@@ -275,15 +344,15 @@ fun ToolsScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Surface(
-                                    color = Color(0xFF10B981).copy(alpha = 0.15f),
-                                    shape = RoundedCornerShape(6.dp)
+                                    color = Color(0xFFDCFCE7),
+                                    shape = RoundedCornerShape(8.dp)
                                 ) {
                                     Text(
                                         text = "Khả dụng",
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = Color(0xFF059669),
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        color = Color(0xFF16A34A),
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                                     )
                                 }
                             }
@@ -299,38 +368,46 @@ fun ToolsScreen(
                     Spacer(modifier = Modifier.height(10.dp))
 
                     Text(
-                        text = "Nhập liên kết bài viết bất kỳ trên internet để tự động loại bỏ quảng cáo, trích xuất nội dung văn bản và lưu trữ đọc ngoại tuyến.",
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "Nhập liên kết bài viết bất kỳ để tự động loại bỏ quảng cáo, trích xuất nội dung văn bản và lưu trữ đọc ngoại tuyến.",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 20.sp
+                        lineHeight = 18.sp
                     )
 
                     Spacer(modifier = Modifier.height(14.dp))
 
                     OutlinedButton(
                         onClick = { showUrlDialog = true },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.2.dp, Color(0xFF6366F1)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp)
                     ) {
-                        Icon(imageVector = Icons.Default.Link, contentDescription = null)
+                        Icon(imageVector = Icons.Default.Link, contentDescription = null, tint = Color(0xFF4338CA), modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Nhập liên kết bài viết")
+                        Text(
+                            text = "Nhập liên kết bài viết",
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF4338CA),
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = Color(0xFF4338CA), modifier = Modifier.size(18.dp))
                     }
                 }
             }
 
-            // Thẻ Công cụ: OCR - Nhận dạng văn bản từ ảnh
+            // Thẻ Công cụ: OCR - Quét chữ từ ảnh
             Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-                ),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 20.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(18.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
@@ -338,15 +415,15 @@ fun ToolsScreen(
                         Box(
                             modifier = Modifier
                                 .size(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF7C3AED).copy(alpha = 0.12f)),
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color(0xFFEDE9FE)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.DocumentScanner,
                                 contentDescription = null,
                                 tint = Color(0xFF7C3AED),
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(26.dp)
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
@@ -359,15 +436,15 @@ fun ToolsScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Surface(
-                                    color = Color(0xFF10B981).copy(alpha = 0.15f),
-                                    shape = RoundedCornerShape(6.dp)
+                                    color = Color(0xFFDCFCE7),
+                                    shape = RoundedCornerShape(8.dp)
                                 ) {
                                     Text(
                                         text = "Khả dụng",
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = Color(0xFF059669),
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        color = Color(0xFF16A34A),
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                                     )
                                 }
                             }
@@ -380,13 +457,13 @@ fun ToolsScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     Text(
                         text = "Trích xuất chữ viết tiếng Việt và tiếng Anh tự động từ ảnh chụp tài liệu, sách báo, biên lai hoặc ảnh chụp màn hình bằng AI trên thiết bị. Cho phép sao chép, chỉnh sửa và lưu thành bài viết vào Thư viện.",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 20.sp
+                        lineHeight = 18.sp
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -395,19 +472,30 @@ fun ToolsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        listOf("Tiếng Việt", "Khoanh vùng ROI", "Sửa lỗi chính tả", "Offline", "Lưu bài viết").forEach { tag ->
+                        listOf(
+                            Triple("Tiếng Việt", Icons.Default.Translate, Color(0xFF2563EB)),
+                            Triple("Khoanh vùng ROI", Icons.Default.Crop, Color(0xFF0891B2)),
+                            Triple("Sửa lỗi chính tả", Icons.Default.Edit, Color(0xFF059669)),
+                            Triple("Offline", Icons.Default.Bolt, Color(0xFFD97706))
+                        ).forEach { (label, icon, iconColor) ->
                             Surface(
-                                color = MaterialTheme.colorScheme.surface,
-                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(10.dp),
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                             ) {
-                                Text(
-                                    text = tag,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(imageVector = icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = label,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }
@@ -416,30 +504,38 @@ fun ToolsScreen(
 
                     Button(
                         onClick = onOpenOcr,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF7C3AED),
+                            containerColor = Color(0xFF4F46E5),
                             contentColor = Color.White
                         ),
-                        modifier = Modifier.fillMaxWidth()
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
                     ) {
-                        Icon(imageVector = Icons.Default.DocumentScanner, contentDescription = null)
+                        Icon(imageVector = Icons.Default.DocumentScanner, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Mở công cụ quét chữ (OCR)",
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
                         )
+                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
                     }
                 }
             }
 
-            // Nhóm 3: Các công cụ chuẩn bị tích hợp
+            // ── Nhóm 3: Các công cụ chuẩn bị tích hợp ──
             Text(
                 text = "CÔNG CỤ SẮP RA MẮT",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.outline,
-                modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.5.sp,
+                    letterSpacing = 0.5.sp
+                ),
+                color = Color(0xFF64748B),
+                modifier = Modifier.padding(bottom = 10.dp, start = 4.dp)
             )
 
             // Danh sách các công cụ tương lai
@@ -459,7 +555,7 @@ fun ToolsScreen(
                 description = "Giảm dung lượng file PDF và hình ảnh mà vẫn giữ độ nét cao để tiết kiệm lưu trữ."
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(28.dp))
         }
     }
 
@@ -480,7 +576,7 @@ fun ToolsScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     CircularProgressIndicator(
-                        color = Color(0xFFE11D48),
+                        color = Color(0xFF4F46E5),
                         strokeWidth = 3.dp,
                         modifier = Modifier.size(48.dp)
                     )
@@ -533,34 +629,48 @@ fun ToolsScreen(
         )
     }
 
-    // Dialog nhập URL để trích xuất
+    // Dialog nhập URL bài viết
     if (showUrlDialog) {
-        AlertDialog(
+        Dialog(
             onDismissRequest = { showUrlDialog = false },
-            title = {
-                Text(
-                    text = "Trích xuất bài viết Web",
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Column {
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .wrapContentHeight()
+            ) {
+                Column(modifier = Modifier.padding(24.dp)) {
                     Text(
-                        text = "Dán liên kết (URL) của bài viết hoặc tài liệu bạn muốn trích xuất:",
-                        style = MaterialTheme.typography.bodySmall,
+                        text = "Trích xuất bài viết từ Web",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Dán đường dẫn (URL) bài viết cần đọc. Hệ thống sẽ tự động bóc tách nội dung chính, lược bỏ quảng cáo và lưu vào Thư viện.",
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+
                     OutlinedTextField(
                         value = urlInput,
                         onValueChange = { urlInput = it },
-                        placeholder = { Text("https://example.com/bai-viet") },
+                        placeholder = { Text("https://example.com/bai-viet...") },
                         singleLine = true,
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
+
                     Spacer(modifier = Modifier.height(12.dp))
+
                     Row(
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Checkbox(
@@ -569,39 +679,43 @@ fun ToolsScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Lưu dạng Web View đầy đủ",
-                            style = MaterialTheme.typography.bodyMedium
+                            text = "Lưu giữ nguyên định dạng web (HTML)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val trimmed = urlInput.trim()
-                        if (trimmed.isNotBlank()) {
-                            showUrlDialog = false
-                            onPasteLink(trimmed, asWebFormat)
-                            urlInput = ""
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(
+                            onClick = { showUrlDialog = false },
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("Huỷ")
                         }
-                    },
-                    shape = RoundedCornerShape(10.dp),
-                    enabled = urlInput.trim().isNotBlank()
-                ) {
-                    Text("Trích xuất")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showUrlDialog = false
-                        urlInput = ""
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                val trimmed = urlInput.trim()
+                                if (trimmed.isNotBlank()) {
+                                    showUrlDialog = false
+                                    onPasteLink(trimmed, asWebFormat)
+                                    urlInput = ""
+                                }
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            enabled = urlInput.trim().isNotBlank()
+                        ) {
+                            Text("Trích xuất ngay")
+                        }
                     }
-                ) {
-                    Text("Huỷ")
                 }
             }
-        )
+        }
     }
 }
 
@@ -613,23 +727,24 @@ private fun UpcomingToolItem(
     description: String
 ) {
     Card(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
+            containerColor = MaterialTheme.colorScheme.surface
         ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
-        modifier = Modifier.fillMaxWidth()
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
+            modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(42.dp)
-                    .clip(RoundedCornerShape(10.dp))
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(14.dp))
                     .background(iconTint.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
             ) {
@@ -640,34 +755,32 @@ private fun UpcomingToolItem(
                     modifier = Modifier.size(24.dp)
                 )
             }
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Surface(
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
-                        shape = RoundedCornerShape(4.dp)
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(8.dp)
                     ) {
                         Text(
                             text = "Sắp có",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(3.dp))
                 Text(
                     text = description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    lineHeight = 16.sp
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
