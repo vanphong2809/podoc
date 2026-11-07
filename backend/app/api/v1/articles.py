@@ -211,49 +211,21 @@ async def upload_article_file(
     """
     Tải lên và lưu trực tiếp tệp tin (Video, Ảnh, PDF, DOCX, DOC, HTML, TXT, MD...)
     vào thư viện để mở xem sau mà KHÔNG qua bước trích xuất text.
-    Giới hạn dung lượng:
-    - Ảnh: 5 MB
-    - Video: 10 MB
-    - Tệp tin khác: 10 MB
+    Không giới hạn dung lượng tệp tin.
     """
     orig_name = file.filename or "uploaded_file"
     orig_ext = os.path.splitext(orig_name)[1].lower()
 
-    # 1. Đọc nội dung file & xác định loại để áp dụng hạn mức dung lượng
+    # 1. Đọc nội dung file
     file_bytes = await file.read()
 
     # Nhận diện MIME type thực tế và phần mở rộng chuẩn xác
     real_mime = extractor_registry.detect_real_mime_type(file_bytes, orig_name)
     mime_type = real_mime or file.content_type or "application/octet-stream"
 
-    # Hạn mức dung lượng theo yêu cầu:
-    # - Ảnh: 20 MB
-    # - Video: 50 MB
-    # - Âm thanh: 50 MB
-    # - File khác: 50 MB
     is_image = mime_type.startswith("image/") or orig_ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg")
     is_video = mime_type.startswith("video/") or orig_ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts")
     is_audio = mime_type.startswith("audio/") or orig_ext in (".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".wma", ".opus")
-
-    if is_image:
-        max_bytes = 20 * 1024 * 1024
-        type_str = "hình ảnh (tối đa 20 MB)"
-    elif is_video:
-        max_bytes = 50 * 1024 * 1024
-        type_str = "video (tối đa 50 MB)"
-    elif is_audio:
-        max_bytes = 50 * 1024 * 1024
-        type_str = "âm thanh (tối đa 50 MB)"
-    else:
-        max_bytes = 50 * 1024 * 1024
-        type_str = "tệp tin (tối đa 50 MB)"
-
-    if len(file_bytes) > max_bytes:
-        file_mb = len(file_bytes) / (1024 * 1024)
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Dung lượng {type_str} vượt quá giới hạn cho phép. Tệp của bạn: {file_mb:.1f} MB",
-        )
 
     mime_to_ext = {
         "image/jpeg": ".jpg",
@@ -773,11 +745,6 @@ async def upload_and_convert_to_pdf(
         )
 
     file_bytes = await file.read()
-    if len(file_bytes) > 50 * 1024 * 1024:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Dung lượng tệp vượt quá giới hạn cho phép (tối đa 50 MB)."
-        )
 
     # Xác định danh mục
     cat = None

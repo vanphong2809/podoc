@@ -124,20 +124,12 @@ async def extract_file(
 ):
     """
     Lưu nguyên dạng file tải lên (không bắt buộc bóc tách text):
-    - Hỗ trợ các định dạng: txt, md, mdf, html, pdf, doc, docx, png, svg, v.v.
-    - Giới hạn tối đa 30MB/file.
+    - Hỗ trợ tất cả các định dạng: txt, md, mdf, html, pdf, doc, docx, png, svg, v.v.
+    - Không giới hạn dung lượng tệp tin.
     - Lưu file gốc vào volume /data/files với tên định danh duy nhất.
     - Trả về bản nháp kèm file_path, file_name, mime_type để hiển thị trực tiếp trên app.
     """
     file_bytes = await file.read()
-    file_size_bytes = len(file_bytes)
-    file_size_mb = file_size_bytes / (1024 * 1024)
-
-    if file_size_mb > settings.MAX_UPLOAD_SIZE_MB:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Kích thước file vượt quá giới hạn cho phép ({settings.MAX_UPLOAD_SIZE_MB}MB)",
-        )
 
     orig_name = file.filename or "uploaded_file"
     orig_ext = os.path.splitext(orig_name)[1].lower()

@@ -57,8 +57,8 @@ async def test_upload_article_file_direct(client: AsyncClient, db_session: Async
 
 @pytest.mark.asyncio
 async def test_upload_video_and_size_limits(client: AsyncClient, db_session: AsyncSession):
-    """Kiểm tra upload video và giới hạn dung lượng: ảnh <= 20MB, video <= 50MB, file <= 50MB."""
-    # 1. Upload video hợp lệ (< 50MB)
+    """Kiểm tra upload video và tệp tin không giới hạn dung lượng."""
+    # 1. Upload video hợp lệ
     video_content = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 1024
     files = {"file": ("demo_video.mp4", video_content, "video/mp4")}
     data = {"title": "Video giới thiệu"}
@@ -70,21 +70,13 @@ async def test_upload_video_and_size_limits(client: AsyncClient, db_session: Asy
     assert video_data["mime_type"] == "video/mp4"
     assert "Tệp video đính kèm" in video_data["excerpt"]
 
-    # 2. Upload ảnh > 20MB bị từ chối 413
-    big_image_content = b"\x89PNG\r\n\x1a\n" + b"\x00" * (21 * 1024 * 1024)
-    resp_img_too_big = await client.post(
+    # 2. Upload file dung lượng lớn thành công (không còn bị chặn 413)
+    big_image_content = b"\x89PNG\r\n\x1a\n" + b"\x00" * (2 * 1024 * 1024)
+    resp_img = await client.post(
         "/api/articles/upload",
-        files={"file": ("too_big.png", big_image_content, "image/png")}
+        files={"file": ("large_image.png", big_image_content, "image/png")}
     )
-    assert resp_img_too_big.status_code == 413
-
-    # 3. Upload video > 50MB bị từ chối 413
-    big_video_content = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * (51 * 1024 * 1024)
-    resp_video_too_big = await client.post(
-        "/api/articles/upload",
-        files={"file": ("too_big.mp4", big_video_content, "video/mp4")}
-    )
-    assert resp_video_too_big.status_code == 413
+    assert resp_img.status_code == 201
 
 
 @pytest.mark.asyncio

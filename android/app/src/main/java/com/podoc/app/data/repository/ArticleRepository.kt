@@ -165,10 +165,6 @@ class ArticleRepository(
             val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 ?: return Result.failure(IllegalStateException("Không thể đọc tệp tin"))
 
-            // Kiểm tra dung lượng theo yêu cầu:
-            // - Hình ảnh: tối đa 20 MB
-            // - Video: tối đa 50 MB
-            // - Tệp tin: tối đa 50 MB
             val lowerName = fileName.lowercase()
             val isImage = mimeType.startsWith("image/") || lowerName.endsWith(".jpg") ||
                     lowerName.endsWith(".jpeg") || lowerName.endsWith(".png") ||
@@ -178,23 +174,6 @@ class ArticleRepository(
                     lowerName.endsWith(".mkv") || lowerName.endsWith(".mov") ||
                     lowerName.endsWith(".webm") || lowerName.endsWith(".avi") ||
                     lowerName.endsWith(".3gp") || lowerName.endsWith(".ts")
-
-            val fileSizeMb = bytes.size.toDouble() / (1024 * 1024)
-            if (isImage && bytes.size > 20 * 1024 * 1024) {
-                return Result.failure(
-                    IllegalArgumentException("Hình ảnh '${fileName}' (${String.format("%.1f", fileSizeMb)} MB) vượt quá giới hạn 20 MB.")
-                )
-            }
-            if (isVideo && bytes.size > 50 * 1024 * 1024) {
-                return Result.failure(
-                    IllegalArgumentException("Video '${fileName}' (${String.format("%.1f", fileSizeMb)} MB) vượt quá giới hạn 50 MB.")
-                )
-            }
-            if (!isImage && !isVideo && bytes.size > 50 * 1024 * 1024) {
-                return Result.failure(
-                    IllegalArgumentException("Tệp tin '${fileName}' (${String.format("%.1f", fileSizeMb)} MB) vượt quá giới hạn 50 MB.")
-                )
-            }
 
             var thumbnailPart: MultipartBody.Part? = null
             if (isVideo) {
@@ -449,10 +428,6 @@ class ArticleRepository(
             val inputStream = context.contentResolver.openInputStream(uri)
                 ?: throw IllegalArgumentException("Không thể đọc tệp đã chọn")
             val bytes = inputStream.use { it.readBytes() }
-
-            if (bytes.size > 50 * 1024 * 1024) {
-                throw IllegalArgumentException("Dung lượng tệp vượt quá giới hạn 50 MB.")
-            }
 
             val requestFile = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
             val filePart = MultipartBody.Part.createFormData("file", fileName, requestFile)

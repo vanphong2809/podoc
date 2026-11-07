@@ -254,7 +254,7 @@ fun AddOptionBottomSheet(
                     ImportOptionCard(
                         icon = Icons.Default.Videocam,
                         label = "Video",
-                        sublabel = "Tối đa 50 MB",
+                        sublabel = "mp4, mkv, mov...",
                         iconBg = Color(0xFFFFF1F2),
                         iconTint = Color(0xFFBE123C),
                         onClick = { onPickVideos(); onDismiss() },
@@ -277,7 +277,7 @@ fun AddOptionBottomSheet(
                     ImportOptionCard(
                         icon = Icons.Default.Image,
                         label = "Hình ảnh",
-                        sublabel = "Tối đa 20 MB",
+                        sublabel = "jpg, png, webp...",
                         iconBg = Color(0xFFF5F3FF),
                         iconTint = Color(0xFF7C3AED),
                         onClick = { onPickImages(); onDismiss() },
@@ -286,7 +286,7 @@ fun AddOptionBottomSheet(
                     ImportOptionCard(
                         icon = Icons.Default.Description,
                         label = "Tệp tin",
-                        sublabel = "PDF, Office, ZIP...",
+                        sublabel = "PDF, Office, mọi tệp...",
                         iconBg = Color(0xFFEFF6FF),
                         iconTint = Color(0xFF1D4ED8),
                         onClick = { onPickFiles(); onDismiss() },

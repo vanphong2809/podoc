@@ -100,9 +100,9 @@
     <string name="action_delete_category">Xoá danh mục</string>
 
     <!-- Content Type Filters & Video Upload -->
-    <string name="action_import_video">Tải lên Video (tối đa 50 MB)</string>
-    <string name="action_import_image_limit">Tải lên Hình ảnh (tối đa 20 MB)</string>
-    <string name="action_import_file_limit">Tải lên Tệp tin (tối đa 50 MB)</string>
+    <string name="action_import_video">Tải lên Video</string>
+    <string name="action_import_image_limit">Tải lên Hình ảnh</string>
+    <string name="action_import_file_limit">Tải lên Tệp tin</string>
     <string name="filter_content_all">Tất cả</string>
     <string name="filter_content_article">Bài viết</string>
     <string name="filter_content_file">Tệp tin</string>
@@ -133,7 +133,7 @@
     <string name="logged_in_as">Tài khoản: %s</string>
 
     <string name="section_about">Về ứng dụng</string>
-    <string name="app_version">Phiên bản: 1.6.10</string>
+    <string name="app_version">Phiên bản: 1.6.11</string>
     <string name="app_description">PoDoc là ứng dụng lưu trữ và quản lý tài liệu cá nhân độc lập, tự chủ hoàn toàn trên máy chủ riêng của bạn.</string>
 
     <!-- OCR Tool -->
