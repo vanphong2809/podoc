@@ -103,35 +103,7 @@ fun RoiCropDialog(
                     }
                 }
 
-                // Banner hướng dẫn khoanh vùng
-                Surface(
-                    color = Color(0xFF00E5FF).copy(alpha = 0.12f),
-                    shape = RoundedCornerShape(10.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.35f)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = null,
-                            tint = Color(0xFF00E5FF),
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Kéo các góc hoặc cạnh viền xanh để định vị chính xác vùng tài liệu",
-                            color = Color(0xFFE0F7FA),
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // Khu vực hiển thị ảnh và lớp phủ ROI Interactive
                 BoxWithConstraints(
@@ -316,79 +288,153 @@ fun RoiCropDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                // Banner trạng thái nhận dạng vùng nội dung (theo Mockup 07)
+                Surface(
+                    color = Color(0xFFEDE9FE),
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFC4B5FD)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp, bottom = 10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF818CF8).copy(alpha = 0.25f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = Color(0xFF4F46E5),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Đã nhận dạng vùng nội dung",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = Color(0xFF1E1B4B)
+                            )
+                            Text(
+                                text = "Vùng đã chọn có chứa văn bản. Sẵn sàng để quét.",
+                                fontSize = 11.sp,
+                                color = Color(0xFF4338CA)
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = Color(0xFF4F46E5),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
 
-                // Các nút Preset mẫu nhanh (Căn cước, Dòng chữ, Tự do)
+                // Các nút Preset mẫu nhanh (3 nút chia đều 1/3 chiều rộng, responsive hoàn hảo)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    FilterChip(
-                        selected = false,
+                    Surface(
                         onClick = {
-                            // Preset CCCD / ID Card (Tỷ lệ khung ngang)
                             cropLeft = 0.08f
                             cropRight = 0.92f
                             cropTop = 0.22f
                             cropBottom = 0.75f
                         },
-                        label = { Text("Mẫu CCCD/Thẻ", fontSize = 12.sp) },
-                        leadingIcon = { Icon(Icons.Default.CreditCard, null, modifier = Modifier.size(14.dp)) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            labelColor = Color.White,
-                            iconColor = Color(0xFF00E5FF)
-                        )
-                    )
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF1E293B),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF475569)),
+                        modifier = Modifier.weight(1f).height(38.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.Default.CreditCard, null, tint = Color(0xFFE2E8F0), modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Mẫu CCCD/Thẻ", fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = Color.White, maxLines = 1, softWrap = false)
+                        }
+                    }
 
-                    FilterChip(
-                        selected = false,
+                    Surface(
                         onClick = {
-                            // Preset Dòng chữ hẹp (Quét 1-2 dòng)
                             cropLeft = 0.10f
                             cropRight = 0.90f
                             cropTop = 0.40f
                             cropBottom = 0.55f
                         },
-                        label = { Text("1-2 Dòng chữ", fontSize = 12.sp) },
-                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.ShortText, null, modifier = Modifier.size(14.dp)) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            labelColor = Color.White,
-                            iconColor = Color(0xFF00E5FF)
-                        )
-                    )
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF1E293B),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF475569)),
+                        modifier = Modifier.weight(1f).height(38.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.ShortText, null, tint = Color(0xFFE2E8F0), modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("1-2 Dòng chữ", fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = Color.White, maxLines = 1, softWrap = false)
+                        }
+                    }
 
-                    FilterChip(
-                        selected = false,
+                    Surface(
                         onClick = {
-                            // Toàn trang
                             cropLeft = 0.02f
                             cropRight = 0.98f
                             cropTop = 0.02f
                             cropBottom = 0.98f
                         },
-                        label = { Text("Toàn ảnh", fontSize = 12.sp) },
-                        leadingIcon = { Icon(Icons.Default.SelectAll, null, modifier = Modifier.size(14.dp)) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            labelColor = Color.White,
-                            iconColor = Color(0xFF00E5FF)
-                        )
-                    )
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF1E293B),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF475569)),
+                        modifier = Modifier.weight(1f).height(38.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.Default.SelectAll, null, tint = Color(0xFFE2E8F0), modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Toàn ảnh", fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = Color.White, maxLines = 1, softWrap = false)
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Nút xác nhận Cắt & Quét
+                // Nút xác nhận Cắt & Quét (theo Mockup 07)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     OutlinedButton(
                         onClick = onDismiss,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF475569)),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = Color(0xFF1E293B),
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
                     ) {
-                        Text("Hủy")
+                        Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Hủy", fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
                     }
 
                     Button(
@@ -396,16 +442,18 @@ fun RoiCropDialog(
                             val rect = RectF(cropLeft, cropTop, cropRight, cropBottom)
                             onConfirmCrop(rect)
                         },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF00E5FF),
-                            contentColor = Color.Black
+                            containerColor = Color(0xFF4F46E5),
+                            contentColor = Color.White
                         ),
-                        modifier = Modifier.weight(1.8f)
+                        modifier = Modifier
+                            .weight(1.8f)
+                            .height(48.dp)
                     ) {
-                        Icon(imageVector = Icons.Default.Crop, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(imageVector = Icons.Default.DocumentScanner, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Cắt & Quét vùng này (ROI)", fontWeight = FontWeight.Bold)
+                        Text("Dùng OCR máy", fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                     }
                 }
             }

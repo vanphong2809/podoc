@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -142,42 +143,61 @@ fun OcrScreen(
                     elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 16.dp)
+                        .padding(bottom = 12.dp)
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(28.dp),
+                            .padding(horizontal = 24.dp, vertical = 28.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // Đồ họa minh họa 3D tài liệu kính mờ
+                        // Đồ họa minh họa 3D tài liệu kính mờ và biểu tượng [ T ]
                         Box(
                             modifier = Modifier
-                                .size(88.dp)
-                                .clip(RoundedCornerShape(24.dp))
-                                .background(
-                                    androidx.compose.ui.graphics.Brush.linearGradient(
-                                        listOf(Color(0xFFEEF2FF), Color(0xFFE0E7FF))
-                                    )
-                                ),
+                                .size(110.dp, 90.dp)
+                                .padding(bottom = 4.dp),
                             contentAlignment = Alignment.Center
                         ) {
+                            // Tấm kính mờ phía sau
                             Box(
                                 modifier = Modifier
-                                    .size(54.dp)
+                                    .size(76.dp, 76.dp)
+                                    .offset(x = 16.dp, y = 4.dp)
                                     .clip(RoundedCornerShape(16.dp))
-                                    .background(
-                                        androidx.compose.ui.graphics.Brush.verticalGradient(
-                                            listOf(Color(0xFF6366F1), Color(0xFF4338CA))
-                                        )
-                                    ),
+                                    .background(Color(0xFF818CF8).copy(alpha = 0.25f))
+                            )
+                            // Trang tài liệu ở giữa có dòng chữ tượng trưng
+                            Box(
+                                modifier = Modifier
+                                    .size(76.dp, 76.dp)
+                                    .offset(x = (-8).dp, y = (-4).dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(Color(0xFFEEF2FF))
+                                    .border(1.dp, Color(0xFFC7D2FE), RoundedCornerShape(16.dp))
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Box(modifier = Modifier.width(36.dp).height(4.dp).clip(CircleShape).background(Color(0xFF818CF8).copy(alpha = 0.5f)))
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Box(modifier = Modifier.width(26.dp).height(4.dp).clip(CircleShape).background(Color(0xFF818CF8).copy(alpha = 0.3f)))
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Box(modifier = Modifier.width(42.dp).height(4.dp).clip(CircleShape).background(Color(0xFF818CF8).copy(alpha = 0.4f)))
+                                }
+                            }
+                            // Khung quét nhận dạng với chữ [ T ] nổi bật ở trung tâm
+                            Box(
+                                modifier = Modifier
+                                    .size(54.dp, 54.dp)
+                                    .offset(x = 6.dp, y = 2.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color(0xFFEEF2FF).copy(alpha = 0.95f))
+                                    .border(2.dp, Color(0xFF4F46E5), RoundedCornerShape(14.dp)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.DocumentScanner,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(30.dp)
+                                Text(
+                                    text = "T",
+                                    fontSize = 26.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color(0xFF4F46E5)
                                 )
                             }
                         }
@@ -203,9 +223,10 @@ fun OcrScreen(
 
                         Spacer(modifier = Modifier.height(24.dp))
 
-                        Row(
+                        // 2 nút xếp dọc theo đúng Mockup 05: đầy đủ chiều ngang, không bao giờ bị cắt chữ
+                        Column(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Button(
                                 onClick = { cameraLauncher.launch(null) },
@@ -215,12 +236,12 @@ fun OcrScreen(
                                     contentColor = Color.White
                                 ),
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .height(46.dp)
+                                    .fillMaxWidth()
+                                    .height(48.dp)
                             ) {
-                                Icon(imageVector = Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Chụp ảnh", fontWeight = FontWeight.Bold)
+                                Icon(imageVector = Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Chụp ảnh", fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, softWrap = false)
                             }
 
                             OutlinedButton(
@@ -228,42 +249,73 @@ fun OcrScreen(
                                 shape = RoundedCornerShape(14.dp),
                                 border = BorderStroke(1.2.dp, Color(0xFFCBD5E1)),
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .height(46.dp)
+                                    .fillMaxWidth()
+                                    .height(48.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.PhotoLibrary,
                                     contentDescription = null,
                                     tint = Color(0xFF4F46E5),
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(20.dp)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Chọn từ máy", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    "Chọn từ máy",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
                             }
                         }
                     }
                 }
 
-                // Thanh 3 tính năng bảo mật / tốc độ dưới cùng
-                Row(
+                // Hộp 3 tính năng bảo mật / tốc độ / ngoại tuyến theo đúng Mockup 05
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                    shadowElevation = 0.5.dp,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 4.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(bottom = 16.dp)
                 ) {
-                    FeatureBadgeItem(
-                        icon = Icons.Default.Security,
-                        label = "Bảo mật trên máy"
-                    )
-                    FeatureBadgeItem(
-                        icon = Icons.Default.Bolt,
-                        label = "Nhanh & chính xác"
-                    )
-                    FeatureBadgeItem(
-                        icon = Icons.Default.WifiOff,
-                        label = "Ngoại tuyến"
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.Default.Security, contentDescription = null, tint = Color(0xFF4F46E5), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Bảo mật\ntrên thiết bị", fontSize = 11.sp, lineHeight = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFF4F46E5), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Nhanh &\nchính xác", fontSize = 11.sp, lineHeight = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.Default.WifiOff, contentDescription = null, tint = Color(0xFF4F46E5), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Hoạt động\nngoại tuyến", fontSize = 11.sp, lineHeight = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
             } else {
                 // Card xem trước hình ảnh và thanh công cụ xử lý ảnh
@@ -347,36 +399,49 @@ fun OcrScreen(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        // Bộ nút tác vụ trên ảnh: Cắt vùng ROI, Đổi ảnh, Bộ lọc nét
+                        // Bộ nút tác vụ trên ảnh: Cắt vùng ROI, Đổi ảnh, Bộ lọc nét (theo đúng Mockup 08)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            FilledTonalButton(
+                            Button(
                                 onClick = { viewModel.openCropDialog() },
-                                shape = RoundedCornerShape(10.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                modifier = Modifier.height(36.dp)
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFEEF2FF),
+                                    contentColor = Color(0xFF4338CA)
+                                ),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(40.dp)
                             ) {
                                 Icon(imageVector = Icons.Default.Crop, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Khoanh vùng", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Khoanh vùng", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
                             }
 
-                            FilterChip(
-                                selected = viewModel.isEnhanceContrastEnabled,
+                            Button(
                                 onClick = { viewModel.toggleEnhanceContrast() },
-                                label = { Text("Tăng nét", fontSize = 12.sp) },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = if (viewModel.isEnhanceContrastEnabled) Icons.Default.Contrast else Icons.Default.FilterNone,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                },
-                                modifier = Modifier.height(36.dp)
-                            )
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (viewModel.isEnhanceContrastEnabled) Color(0xFF4F46E5) else Color(0xFFEEF2FF),
+                                    contentColor = if (viewModel.isEnhanceContrastEnabled) Color.White else Color(0xFF4338CA)
+                                ),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(40.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (viewModel.isEnhanceContrastEnabled) Icons.Default.Contrast else Icons.Default.FilterNone,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Tăng nét", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+                            }
 
                             OutlinedButton(
                                 onClick = {
@@ -386,13 +451,16 @@ fun OcrScreen(
                                         imagePickerLauncher.launch("image/*")
                                     }
                                 },
-                                shape = RoundedCornerShape(10.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                modifier = Modifier.height(36.dp)
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(40.dp)
                             ) {
-                                Icon(imageVector = Icons.Default.SwapHoriz, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Icon(imageVector = Icons.Default.SwapHoriz, contentDescription = null, tint = Color(0xFF4338CA), modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Đổi ảnh", fontSize = 12.sp)
+                                Text("Đổi ảnh", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF4338CA), maxLines = 1, softWrap = false)
                             }
                         }
                     }
@@ -755,13 +823,14 @@ fun OcrScreen(
                             },
                             shape = RoundedCornerShape(14.dp),
                             border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
                             modifier = Modifier
                                 .weight(1f)
                                 .height(46.dp)
                         ) {
                             Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Sao chép", maxLines = 1, fontWeight = FontWeight.SemiBold)
+                            Text("Sao", maxLines = 1, softWrap = false, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
                         }
 
                         OutlinedButton(
@@ -774,13 +843,14 @@ fun OcrScreen(
                             },
                             shape = RoundedCornerShape(14.dp),
                             border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
                             modifier = Modifier
                                 .weight(1f)
                                 .height(46.dp)
                         ) {
                             Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Chia sẻ", maxLines = 1, fontWeight = FontWeight.SemiBold)
+                            Text("Chia sẻ", maxLines = 1, softWrap = false, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
                         }
 
                         Button(
@@ -793,13 +863,14 @@ fun OcrScreen(
                                 containerColor = Color(0xFF4F46E5),
                                 contentColor = Color.White
                             ),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
                             modifier = Modifier
                                 .weight(1.3f)
                                 .height(46.dp)
                         ) {
                             Icon(imageVector = Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Lưu thư viện", maxLines = 1, fontWeight = FontWeight.Bold)
+                            Text("Lưu thư viện", maxLines = 1, softWrap = false, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
