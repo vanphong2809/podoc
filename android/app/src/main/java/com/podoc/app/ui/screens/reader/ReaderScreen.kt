@@ -1471,11 +1471,19 @@ private fun TikTokVideoFeedViewer(
 
     var itemToDelete by remember { mutableStateOf<ArticleListItem?>(null) }
     var showHint by remember { mutableStateOf(true) }
+    var isManuallyPaused by remember { mutableStateOf(false) }
 
     // Tự động tắt gợi ý vuốt sau 3 giây
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(3000)
         showHint = false
+    }
+
+    // Khi video bắt đầu phát, tự động tắt trạng thái tạm dừng thủ công
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            isManuallyPaused = false
+        }
     }
 
     // Danh sách các video trong feed
@@ -1546,6 +1554,9 @@ private fun TikTokVideoFeedViewer(
                     MediaPlaybackManager.detachSurface()
                 }
 
+                // Chuyển trang mới: đảm bảo không hiện nút tam giác pause giữa màn hình
+                isManuallyPaused = false
+
                 // Phát ngay video trang mới
                 viewModel.getVideoFile(context, targetItem) { file ->
                     MediaPlaybackManager.startPlay(
@@ -1594,6 +1605,9 @@ private fun TikTokVideoFeedViewer(
                     .fillMaxSize()
                     .background(Color.Black)
                     .clickable {
+                        // Nếu đang phát mà click thì người dùng chủ động muốn pause -> hiện nút tam giác
+                        // Nếu đang dừng mà click thì người dùng muốn play tiếp -> ẩn nút tam giác
+                        isManuallyPaused = isPlaying
                         MediaPlaybackManager.togglePlayPause(context)
                     },
                 contentAlignment = Alignment.Center
@@ -1660,9 +1674,10 @@ private fun TikTokVideoFeedViewer(
                     }
                 }
 
-                // 2. Icon Play to tròn ở trung tâm màn hình khi Pause (chuẩn TikTok)
+                // 2. Icon Play to tròn ở trung tâm màn hình CHỈ KHI người dùng chủ động chạm tạm dừng (chuẩn TikTok)
+                // Tuyệt đối không hiển thị khi vừa vuốt sang video mới
                 AnimatedVisibility(
-                    visible = isCurrentPage && !isPlaying,
+                    visible = isCurrentPage && isManuallyPaused && !isPlaying,
                     enter = fadeIn(spring()),
                     exit = fadeOut(spring()),
                     modifier = Modifier.align(Alignment.Center)

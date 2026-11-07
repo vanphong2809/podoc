@@ -144,6 +144,11 @@ object MediaPlaybackManager {
 
     fun startPlay(context: Context, filePath: String, title: String, articleId: Int, isVideo: Boolean) {
         _isCompleted.value = false
+        _currentTitle.value = title
+        _currentArticleId.value = articleId
+        _currentFilePath.value = filePath
+        _isVideoMode.value = isVideo
+
         val intent = Intent(context, MediaPlaybackService::class.java).apply {
             action = MediaPlaybackService.ACTION_START
             putExtra(MediaPlaybackService.EXTRA_FILE_PATH, filePath)
@@ -156,6 +161,13 @@ object MediaPlaybackManager {
         } else {
             context.startService(intent)
         }
+    }
+
+    /**
+     * Chuẩn bị sẵn (pre-prepare) MediaPlayer cho video kế tiếp trong nền
+     */
+    fun preloadNext(filePath: String) {
+        serviceInstance?.preloadNext(filePath)
     }
 
     fun togglePlayPause(context: Context) {
@@ -233,6 +245,8 @@ class MediaPlaybackService : Service() {
     }
 
     private var mediaPlayer: MediaPlayer? = null
+    private var preloadedPlayer: MediaPlayer? = null
+    private var preloadedFilePath: String? = null
     private var mediaSession: MediaSessionCompat? = null
     private var progressJob: Job? = null
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
@@ -379,6 +393,43 @@ class MediaPlaybackService : Service() {
 
     private fun playFile(filePath: String, isVideo: Boolean) {
         try {
+            // KIỂM TRA PRELOAD PLAYER ĐÃ SẴN SÀNG -> PHÁT TỨC THÌ TRONG 0MS!
+            if (preloadedPlayer != null && preloadedFilePath == filePath) {
+                mediaPlayer?.release()
+                mediaPlayer = preloadedPlayer
+                preloadedPlayer = null
+                preloadedFilePath = null
+                MediaPlaybackManager.mediaPlayer = mediaPlayer
+
+                mediaPlayer?.apply {
+                    isLooping = MediaPlaybackManager._isRepeatMode.value
+                    if (videoWidth > 0 && videoHeight > 0) {
+                        MediaPlaybackManager._videoSize.value = Pair(videoWidth, videoHeight)
+                    }
+                    if (isVideo && MediaPlaybackManager.currentHolder != null) {
+                        try {
+                            setDisplay(MediaPlaybackManager.currentHolder)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Lỗi gắn surface cho preloaded player: ${e.message}")
+                        }
+                    }
+                    start()
+                    MediaPlaybackManager._isPlaying.value = true
+                    MediaPlaybackManager._isCompleted.value = false
+                    MediaPlaybackManager._duration.value = duration
+
+                    updateMetadata(MediaPlaybackManager._currentTitle.value, duration.toLong())
+                    updatePlaybackState(0, isPlaying = true)
+                    updateNotification(MediaPlaybackManager._currentTitle.value, true)
+                    startProgressTracker()
+                }
+                return
+            }
+
+            preloadedPlayer?.release()
+            preloadedPlayer = null
+            preloadedFilePath = null
+
             mediaPlayer?.release()
             mediaPlayer = MediaPlayer().apply {
                 setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK)
@@ -447,6 +498,60 @@ class MediaPlaybackService : Service() {
             MediaPlaybackManager.mediaPlayer = mediaPlayer
         } catch (e: Exception) {
             Log.e(TAG, "Lỗi khởi tạo MediaPlayer", e)
+        }
+    }
+
+    /**
+     * Chuẩn bị sẵn (pre-prepare) MediaPlayer cho video kế tiếp trong nền
+     */
+    fun preloadNext(filePath: String) {
+        if (preloadedFilePath == filePath && preloadedPlayer != null) return
+        try {
+            preloadedPlayer?.release()
+            preloadedPlayer = null
+            preloadedFilePath = null
+
+            val p = MediaPlayer().apply {
+                setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK)
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .build()
+                )
+                setDataSource(filePath)
+                setOnPreparedListener { mp ->
+                    if (mp.videoWidth > 0 && mp.videoHeight > 0) {
+                        MediaPlaybackManager._videoSize.value = Pair(mp.videoWidth, mp.videoHeight)
+                    }
+                }
+                setOnCompletionListener { mp ->
+                    if (MediaPlaybackManager._isRepeatMode.value) {
+                        try {
+                            mp.seekTo(0)
+                            mp.start()
+                            MediaPlaybackManager._isPlaying.value = true
+                        } catch (e: Exception) {}
+                    } else {
+                        MediaPlaybackManager._isPlaying.value = false
+                        MediaPlaybackManager._isCompleted.value = true
+                    }
+                }
+                setOnVideoSizeChangedListener { _, width, height ->
+                    MediaPlaybackManager._videoSize.value = Pair(width, height)
+                }
+                setOnErrorListener { _, _, _ ->
+                    preloadedPlayer?.release()
+                    preloadedPlayer = null
+                    preloadedFilePath = null
+                    false
+                }
+                prepareAsync()
+            }
+            preloadedPlayer = p
+            preloadedFilePath = filePath
+        } catch (e: Exception) {
+            Log.w(TAG, "Lỗi preload video kế tiếp: ${e.message}")
         }
     }
 
@@ -668,6 +773,13 @@ class MediaPlaybackService : Service() {
     override fun onDestroy() {
         MediaPlaybackManager.serviceInstance = null
         stopPlayback()
+        try {
+            preloadedPlayer?.release()
+            preloadedPlayer = null
+            preloadedFilePath = null
+        } catch (e: Exception) {
+            // Ignore
+        }
         serviceScope.cancel()
         mediaSession?.isActive = false
         mediaSession?.release()

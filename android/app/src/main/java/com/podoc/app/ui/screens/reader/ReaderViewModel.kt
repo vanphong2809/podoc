@@ -384,7 +384,10 @@ class ReaderViewModel(
     fun preloadVideo(index: Int, feed: List<ArticleListItem>, context: Context) {
         if (index !in feed.indices) return
         val item = feed[index]
-        getVideoFile(context, item) { /* Cached */ }
+        getVideoFile(context, item) { file ->
+            // Pre-prepare trước MediaPlayer để khi vuốt sang là phát tức thì trong 0ms
+            com.podoc.app.service.MediaPlaybackManager.preloadNext(file.absolutePath)
+        }
     }
 
     fun getVideoFile(context: Context, item: ArticleListItem, onReady: (File) -> Unit) {
