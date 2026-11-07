@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.podoc.app.data.local.DataStoreManager
 import com.podoc.app.data.model.ArticleDetail
+import com.podoc.app.data.model.ArticleListItem
 import com.podoc.app.data.repository.ArticleRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -34,7 +35,11 @@ data class ReaderUiState(
     val textContent: String? = null,
     val fileError: String? = null,
     val isConvertingToPdf: Boolean = false,
-    val convertError: String? = null
+    val convertError: String? = null,
+    // TikTok Video Feed states
+    val videoFeed: List<ArticleListItem> = emptyList(),
+    val currentVideoIndex: Int = 0,
+    val videoFilesCache: Map<Int, File> = emptyMap()
 )
 
 class ReaderViewModel(
@@ -67,6 +72,13 @@ class ReaderViewModel(
                     // Nếu là tệp tin, tự động nạp file về cache để mở trực tiếp trên app
                     if (detail.sourceType == "FILE" || !detail.fileName.isNullOrBlank()) {
                         loadFileForInApp(context, detail)
+                    }
+
+                    // Nếu là tệp Video, chuẩn bị danh sách Video Feed để hỗ trợ vuốt TikTok
+                    val rawExt = (detail.fileName ?: detail.filePath ?: "").let { if (it.contains('.')) it.substringAfterLast('.', "").lowercase() else "" }
+                    val isVideo = rawExt in listOf("mp4", "mkv", "mov", "webm", "avi", "3gp", "ts") || detail.mimeType?.startsWith("video/") == true
+                    if (isVideo) {
+                        loadVideoFeed(detail.id, detail.categoryId, context)
                     }
                 },
                 onFailure = { error ->
@@ -306,5 +318,124 @@ class ReaderViewModel(
 
     fun clearConvertError() {
         _uiState.value = _uiState.value.copy(convertError = null)
+    }
+
+    /**
+     * Tải danh sách video feed cho chế độ lướt TikTok
+     */
+    fun loadVideoFeed(currentArticleId: Int, categoryId: Int?, context: Context) {
+        viewModelScope.launch {
+            // Tải video từ danh mục hiện tại nếu có
+            val categoryVideos = if (categoryId != null && categoryId > 0) {
+                articleRepository.getArticles(categoryId = categoryId, contentType = "video", pageSize = 100).getOrNull()
+            } else null
+
+            // Nếu trong danh mục có ít hơn 2 video, lấy toàn bộ video trong thư viện để lướt phong phú
+            val baseList = if (!categoryVideos.isNullOrEmpty() && categoryVideos.size >= 2) {
+                categoryVideos
+            } else {
+                articleRepository.getArticles(contentType = "video", pageSize = 100).getOrDefault(emptyList())
+            }
+
+            val finalFeed = baseList.toMutableList()
+            val currentIndex = finalFeed.indexOfFirst { it.id == currentArticleId }
+            val startIndex = if (currentIndex >= 0) currentIndex else {
+                _uiState.value.article?.let { cur ->
+                    finalFeed.add(0, ArticleListItem(
+                        id = cur.id,
+                        title = cur.title,
+                        sourceType = cur.sourceType,
+                        sourceUrl = cur.sourceUrl,
+                        fileName = cur.fileName,
+                        filePath = cur.filePath,
+                        mimeType = cur.mimeType,
+                        categoryId = cur.categoryId,
+                        categoryName = cur.categoryName,
+                        isFavorite = cur.isFavorite,
+                        readProgress = cur.readProgress,
+                        createdAt = cur.createdAt,
+                        updatedAt = cur.updatedAt
+                    ))
+                }
+                0
+            }
+
+            _uiState.value = _uiState.value.copy(
+                videoFeed = finalFeed,
+                currentVideoIndex = startIndex
+            )
+
+            // Tải trước video hiện tại và video kế tiếp để sẵn sàng phát tức thì
+            preloadVideo(startIndex, finalFeed, context)
+            if (startIndex + 1 < finalFeed.size) {
+                preloadVideo(startIndex + 1, finalFeed, context)
+            }
+        }
+    }
+
+    fun preloadVideo(index: Int, feed: List<ArticleListItem>, context: Context) {
+        if (index !in feed.indices) return
+        val item = feed[index]
+        getVideoFile(context, item) { /* Cached */ }
+    }
+
+    fun getVideoFile(context: Context, item: ArticleListItem, onReady: (File) -> Unit) {
+        val cached = _uiState.value.videoFilesCache[item.id]
+        if (cached != null && cached.exists() && cached.length() > 0) {
+            onReady(cached)
+            return
+        }
+
+        val rawExt = (item.fileName ?: item.filePath ?: "").let { if (it.contains('.')) it.substringAfterLast('.', "").lowercase() else "mp4" }
+        val safeExt = if (rawExt.isNotBlank()) ".$rawExt" else ".mp4"
+        val fileName = item.fileName?.let { if (it.contains('.')) it else "$it$safeExt" } ?: "video_${item.id}$safeExt"
+        val cacheFile = File(context.cacheDir, "podoc_doc_${item.id}_$fileName")
+        if (cacheFile.exists() && cacheFile.length() > 0) {
+            _uiState.value = _uiState.value.copy(
+                videoFilesCache = _uiState.value.videoFilesCache + (item.id to cacheFile)
+            )
+            onReady(cacheFile)
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            articleRepository.downloadArticleFile(item.id, inline = true).fold(
+                onSuccess = { responseBody ->
+                    try {
+                        cacheFile.outputStream().use { output ->
+                            responseBody.byteStream().use { input -> input.copyTo(output) }
+                        }
+                        withContext(Dispatchers.Main) {
+                            _uiState.value = _uiState.value.copy(
+                                videoFilesCache = _uiState.value.videoFilesCache + (item.id to cacheFile)
+                            )
+                            onReady(cacheFile)
+                        }
+                    } catch (e: Exception) {
+                        // Bỏ qua lỗi ghi cache
+                    }
+                },
+                onFailure = { /* Bỏ qua */ }
+            )
+        }
+    }
+
+    fun openItemFile(context: Context, item: ArticleListItem) {
+        getVideoFile(context, item) { file ->
+            openFileWithIntent(context, file, item.mimeType)
+        }
+    }
+
+    fun deleteFeedItem(item: ArticleListItem, onDeleted: () -> Unit) {
+        viewModelScope.launch {
+            articleRepository.deleteArticle(item.id).fold(
+                onSuccess = {
+                    val updatedFeed = _uiState.value.videoFeed.filterNot { it.id == item.id }
+                    _uiState.value = _uiState.value.copy(videoFeed = updatedFeed)
+                    onDeleted()
+                },
+                onFailure = { /* Bỏ qua */ }
+            )
+        }
     }
 }

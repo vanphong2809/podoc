@@ -23,12 +23,15 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.VerticalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -71,6 +74,7 @@ import com.mikepenz.markdown.model.MarkdownColors
 import com.mikepenz.markdown.model.MarkdownTypography
 import com.podoc.app.R
 import com.podoc.app.data.model.ArticleDetail
+import com.podoc.app.data.model.ArticleListItem
 import com.podoc.app.ui.components.PoDocTopAppBar
 import com.podoc.app.service.MediaPlaybackManager
 import kotlinx.coroutines.Dispatchers
@@ -307,6 +311,7 @@ fun ReaderScreen(
                             fileExt = fileExt,
                             isOfficeDoc = isOfficeDoc,
                             uiState = uiState,
+                            viewModel = viewModel,
                             lazyListState = lazyListState,
                             cleanedMarkdown = cleanedMarkdown,
                             markdownBlocks = markdownBlocks,
@@ -434,6 +439,7 @@ private fun InAppFileContent(
     fileExt: String,
     isOfficeDoc: Boolean = false,
     uiState: ReaderUiState,
+    viewModel: ReaderViewModel,
     lazyListState: androidx.compose.foundation.lazy.LazyListState,
     cleanedMarkdown: String,
     markdownBlocks: List<String>,
@@ -443,7 +449,12 @@ private fun InAppFileContent(
     onNavigateBack: () -> Unit = {},
     onDeleteClick: () -> Unit = {}
 ) {
-    if (uiState.isFileLoading) {
+    val isVideo = fileExt in listOf("mp4", "mkv", "mov", "webm", "avi", "3gp", "ts") || article.mimeType?.startsWith("video/") == true
+    val isAudio = fileExt in listOf("mp3", "wav", "m4a", "aac", "flac", "ogg", "wma", "opus") || article.mimeType?.startsWith("audio/") == true
+    val isImage = fileExt in listOf("png", "svg", "jpg", "jpeg", "webp", "gif") || article.mimeType?.startsWith("image/") == true
+    val isSvg = fileExt == "svg" || article.mimeType == "image/svg+xml"
+
+    if (uiState.isFileLoading && !isVideo) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 CircularProgressIndicator(strokeWidth = 3.dp)
@@ -454,7 +465,7 @@ private fun InAppFileContent(
         return
     }
 
-    if (uiState.fileError != null && uiState.localFile == null && uiState.htmlContent == null) {
+    if (uiState.fileError != null && uiState.localFile == null && uiState.htmlContent == null && !isVideo) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -479,28 +490,16 @@ private fun InAppFileContent(
         return
     }
 
-    val isVideo = fileExt in listOf("mp4", "mkv", "mov", "webm", "avi", "3gp", "ts") || article.mimeType?.startsWith("video/") == true
-    val isAudio = fileExt in listOf("mp3", "wav", "m4a", "aac", "flac", "ogg", "wma", "opus") || article.mimeType?.startsWith("audio/") == true
-    val isImage = fileExt in listOf("png", "svg", "jpg", "jpeg", "webp", "gif") || article.mimeType?.startsWith("image/") == true
-    val isSvg = fileExt == "svg" || article.mimeType == "image/svg+xml"
-
     when {
-        // 1. Xem Video trực tiếp hỗ trợ tiếp tục phát âm thanh khi tắt màn hình
+        // 1. Trình xem Video dạng TikTok Reels/Shorts vuốt lên/xuống mượt mà
         isVideo -> {
-            val file = uiState.localFile
-            if (file != null && file.exists()) {
-                InAppVideoViewer(
-                    file = file,
-                    article = article,
-                    onOpenExternal = onOpenExternal,
-                    onNavigateBack = onNavigateBack,
-                    onDeleteClick = onDeleteClick
-                )
-            } else {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            }
+            TikTokVideoFeedViewer(
+                initialArticle = article,
+                uiState = uiState,
+                viewModel = viewModel,
+                onNavigateBack = onNavigateBack,
+                onDeleteClick = onDeleteClick
+            )
         }
 
         // 2. Nghe tệp Âm thanh (.mp3, .wav, .m4a...) trực tiếp trên app & phát nền khi tắt màn hình
@@ -1447,420 +1446,517 @@ private fun splitMarkdownIntoBlocks(markdown: String): List<String> {
 }
 
 /**
- * Trình phát Video tối ưu không gian hiển thị, giữ nguyên tỉ lệ khung hình gốc (không bị méo/co giãn)
- * Hỗ trợ xoay toàn màn hình ngang (Landscape), gắn trực tiếp với MediaPlaybackManager
- * Duy trì phát âm thanh liên tục trong nền ngay cả khi tắt màn hình điện thoại.
- * Các nút điều khiển nổi (Back, Play/Pause, Tua, Mở ngoài, Toàn màn hình) tự động biến mất khi đang xem video.
+ * Trình xem Video dạng Feed lướt đứng (Vertical Pager) chuẩn TikTok / Shorts / Reels:
+ * - Vuốt lên (Swipe Up) để xem video kế tiếp, vuốt xuống (Swipe Down) để xem video trước đó.
+ * - Tự động phát video ngay khi chuyển trang, tự động preload video tiếp theo vào cache.
+ * - Chạm 1 chạm vào màn hình để Tạm dừng / Tiếp tục (Pause / Play) với icon Play mờ lớn ở giữa.
+ * - Cột chức năng bên phải: Nút Lặp lại (Loop), Mở app ngoài, Chia sẻ, Xoá video.
+ * - Thông tin tiêu đề, tag VIDEO, danh mục và thanh tua tiến độ sát đáy màn hình.
+ * - Tiếp tục phát âm thanh liên tục trong nền ngay cả khi tắt màn hình điện thoại.
  */
 @Composable
-private fun InAppVideoViewer(
-    file: File,
-    article: ArticleDetail,
-    onOpenExternal: () -> Unit,
+private fun TikTokVideoFeedViewer(
+    initialArticle: ArticleDetail,
+    uiState: ReaderUiState,
+    viewModel: ReaderViewModel,
     onNavigateBack: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
     val context = LocalContext.current
-    val activity = remember(context) { context.findActivity() }
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-
     val isPlaying by MediaPlaybackManager.isPlaying.collectAsState()
     val isRepeatMode by MediaPlaybackManager.isRepeatMode.collectAsState()
-    val isCompleted by MediaPlaybackManager.isCompleted.collectAsState()
     val currentPosition by MediaPlaybackManager.currentPosition.collectAsState()
     val duration by MediaPlaybackManager.duration.collectAsState()
     val videoSize by MediaPlaybackManager.videoSize.collectAsState()
-    var showControls by remember { mutableStateOf(true) }
 
-    // Trích xuất tỉ lệ khung hình thực tế của video từ metadata tệp
-    val nativeVideoRatio = remember(file.absolutePath) {
-        try {
-            val retriever = MediaMetadataRetriever()
-            retriever.setDataSource(file.absolutePath)
-            val widthStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
-            val heightStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
-            val rotationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
-            retriever.release()
-            val w = widthStr?.toFloatOrNull() ?: 0f
-            val h = heightStr?.toFloatOrNull() ?: 0f
-            val rotation = rotationStr?.toIntOrNull() ?: 0
-            if (w > 0f && h > 0f) {
-                if (rotation == 90 || rotation == 270) {
-                    h / w
-                } else {
-                    w / h
-                }
-            } else null
-        } catch (e: Exception) {
-            null
-        }
+    var itemToDelete by remember { mutableStateOf<ArticleListItem?>(null) }
+    var showHint by remember { mutableStateOf(true) }
+
+    // Tự động tắt gợi ý vuốt sau 3 giây
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(3000)
+        showHint = false
     }
 
-    // Tỉ lệ khung hình ưu tiên: retriever -> videoSize từ MediaPlayer -> mặc định 16:9
-    val currentRatio = nativeVideoRatio
-        ?: if (videoSize.first > 0 && videoSize.second > 0) {
-            videoSize.first.toFloat() / videoSize.second.toFloat()
+    // Danh sách các video trong feed
+    val feedList = remember(uiState.videoFeed, initialArticle) {
+        if (uiState.videoFeed.isNotEmpty()) {
+            uiState.videoFeed
         } else {
-            16f / 9f
-        }
-
-    // Khôi phục hướng màn hình khi thoát khỏi video
-    DisposableEffect(Unit) {
-        onDispose {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        }
-    }
-
-    // Tự động phát khi tải xong tệp video nếu chưa phát
-    LaunchedEffect(file.absolutePath) {
-        if (MediaPlaybackManager.currentFilePath.value != file.absolutePath) {
-            MediaPlaybackManager.startPlay(
-                context = context,
-                filePath = file.absolutePath,
-                title = article.title,
-                articleId = article.id,
-                isVideo = true
+            listOf(
+                ArticleListItem(
+                    id = initialArticle.id,
+                    title = initialArticle.title,
+                    sourceType = initialArticle.sourceType,
+                    sourceUrl = initialArticle.sourceUrl,
+                    fileName = initialArticle.fileName,
+                    filePath = initialArticle.filePath,
+                    mimeType = initialArticle.mimeType,
+                    categoryId = initialArticle.categoryId,
+                    categoryName = initialArticle.categoryName,
+                    isFavorite = initialArticle.isFavorite,
+                    readProgress = initialArticle.readProgress,
+                    createdAt = initialArticle.createdAt,
+                    updatedAt = initialArticle.updatedAt
+                )
             )
         }
     }
 
-    // Luôn hiện thanh điều khiển khi phát xong video
-    LaunchedEffect(isCompleted) {
-        if (isCompleted) {
-            showControls = true
+    val initialPage = remember(feedList) {
+        val found = feedList.indexOfFirst { it.id == initialArticle.id }
+        if (found >= 0) found else 0
+    }
+
+    val pagerState = rememberPagerState(
+        initialPage = initialPage,
+        pageCount = { feedList.size }
+    )
+
+    // Khi chuyển video (vuốt trang)
+    LaunchedEffect(pagerState.currentPage, feedList) {
+        if (feedList.isEmpty() || pagerState.currentPage !in feedList.indices) return@LaunchedEffect
+        val currentItem = feedList[pagerState.currentPage]
+
+        viewModel.getVideoFile(context, currentItem) { file ->
+            MediaPlaybackManager.startPlay(
+                context = context,
+                filePath = file.absolutePath,
+                title = currentItem.title,
+                articleId = currentItem.id,
+                isVideo = true
+            )
+        }
+
+        // Tải trước (preload) video tiếp theo và video trước để lướt siêu mượt
+        if (pagerState.currentPage + 1 < feedList.size) {
+            viewModel.preloadVideo(pagerState.currentPage + 1, feedList, context)
+        }
+        if (pagerState.currentPage - 1 >= 0) {
+            viewModel.preloadVideo(pagerState.currentPage - 1, feedList, context)
         }
     }
 
-    // Tự động ẩn thanh điều khiển sau 3.5 giây khi đang phát
-    LaunchedEffect(showControls, isPlaying, isCompleted) {
-        if (showControls && isPlaying && !isCompleted) {
-            kotlinx.coroutines.delay(3500)
-            showControls = false
-        }
-    }
-
-    // Bắt phím Back của hệ thống: nếu đang xoay ngang thì xoay dọc lại trước
     BackHandler(enabled = true) {
-        if (isLandscape) {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        } else {
-            onNavigateBack()
-        }
+        onNavigateBack()
     }
 
-    val toggleOrientation = {
-        activity?.let { act ->
-            if (isLandscape) {
-                act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            } else {
-                act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            }
-        }
-    }
-
-    BoxWithConstraints(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .clickable { showControls = !showControls },
-        contentAlignment = Alignment.Center
     ) {
-        val containerWidth = maxWidth.value
-        val containerHeight = maxHeight.value
-        val containerRatio = if (containerHeight > 0f) containerWidth / containerHeight else 1f
-
-        val surfaceModifier = if (currentRatio > containerRatio) {
-            // Video ngang hơn khung hình màn hình: full chiều ngang, tỉ lệ theo aspect ratio
-            Modifier
-                .fillMaxWidth()
-                .aspectRatio(currentRatio)
-        } else {
-            // Video dọc hơn khung hình màn hình: full chiều dọc, tỉ lệ theo aspect ratio
-            Modifier
-                .fillMaxHeight()
-                .aspectRatio(currentRatio)
-        }
-
-        // Khung SurfaceView native kết nối trực tiếp với MediaPlaybackManager với tỉ lệ chuẩn không bị méo hình
-        AndroidView(
-            factory = { ctx ->
-                android.view.SurfaceView(ctx).apply {
-                    holder.addCallback(object : SurfaceHolder.Callback {
-                        override fun surfaceCreated(holder: SurfaceHolder) {
-                            MediaPlaybackManager.attachSurface(holder)
-                        }
-                        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
-                        override fun surfaceDestroyed(holder: SurfaceHolder) {
-                            MediaPlaybackManager.detachSurface()
-                        }
-                    })
-                }
-            },
-            modifier = surfaceModifier
-        )
-
-        // Overlay điều khiển khi chạm vào màn hình (tự biến mất sau 3.5s, không chiếm diện tích)
-        AnimatedVisibility(
-            visible = showControls,
-            enter = fadeIn(),
-            exit = fadeOut(),
+        VerticalPager(
+            state = pagerState,
             modifier = Modifier.fillMaxSize()
-        ) {
+        ) { pageIndex ->
+            val item = feedList[pageIndex]
+            val isCurrentPage = (pageIndex == pagerState.currentPage)
+            val videoFile = uiState.videoFilesCache[item.id]
+                ?: if (item.id == initialArticle.id) uiState.localFile else null
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.4f))
+                    .background(Color.Black)
+                    .clickable {
+                        MediaPlaybackManager.togglePlayPause(context)
+                    },
+                contentAlignment = Alignment.Center
             ) {
-                // 1. THANH TOP OVERLAY NỔI TRỰC TIẾP TRÊN VIDEO (Bao gồm nút Back, Tiêu đề, Mở app ngoài, Chia sẻ)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 8.dp, vertical = 6.dp)
-                        .align(Alignment.TopCenter),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = {
-                            if (isLandscape) {
-                                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                            } else {
-                                onNavigateBack()
-                            }
-                        },
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Quay lại",
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
+                // 1. Khung hiển thị SurfaceView Video với tỉ lệ khung hình chuẩn
+                if (videoFile != null && videoFile.exists()) {
+                    val nativeVideoRatio = remember(videoFile.absolutePath) {
+                        try {
+                            val retriever = MediaMetadataRetriever()
+                            retriever.setDataSource(videoFile.absolutePath)
+                            val wStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+                            val hStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+                            val rotStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                            retriever.release()
+                            val w = wStr?.toFloatOrNull() ?: 0f
+                            val h = hStr?.toFloatOrNull() ?: 0f
+                            val rot = rotStr?.toIntOrNull() ?: 0
+                            if (w > 0f && h > 0f) {
+                                if (rot == 90 || rot == 270) h / w else w / h
+                            } else null
+                        } catch (e: Exception) {
+                            null
+                        }
+                    } ?: if (videoSize.first > 0 && videoSize.second > 0) {
+                        videoSize.first.toFloat() / videoSize.second.toFloat()
+                    } else {
+                        16f / 9f
                     }
 
-                    Text(
-                        text = article.title,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold
-                        ),
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    BoxWithConstraints(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val containerWidth = maxWidth.value
+                        val containerHeight = maxHeight.value
+                        val containerRatio = if (containerHeight > 0f) containerWidth / containerHeight else 1f
+
+                        val surfaceModifier = if (nativeVideoRatio > containerRatio) {
+                            Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(nativeVideoRatio)
+                        } else {
+                            Modifier
+                                .fillMaxHeight()
+                                .aspectRatio(nativeVideoRatio)
+                        }
+
+                        AndroidView(
+                            factory = { ctx ->
+                                android.view.SurfaceView(ctx).apply {
+                                    holder.addCallback(object : SurfaceHolder.Callback {
+                                        override fun surfaceCreated(holder: SurfaceHolder) {
+                                            if (isCurrentPage) {
+                                                MediaPlaybackManager.attachSurface(holder)
+                                            }
+                                        }
+                                        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+                                        override fun surfaceDestroyed(holder: SurfaceHolder) {
+                                            if (isCurrentPage) {
+                                                MediaPlaybackManager.detachSurface()
+                                            }
+                                        }
+                                    })
+                                }
+                            },
+                            update = { view ->
+                                if (isCurrentPage) {
+                                    MediaPlaybackManager.attachSurface(view.holder)
+                                }
+                            },
+                            modifier = surfaceModifier
+                        )
+                    }
+                } else {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp)
+                    }
+                }
+
+                // 2. Icon Play to tròn ở trung tâm màn hình khi Pause (chuẩn TikTok)
+                AnimatedVisibility(
+                    visible = isCurrentPage && !isPlaying,
+                    enter = fadeIn(spring()),
+                    exit = fadeOut(spring()),
+                    modifier = Modifier.align(Alignment.Center)
+                ) {
+                    Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 12.dp)
+                            .size(76.dp)
+                            .background(Color.Black.copy(alpha = 0.5f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Phát",
+                            tint = Color.White.copy(alpha = 0.95f),
+                            modifier = Modifier.size(50.dp)
+                        )
+                    }
+                }
+
+                // 3. Gradient mờ ở cạnh đáy để thông tin bài viết và action bar luôn rõ nét
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
+                            )
+                        )
+                )
+
+                // 4. Right Action Bar chuẩn TikTok (Cột dọc các nút tương tác bên phải)
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 12.dp, bottom = 48.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Lặp lại (Repeat Mode)
+                    TikTokActionButton(
+                        icon = if (isRepeatMode) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                        label = if (isRepeatMode) "1 lặp" else "Lặp lại",
+                        isActive = isRepeatMode,
+                        activeTint = Color(0xFF38BDF8),
+                        onClick = { MediaPlaybackManager.toggleRepeatMode() }
                     )
 
-                    IconButton(
-                        onClick = { MediaPlaybackManager.toggleRepeatMode() },
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(
-                                if (isRepeatMode) Color(0xFF3B82F6).copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.55f),
-                                CircleShape
-                            )
-                    ) {
-                        Icon(
-                            imageVector = if (isRepeatMode) Icons.Default.RepeatOne else Icons.Default.Repeat,
-                            contentDescription = if (isRepeatMode) "Tắt lặp lại video" else "Bật lặp lại video",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                    // Mở app ngoài
+                    TikTokActionButton(
+                        icon = Icons.Default.OpenInNew,
+                        label = "Mở app",
+                        onClick = { viewModel.openItemFile(context, item) }
+                    )
 
-                    Spacer(modifier = Modifier.width(6.dp))
-
-                    IconButton(
-                        onClick = onOpenExternal,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.OpenInNew,
-                            contentDescription = "Mở app khác",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(6.dp))
-
-                    IconButton(
+                    // Chia sẻ
+                    TikTokActionButton(
+                        icon = Icons.Default.Share,
+                        label = "Chia sẻ",
                         onClick = {
                             val intent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
-                                putExtra(Intent.EXTRA_SUBJECT, article.title)
-                                putExtra(Intent.EXTRA_TEXT, "${article.title}\n\n${article.sourceUrl ?: ""}")
+                                putExtra(Intent.EXTRA_SUBJECT, item.title)
+                                putExtra(Intent.EXTRA_TEXT, "${item.title}\n\n${item.sourceUrl ?: ""}")
                             }
                             context.startActivity(Intent.createChooser(intent, "Chia sẻ"))
-                        },
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Share,
-                            contentDescription = "Chia sẻ",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                        }
+                    )
 
-                    Spacer(modifier = Modifier.width(6.dp))
-
-                    IconButton(
-                        onClick = onDeleteClick,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Xoá video",
-                            tint = Color(0xFFEF4444),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                    // Xoá video
+                    TikTokActionButton(
+                        icon = Icons.Default.Delete,
+                        label = "Xoá",
+                        tint = Color(0xFFEF4444),
+                        onClick = { itemToDelete = item }
+                    )
                 }
 
-                // 2. BỘ NÚT ĐIỀU KHIỂN CHÍNH GIỮA MÀN HÌNH (Lùi 10s, Play/Pause/Replay, Tiến 10s)
-                Row(
-                    modifier = Modifier.align(Alignment.Center),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(28.dp)
-                ) {
-                    // Lùi 10s
-                    IconButton(
-                        onClick = {
-                            MediaPlaybackManager.seekTo(context, (currentPosition - 10000).coerceAtLeast(0))
-                        },
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Replay10,
-                            contentDescription = "Lùi 10 giây",
-                            tint = Color.White,
-                            modifier = Modifier.size(26.dp)
-                        )
-                    }
-
-                    // Nút Play / Pause / Replay chính giữa
-                    IconButton(
-                        onClick = {
-                            if (isCompleted) {
-                                MediaPlaybackManager.replay(context)
-                            } else {
-                                MediaPlaybackManager.togglePlayPause(context)
-                            }
-                        },
-                        modifier = Modifier
-                            .size(68.dp)
-                            .background(
-                                if (isCompleted) Color(0xFF3B82F6).copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.65f),
-                                CircleShape
-                            )
-                    ) {
-                        Icon(
-                            imageVector = when {
-                                isCompleted -> Icons.Default.Replay
-                                isPlaying -> Icons.Default.Pause
-                                else -> Icons.Default.PlayArrow
-                            },
-                            contentDescription = when {
-                                isCompleted -> "Phát lại video"
-                                isPlaying -> "Tạm dừng"
-                                else -> "Phát"
-                            },
-                            tint = Color.White,
-                            modifier = Modifier.size(38.dp)
-                        )
-                    }
-
-                    // Tiến 10s
-                    IconButton(
-                        onClick = {
-                            MediaPlaybackManager.seekTo(context, (currentPosition + 10000).coerceAtMost(duration))
-                        },
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Forward10,
-                            contentDescription = "Tiến 10 giây",
-                            tint = Color.White,
-                            modifier = Modifier.size(26.dp)
-                        )
-                    }
-                }
-
-                // 3. THANH ĐIỀU KHIỂN THỜI GIAN & TUA Ở ĐÁY MÀN HÌNH
+                // 5. Thông tin video góc dưới bên trái (Tag VIDEO, Tên danh mục, Tiêu đề)
                 Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.BottomCenter)
-                        .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .align(Alignment.BottomStart)
+                        .padding(start = 16.dp, end = 88.dp, bottom = 26.dp)
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = formatDurationMs(currentPosition),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        Surface(
+                            color = Color(0xFFE11D48),
+                            shape = RoundedCornerShape(4.dp)
                         ) {
                             Text(
-                                text = formatDurationMs(duration),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.8f),
-                                fontWeight = FontWeight.Medium
+                                text = "VIDEO",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp
+                                ),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
-                            IconButton(
-                                onClick = { toggleOrientation() },
-                                modifier = Modifier.size(32.dp)
+                        }
+
+                        if (!item.categoryName.isNullOrBlank()) {
+                            Surface(
+                                color = Color.White.copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(4.dp)
                             ) {
-                                Icon(
-                                    imageVector = if (isLandscape) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                                    contentDescription = if (isLandscape) "Thu nhỏ màn hình" else "Toàn màn hình",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(22.dp)
+                                Text(
+                                    text = item.categoryName,
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 11.sp
+                                    ),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
                         }
                     }
 
-                    val maxDuration = duration.toFloat().coerceAtLeast(1f)
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text(
+                        text = item.title,
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            lineHeight = 20.sp
+                        ),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // 6. Thanh tua tiến độ đáy (Bottom Seekbar mỏng sát mép)
+                if (isCurrentPage && duration > 0) {
+                    val maxDur = duration.toFloat().coerceAtLeast(1f)
                     Slider(
-                        value = currentPosition.toFloat().coerceIn(0f, maxDuration),
+                        value = currentPosition.toFloat().coerceIn(0f, maxDur),
                         onValueChange = { newPos ->
                             MediaPlaybackManager.seekTo(context, newPos.toInt())
                         },
-                        valueRange = 0f..maxDuration,
+                        valueRange = 0f..maxDur,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .offset(y = 12.dp),
                         colors = SliderDefaults.colors(
                             thumbColor = Color.White,
-                            activeTrackColor = Color(0xFF3B82F6),
-                            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
-                        ),
-                        modifier = Modifier.fillMaxWidth()
+                            activeTrackColor = Color.White,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.25f)
+                        )
                     )
                 }
             }
         }
+
+        // 7. Gợi ý vuốt lên/xuống xuất hiện 3s đầu tiên
+        AnimatedVisibility(
+            visible = showHint && feedList.size > 1,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 56.dp)
+        ) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.7f),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.SwapVert,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "Vuốt lên / xuống để xem video khác",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp)
+                    )
+                }
+            }
+        }
+
+        // 8. Top Bar Overlay (Nút Back & Bộ đếm video hiện tại)
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            IconButton(
+                onClick = onNavigateBack,
+                modifier = Modifier
+                    .size(38.dp)
+                    .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Quay lại",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            if (feedList.size > 1) {
+                Surface(
+                    color = Color.Black.copy(alpha = 0.45f),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.2f))
+                ) {
+                    Text(
+                        text = "${pagerState.currentPage + 1} / ${feedList.size}",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp
+                        ),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            } else {
+                Spacer(modifier = Modifier.size(38.dp))
+            }
+        }
+    }
+
+    // Dialog xác nhận xoá video trong feed
+    itemToDelete?.let { deletingItem ->
+        AlertDialog(
+            onDismissRequest = { itemToDelete = null },
+            title = { Text("Xoá video", fontWeight = FontWeight.Bold) },
+            text = { Text("Bạn có chắc chắn muốn xoá video \"${deletingItem.title}\" không?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val currentDel = deletingItem
+                        itemToDelete = null
+                        viewModel.deleteFeedItem(currentDel) {
+                            if (feedList.size <= 1) {
+                                onNavigateBack()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Xoá", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { itemToDelete = null }) {
+                    Text(stringResource(R.string.btn_cancel))
+                }
+            }
+        )
+    }
+}
+
+/**
+ * Nút hành động nổi dọc cạnh phải kiểu TikTok
+ */
+@Composable
+private fun TikTokActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: Color = Color.White,
+    isActive: Boolean = false,
+    activeTint: Color = Color.White,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .background(
+                    if (isActive) activeTint.copy(alpha = 0.25f) else Color.Black.copy(alpha = 0.45f),
+                    CircleShape
+                )
+                .then(
+                    if (isActive) Modifier.border(1.5.dp, activeTint, CircleShape) else Modifier
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (isActive) activeTint else tint,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            color = if (isActive) activeTint else Color.White.copy(alpha = 0.9f),
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
+        )
     }
 }
 
