@@ -400,23 +400,8 @@ private fun HeroBannerContent(
                     .padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val lowerName = (article.fileName ?: "").lowercase()
-                val isImage = article.sourceType == "FILE" && (article.mimeType?.startsWith("image/") == true ||
-                        listOf(".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp").any { lowerName.endsWith(it) })
-                val isVideo = article.sourceType == "FILE" && (article.mimeType?.startsWith("video/") == true ||
-                        listOf(".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts", ".flv").any { lowerName.endsWith(it) })
-                val isAudio = article.sourceType == "FILE" && (article.mimeType?.startsWith("audio/") == true ||
-                        listOf(".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".wma", ".opus").any { lowerName.endsWith(it) })
-                val isDocFile = article.sourceType == "FILE" && !isImage && !isVideo && !isAudio
-
-                val displayCatName = when {
-                    isImage -> "Hình ảnh"
-                    isVideo -> "Video"
-                    isAudio -> "Âm thanh"
-                    isDocFile -> "Tệp tin"
-                    else -> article.categoryName
-                }
-                if (!displayCatName.isNullOrBlank()) {
+                val displayCatName = article.categoryName ?: "Chưa phân loại"
+                if (displayCatName.isNotBlank()) {
                     ArticleBadge(
                         text = displayCatName,
                         bgColor = Color.White.copy(alpha = 0.92f),
@@ -554,23 +539,8 @@ private fun StandardCardContent(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
         ) {
-            val lowerName = (article.fileName ?: "").lowercase()
-            val isImage = article.sourceType == "FILE" && (article.mimeType?.startsWith("image/") == true ||
-                    listOf(".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp").any { lowerName.endsWith(it) })
-            val isVideo = article.sourceType == "FILE" && (article.mimeType?.startsWith("video/") == true ||
-                    listOf(".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts", ".flv").any { lowerName.endsWith(it) })
-            val isAudio = article.sourceType == "FILE" && (article.mimeType?.startsWith("audio/") == true ||
-                    listOf(".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".wma", ".opus").any { lowerName.endsWith(it) })
-            val isDocFile = article.sourceType == "FILE" && !isImage && !isVideo && !isAudio
-
-            val displayCatName = when {
-                isImage -> "Hình ảnh"
-                isVideo -> "Video"
-                isAudio -> "Âm thanh"
-                isDocFile -> "Tệp tin"
-                else -> article.categoryName
-            }
-            if (!displayCatName.isNullOrBlank()) {
+            val displayCatName = article.categoryName ?: "Chưa phân loại"
+            if (displayCatName.isNotBlank()) {
                 ArticleBadge(
                     text = displayCatName,
                     bgColor = categoryBadgeBg,

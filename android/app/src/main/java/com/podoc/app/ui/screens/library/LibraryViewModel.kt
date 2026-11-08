@@ -329,7 +329,7 @@ class LibraryViewModel(
                         uploadProgressMessage = "Đang lưu tệp ${index + 1}/${uris.size}..."
                     )
                 }
-                articleRepository.uploadFile(uri).fold(
+                articleRepository.uploadFile(uri, categoryId = _uiState.value.selectedCategoryId).fold(
                     onSuccess = { successCount++ },
                     onFailure = { error ->
                         lastErrorMessage = error.message

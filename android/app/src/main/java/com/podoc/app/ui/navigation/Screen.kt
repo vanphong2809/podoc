@@ -13,6 +13,12 @@ sealed class Screen(val route: String) {
             return "category_detail/$categoryId?name=$encodedName&color=$encodedColor"
         }
     }
+    object MediaList : Screen("media_list/{contentType}?title={title}") {
+        fun createRoute(contentType: String, title: String): String {
+            val encodedTitle = java.net.URLEncoder.encode(title, "UTF-8")
+            return "media_list/$contentType?title=$encodedTitle"
+        }
+    }
     object Settings : Screen("settings")
     object Reader : Screen("reader/{articleId}") {
         fun createRoute(articleId: Int) = "reader/$articleId"

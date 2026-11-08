@@ -13,87 +13,45 @@ from app.schemas.category import CategoryCreate, CategoryResponse, CategoryUpdat
 router = APIRouter(prefix="/categories", tags=["Categories"])
 
 
-async def ensure_system_media_categories(db: AsyncSession):
+async def cleanup_media_categories(db: AsyncSession):
     """
-    Đảm bảo 4 danh mục đa phương tiện chuẩn (Hình ảnh, Video, Âm thanh, Tệp tin) luôn tồn tại
-    và tự động đồng bộ hóa các tệp media vào đúng danh mục tương ứng.
+    Tách biệt hoàn toàn Danh mục và Loại tệp tin:
+    - Loại tệp tin (Hình ảnh, Video, Âm thanh, Tệp tin) không phải là Danh mục.
+    - Dọn dẹp 4 pseudo-category này khỏi bảng Category.
+    - Phục hồi các tệp/hình ảnh người dùng đã chuyển về đúng danh mục đích (ví dụ 'Xây nhà').
     """
-    from sqlalchemy import or_, not_
+    media_cat_names = ["Hình ảnh", "Video", "Tệp tin", "Âm thanh"]
+    m_res = await db.execute(select(Category).where(Category.name.in_(media_cat_names)))
+    media_cats = m_res.scalars().all()
+    if not media_cats:
+        return
 
-    media_cat_defs = [
-        {"name": "Âm thanh", "icon": "headphones", "color": "#14B8A6", "sort_order": 7, "is_system": True},
-        {"name": "Hình ảnh", "icon": "image", "color": "#EC4899", "sort_order": 8, "is_system": True},
-        {"name": "Video", "icon": "videocam", "color": "#EF4444", "sort_order": 9, "is_system": True},
-        {"name": "Tệp tin", "icon": "folder", "color": "#3B82F6", "sort_order": 10, "is_system": True},
-    ]
+    # Tìm danh mục 'Xây nhà' nếu người dùng đã tạo
+    xay_nha_res = await db.execute(select(Category).where(Category.name.ilike("%Xây nhà%")))
+    xay_nha = xay_nha_res.scalars().first()
 
-    cat_map = {}
-    for c_def in media_cat_defs:
-        c_res = await db.execute(select(Category).where(Category.name == c_def["name"]))
-        existing = c_res.scalar_one_or_none()
-        if not existing:
-            existing = Category(**c_def)
-            db.add(existing)
-            await db.flush()
-        else:
-            if not existing.is_system:
-                existing.is_system = True
-                await db.flush()
-        cat_map[c_def["name"]] = existing
-
-    image_exts = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"]
-    video_exts = [".mp4", ".mkv", ".mov", ".webm", ".avi", ".flv", ".3gp", ".ts"]
-    audio_exts = [".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".wma", ".opus"]
-
-    image_filter = or_(
-        Article.mime_type.ilike("image/%"),
-        or_(*[Article.file_name.ilike(f"%{ext}") for ext in image_exts]),
-        or_(*[Article.file_path.ilike(f"%{ext}") for ext in image_exts]),
+    # Tìm danh mục thực tế đầu tiên (không thuộc media_cat_names)
+    real_cat_res = await db.execute(
+        select(Category)
+        .where(Category.name.not_in(media_cat_names))
+        .order_by(Category.is_system.desc(), Category.sort_order.asc(), Category.id.asc())
     )
-    video_filter = or_(
-        Article.mime_type.ilike("video/%"),
-        or_(*[Article.file_name.ilike(f"%{ext}") for ext in video_exts]),
-        or_(*[Article.file_path.ilike(f"%{ext}") for ext in video_exts]),
-    )
-    audio_filter = or_(
-        Article.mime_type.ilike("audio/%"),
-        or_(*[Article.file_name.ilike(f"%{ext}") for ext in audio_exts]),
-        or_(*[Article.file_path.ilike(f"%{ext}") for ext in audio_exts]),
-    )
+    default_real_cat = real_cat_res.scalars().first()
 
-    # 1. Cập nhật bài viết hình ảnh về danh mục "Hình ảnh"
-    await db.execute(
-        update(Article)
-        .where(Article.source_type == "FILE", image_filter, Article.category_id != cat_map["Hình ảnh"].id)
-        .values(category_id=cat_map["Hình ảnh"].id)
-    )
+    if not default_real_cat:
+        default_real_cat = Category(name="Chưa phân loại", icon="folder", color="#64748B", sort_order=99, is_system=True)
+        db.add(default_real_cat)
+        await db.flush()
 
-    # 2. Cập nhật bài viết video về danh mục "Video"
-    await db.execute(
-        update(Article)
-        .where(Article.source_type == "FILE", video_filter, Article.category_id != cat_map["Video"].id)
-        .values(category_id=cat_map["Video"].id)
-    )
-
-    # 3. Cập nhật bài viết âm thanh về danh mục "Âm thanh"
-    await db.execute(
-        update(Article)
-        .where(Article.source_type == "FILE", audio_filter, Article.category_id != cat_map["Âm thanh"].id)
-        .values(category_id=cat_map["Âm thanh"].id)
-    )
-
-    # 4. Cập nhật bài viết tệp tin khác về danh mục "Tệp tin"
-    await db.execute(
-        update(Article)
-        .where(
-            Article.source_type == "FILE",
-            not_(image_filter),
-            not_(video_filter),
-            not_(audio_filter),
-            Article.category_id != cat_map["Tệp tin"].id
+    for m_cat in media_cats:
+        # Nếu là Hình ảnh và người dùng có danh mục Xây nhà, chuyển các ảnh về Xây nhà
+        target_cat = xay_nha if (m_cat.name == "Hình ảnh" and xay_nha) else default_real_cat
+        await db.execute(
+            update(Article)
+            .where(Article.category_id == m_cat.id)
+            .values(category_id=target_cat.id)
         )
-        .values(category_id=cat_map["Tệp tin"].id)
-    )
+        await db.delete(m_cat)
 
     await db.commit()
 
@@ -104,8 +62,8 @@ async def list_categories(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Lấy danh sách toàn bộ danh mục, kèm số lượng bài viết trong mỗi danh mục, sắp xếp theo sort_order."""
-    # 1. Tự động đảm bảo 4 danh mục media chuẩn và phân loại bài viết chính xác
-    await ensure_system_media_categories(db)
+    # 1. Dọn dẹp pseudo-categories đa phương tiện và đồng bộ bài viết về danh mục thực tế
+    await cleanup_media_categories(db)
 
     # 2. Tự động khắc phục bài viết mồ côi (category_id null hoặc không hợp lệ) về danh mục mặc định
     default_cat_stmt = select(Category).order_by(Category.is_system.desc(), Category.sort_order.asc(), Category.id.asc()).limit(1)

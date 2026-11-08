@@ -396,7 +396,7 @@ async def upload_article_file(
             if not orig_name.lower().endswith(deduced_ext):
                 orig_name = f"{orig_name}{deduced_ext}"
 
-    # 3. Xác định Danh mục (nếu không truyền thì lấy danh mục Âm thanh nếu là audio, hoặc danh mục đầu tiên)
+    # 3. Xác định Danh mục (nếu không truyền thì lấy danh mục mặc định hoặc danh mục đầu tiên)
     cat = None
     if category_id is not None:
         cat_stmt = select(Category).where(Category.id == category_id)
@@ -405,16 +405,12 @@ async def upload_article_file(
         if not cat:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Danh mục không tồn tại")
 
-    target_media_cat = "Hình ảnh" if is_image else ("Video" if is_video else ("Âm thanh" if is_audio else "Tệp tin"))
-
     if not cat:
-        media_cat_stmt = select(Category).where(Category.name == target_media_cat)
-        media_cat_res = await db.execute(media_cat_stmt)
-        cat = media_cat_res.scalar_one_or_none()
+        def_cat_stmt = select(Category).order_by(Category.is_system.desc(), Category.sort_order.asc(), Category.id.asc()).limit(1)
+        def_cat_res = await db.execute(def_cat_stmt)
+        cat = def_cat_res.scalar_one_or_none()
         if not cat:
-            cat_color = "#EC4899" if is_image else ("#EF4444" if is_video else ("#14B8A6" if is_audio else "#3B82F6"))
-            cat_icon = "image" if is_image else ("videocam" if is_video else ("headphones" if is_audio else "folder"))
-            cat = Category(name=target_media_cat, icon=cat_icon, color=cat_color, is_system=True)
+            cat = Category(name="Chưa phân loại", icon="folder", color="#64748B", is_system=True)
             db.add(cat)
             await db.flush()
 
@@ -910,11 +906,11 @@ async def upload_and_convert_to_pdf(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Danh mục không tồn tại")
 
     if not cat:
-        file_cat_stmt = select(Category).where(Category.name == "Tệp tin")
-        file_cat_res = await db.execute(file_cat_stmt)
-        cat = file_cat_res.scalar_one_or_none()
+        def_cat_stmt = select(Category).order_by(Category.is_system.desc(), Category.sort_order.asc(), Category.id.asc()).limit(1)
+        def_cat_res = await db.execute(def_cat_stmt)
+        cat = def_cat_res.scalar_one_or_none()
         if not cat:
-            cat = Category(name="Tệp tin", icon="folder", color="#3B82F6", is_system=True)
+            cat = Category(name="Chưa phân loại", icon="folder", color="#64748B", is_system=True)
             db.add(cat)
             await db.flush()
 

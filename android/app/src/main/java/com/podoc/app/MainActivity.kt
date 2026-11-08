@@ -291,6 +291,43 @@ class MainActivity : ComponentActivity() {
                                 themeMode = themeMode,
                                 onCategoryClick = { cat ->
                                     navController.navigate(Screen.CategoryDetail.createRoute(cat.id, cat.name, cat.color))
+                                },
+                                onMediaTypeClick = { contentType, title ->
+                                    navController.navigate(Screen.MediaList.createRoute(contentType, title))
+                                }
+                            )
+                        }
+
+                        // Màn hình Danh sách Tệp tin theo Loại (Hình ảnh, Video, Âm thanh, Tệp tin)
+                        composable(
+                            route = Screen.MediaList.route,
+                            arguments = listOf(
+                                navArgument("contentType") { type = NavType.StringType },
+                                navArgument("title") { type = NavType.StringType; defaultValue = "Tệp tin" }
+                            )
+                        ) { backStackEntry ->
+                            val contentType = backStackEntry.arguments?.getString("contentType") ?: "image"
+                            val rawTitle = backStackEntry.arguments?.getString("title") ?: "Tệp tin"
+                            val title = try { java.net.URLDecoder.decode(rawTitle, "UTF-8") } catch (_: Exception) { rawTitle }
+
+                            val mediaViewModel = remember(contentType) {
+                                com.podoc.app.ui.screens.media.MediaListViewModel(
+                                    contentType = contentType,
+                                    title = title,
+                                    articleRepository = container.articleRepository,
+                                    categoryRepository = container.categoryRepository
+                                )
+                            }
+
+                            com.podoc.app.ui.screens.media.MediaListScreen(
+                                viewModel = mediaViewModel,
+                                onNavigateBack = {
+                                    categoryViewModel.loadCategories()
+                                    libraryViewModel.loadArticles(refresh = true)
+                                    navController.popBackStack()
+                                },
+                                onArticleClick = { articleId ->
+                                    navController.navigate(Screen.Reader.createRoute(articleId))
                                 }
                             )
                         }

@@ -38,7 +38,8 @@ import com.podoc.app.ui.theme.parseHexColor
 fun CategoryScreen(
     viewModel: CategoryViewModel,
     themeMode: String = "system",
-    onCategoryClick: (Category) -> Unit = {}
+    onCategoryClick: (Category) -> Unit = {},
+    onMediaTypeClick: (contentType: String, title: String) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
@@ -195,7 +196,8 @@ fun CategoryScreen(
                             StorageOverviewCard(
                                 stats = uiState.storageStats!!,
                                 isDark = isDark,
-                                cardBg = cardBg
+                                cardBg = cardBg,
+                                onMediaTypeClick = onMediaTypeClick
                             )
                         }
                     }
@@ -551,6 +553,7 @@ private fun StorageOverviewCard(
     stats: StorageStats,
     isDark: Boolean,
     cardBg: Color,
+    onMediaTypeClick: (contentType: String, title: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val totalBytes = stats.totalBytes
@@ -692,6 +695,7 @@ private fun StorageOverviewCard(
                     icon = Icons.Default.Image,
                     color = imageColor,
                     isDark = isDark,
+                    onClick = { onMediaTypeClick("image", "Hình ảnh") },
                     modifier = Modifier.weight(1f)
                 )
                 StorageMiniCard(
@@ -700,6 +704,7 @@ private fun StorageOverviewCard(
                     icon = Icons.Default.Videocam,
                     color = videoColor,
                     isDark = isDark,
+                    onClick = { onMediaTypeClick("video", "Video") },
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -716,6 +721,7 @@ private fun StorageOverviewCard(
                     icon = Icons.Default.Headphones,
                     color = audioColor,
                     isDark = isDark,
+                    onClick = { onMediaTypeClick("audio", "Âm thanh") },
                     modifier = Modifier.weight(1f)
                 )
                 StorageMiniCard(
@@ -724,6 +730,7 @@ private fun StorageOverviewCard(
                     icon = Icons.Default.InsertDriveFile,
                     color = fileColor,
                     isDark = isDark,
+                    onClick = { onMediaTypeClick("file", "Tệp tin") },
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -738,6 +745,7 @@ private fun StorageMiniCard(
     icon: ImageVector,
     color: Color,
     isDark: Boolean,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val bg = if (isDark) Color(0xFF1E293B) else Color(0xFFF8FAFC)
@@ -748,6 +756,8 @@ private fun StorageMiniCard(
         color = bg,
         border = BorderStroke(1.dp, border),
         modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
     ) {
         Row(
             modifier = Modifier
@@ -794,6 +804,13 @@ private fun StorageMiniCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = color.copy(alpha = 0.6f),
+                modifier = Modifier.size(16.dp)
+            )
         }
     }
 }

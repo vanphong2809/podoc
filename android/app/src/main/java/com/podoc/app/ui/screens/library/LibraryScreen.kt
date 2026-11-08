@@ -849,27 +849,6 @@ private fun LibraryTopBar(
             )
             Spacer(modifier = Modifier.width(8.dp))
 
-            // 3–7. Content Type Chips
-            data class ChipDef(val type: String, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
-            val contentChips = listOf(
-                ChipDef("article", "Bài viết", Icons.Default.Article),
-                ChipDef("image",   "Hình ảnh", Icons.Default.Image),
-                ChipDef("video",   "Video",    Icons.Default.Videocam),
-                ChipDef("file",    "Tệp tin",  Icons.Default.InsertDriveFile),
-                ChipDef("audio",   "Âm thanh", Icons.Default.Headphones)
-            )
-            contentChips.forEach { chip ->
-                val isSelected = uiState.selectedContentType == chip.type
-                FilterChip(
-                    selected = isSelected,
-                    onClick = { onContentTypeChange(chip.type) },
-                    label = { Text(chip.label, fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal) },
-                    leadingIcon = { Icon(chip.icon, contentDescription = null, modifier = Modifier.size(15.dp)) },
-                    colors = activeChipColors, border = chipBorder, shape = chipShape
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-            }
-
             // Category chips
             uiState.categories.forEach { cat ->
                 val isSelected = uiState.selectedCategoryId == cat.id
@@ -889,13 +868,13 @@ private fun LibraryTopBar(
             enter = expandVertically(tween(200)) + fadeIn(tween(200)),
             exit = shrinkVertically(tween(150)) + fadeOut(tween(150))
         ) {
-            val countText = when (uiState.selectedContentType) {
-                "video" -> "${uiState.articles.size} video"
-                "image" -> "${uiState.articles.size} hình ảnh"
-                "article" -> "${uiState.articles.size} bài viết"
-                "file" -> "${uiState.articles.size} tệp tin"
-                "audio" -> "${uiState.articles.size} âm thanh"
-                else -> "${uiState.articles.size} mục"
+            val countText = if (uiState.selectedCategoryId != null) {
+                val catName = uiState.categories.find { it.id == uiState.selectedCategoryId }?.name ?: "Danh mục"
+                "$catName • ${uiState.articles.size} mục"
+            } else if (uiState.onlyFavorites) {
+                "Yêu thích • ${uiState.articles.size} mục"
+            } else {
+                "${uiState.articles.size} mục"
             }
             Row(
                 modifier = Modifier

@@ -1101,7 +1101,7 @@ private fun ImageGalleryViewer(
                             }
                         }
 
-                        val imageCategoryName = currentItem.categoryName?.takeIf { it.isNotBlank() } ?: "Hình ảnh"
+                        val imageCategoryName = currentItem.categoryName?.takeIf { it.isNotBlank() } ?: "Chưa phân loại"
                         Surface(
                             color = Color.White.copy(alpha = 0.18f),
                             shape = RoundedCornerShape(6.dp)
