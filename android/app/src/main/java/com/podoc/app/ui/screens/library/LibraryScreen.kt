@@ -894,6 +894,7 @@ private fun LibraryTopBar(
                 "image" -> "${uiState.articles.size} hình ảnh"
                 "article" -> "${uiState.articles.size} bài viết"
                 "file" -> "${uiState.articles.size} tệp tin"
+                "audio" -> "${uiState.articles.size} âm thanh"
                 else -> "${uiState.articles.size} mục"
             }
             Row(

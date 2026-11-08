@@ -1101,20 +1101,19 @@ private fun ImageGalleryViewer(
                             }
                         }
 
-                        if (!currentItem.categoryName.isNullOrBlank()) {
-                            Surface(
-                                color = Color.White.copy(alpha = 0.18f),
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Text(
-                                    text = currentItem.categoryName ?: "",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                )
-                            }
+                        val imageCategoryName = currentItem.categoryName?.takeIf { it.isNotBlank() } ?: "Hình ảnh"
+                        Surface(
+                            color = Color.White.copy(alpha = 0.18f),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = imageCategoryName,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Medium,
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
                         }
                     }
 
@@ -1196,7 +1195,28 @@ private fun ImageGalleryPage(
         item.mimeType == "image/svg+xml" || (item.fileName ?: "").endsWith(".svg", ignoreCase = true)
     }
 
-    val cachedFile = uiState.imageFilesCache[item.id]
+    val cachedFile = remember(item.id, uiState.imageFilesCache) {
+        uiState.imageFilesCache[item.id]?.takeIf { it.exists() && it.length() > 0 }
+            ?: run {
+                val rawExt = (item.fileName ?: item.filePath ?: "").let { path ->
+                    if (path.contains('.')) path.substringAfterLast('.', "").lowercase() else ""
+                }
+                val isSvgExt = item.mimeType == "image/svg+xml" || rawExt == "svg"
+                val ext = if (rawExt.isNotBlank()) rawExt
+                else when {
+                    item.mimeType == "image/png" -> "png"
+                    isSvgExt -> "svg"
+                    item.mimeType == "image/webp" -> "webp"
+                    item.mimeType == "image/gif" -> "gif"
+                    else -> "jpg"
+                }
+                val safeExt = ".$ext"
+                val fileName = item.fileName?.let { if (it.contains('.')) it else "$it$safeExt" }
+                    ?: "image_${item.id}$safeExt"
+                val diskFile = File(context.cacheDir, "podoc_doc_${item.id}_$fileName")
+                if (diskFile.exists() && diskFile.length() > 0) diskFile else null
+            }
+    }
     var loadedFile by remember(item.id, cachedFile) { mutableStateOf(cachedFile) }
     var isDownloading by remember(item.id, cachedFile) { mutableStateOf(cachedFile == null || !cachedFile.exists()) }
 
@@ -1271,6 +1291,7 @@ private fun ImageGalleryPage(
                 model = ImageRequest.Builder(context)
                     .data(item.imageUrl)
                     .crossfade(true)
+                    .size(coil.size.Size.ORIGINAL)
                     .build(),
                 contentDescription = item.title,
                 contentScale = ContentScale.Fit,
@@ -2180,20 +2201,19 @@ internal fun TikTokVideoFeedViewer(
                             )
                         }
 
-                        if (!item.categoryName.isNullOrBlank()) {
-                            Surface(
-                                color = Color.White.copy(alpha = 0.2f),
-                                shape = RoundedCornerShape(4.dp)
-                            ) {
-                                Text(
-                                    text = item.categoryName,
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontSize = 11.sp
-                                    ),
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
+                        val videoCategoryName = item.categoryName?.takeIf { it.isNotBlank() } ?: "Video"
+                        Surface(
+                            color = Color.White.copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = videoCategoryName,
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 11.sp
+                                ),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
                         }
                     }
 

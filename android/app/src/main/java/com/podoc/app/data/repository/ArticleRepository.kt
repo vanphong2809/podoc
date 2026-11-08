@@ -208,7 +208,7 @@ class ArticleRepository(
                     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, boundsOptions)
                     val origW = boundsOptions.outWidth
                     val origH = boundsOptions.outHeight
-                    val maxDim = 480
+                    val maxDim = 1280
                     var sampleSize = 1
                     while (origW / (sampleSize * 2) >= maxDim && origH / (sampleSize * 2) >= maxDim) {
                         sampleSize *= 2
@@ -223,7 +223,7 @@ class ArticleRepository(
                             Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt(), (bitmap.height * scale).toInt(), true)
                         } else bitmap
                         val baos = ByteArrayOutputStream()
-                        scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 80, baos)
+                        scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 85, baos)
                         val thumbBytes = baos.toByteArray()
                         val thumbBody = thumbBytes.toRequestBody("image/jpeg".toMediaTypeOrNull())
                         thumbnailPart = MultipartBody.Part.createFormData("thumbnail", "thumb_${fileName}.jpg", thumbBody)
@@ -274,6 +274,15 @@ class ArticleRepository(
                     throw e
                 }
             }
+
+            // Lưu tệp ngay vào bộ nhớ cache của thiết bị để mở xem tức thì không cần tải lại qua mạng
+            try {
+                val targetFileName = article.fileName?.let { if (it.contains('.')) it else "$it.${mimeType.substringAfterLast('/', "bin")}" }
+                    ?: fileName
+                val cacheFile = java.io.File(context.cacheDir, "podoc_doc_${article.id}_$targetFileName")
+                cacheFile.outputStream().use { out -> out.write(bytes) }
+            } catch (_: Exception) {}
+
             val lower = (article.fileName ?: article.filePath ?: "").lowercase()
             val isMedia = article.mimeType?.startsWith("image/") == true ||
                     article.mimeType?.startsWith("video/") == true ||

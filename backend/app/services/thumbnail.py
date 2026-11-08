@@ -3,8 +3,8 @@ import subprocess
 from typing import Optional
 
 
-def generate_image_thumbnail(input_path: str, output_path: str, max_size: int = 400) -> bool:
-    """Tạo thumbnail cho ảnh bằng Pillow."""
+def generate_image_thumbnail(input_path: str, output_path: str, max_size: int = 1280) -> bool:
+    """Tạo thumbnail độ nét cao (HD) cho ảnh bằng Pillow."""
     try:
         from PIL import Image, ImageOps
 
@@ -26,15 +26,17 @@ def generate_image_thumbnail(input_path: str, output_path: str, max_size: int = 
             elif img.mode != "RGB":
                 img = img.convert("RGB")
 
-            img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
-            img.save(output_path, "JPEG", quality=82, optimize=True)
+            # Chỉ resize nếu kích thước thực tế lớn hơn max_size
+            if img.width > max_size or img.height > max_size:
+                img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+            img.save(output_path, "JPEG", quality=85, optimize=True)
             return True
     except Exception:
         return False
 
 
 def generate_video_thumbnail(input_path: str, output_path: str) -> bool:
-    """Trích xuất 1 khung hình trong video bằng ffmpeg để làm thumbnail."""
+    """Trích xuất 1 khung hình trong video bằng ffmpeg để làm thumbnail sắc nét."""
     # Thử lấy frame ở giây thứ 1, nếu video ngắn thì lấy frame đầu tiên (giây 0)
     for seek_time in ("00:00:01", "00:00:00.1", "00:00:00"):
         try:
@@ -43,8 +45,8 @@ def generate_video_thumbnail(input_path: str, output_path: str) -> bool:
                 "-ss", seek_time,
                 "-i", input_path,
                 "-vframes", "1",
-                "-vf", "scale='min(480,iw)':-2",
-                "-q:v", "3",
+                "-vf", "scale='min(960,iw)':-2",
+                "-q:v", "2",
                 "-y",
                 output_path,
             ]
