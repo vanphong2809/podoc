@@ -74,7 +74,7 @@ với Host cố định `f814e00e-9993-46fc-bb71-a7d36675d38e.localhost`. Route 
 service ID nên vẫn dùng được khi PoRender thay container. Nếu tạo lại service
 với ID khác, phải cập nhật gateway config.
 
-Gateway truyền upload theo luồng, giới hạn request 64 MiB, không chuyển cookie
+Gateway truyền upload theo luồng, giới hạn request mặc định 64 MiB (khuyến nghị nâng lên 2 GiB hoặc 5 GiB để upload video lớn), không chuyển cookie
 dashboard sang API. HTTPS 443 và SSH 22 giữ nguyên, không bật Funnel. Đã kiểm
 chứng `/health`, upload/download file thử 1.210.000 byte qua TLS có xác minh
 chứng chỉ, và xóa riêng tài liệu thử. Không cần cập nhật APK cho thay đổi URL.
