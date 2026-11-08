@@ -2,7 +2,9 @@ package com.podoc.app.data.repository
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.provider.OpenableColumns
+import android.util.Size
 import android.webkit.MimeTypeMap
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -196,41 +198,65 @@ class ArticleRepository(
                     lowerName.endsWith(".webm") || lowerName.endsWith(".avi") ||
                     lowerName.endsWith(".3gp") || lowerName.endsWith(".ts")
 
+            // Tạo tên tệp ASCII hợp lệ cho Header Content-Disposition để tránh lỗi OkHttp Unexpected char
+            val safeHeaderFileName = buildString {
+                for (ch in fileName) {
+                    if (ch.code in 32..126 && ch != '"' && ch != '\\' && ch != ';') {
+                        append(ch)
+                    } else {
+                        append('_')
+                    }
+                }
+            }.trim().let { if (it.isBlank() || it.all { c -> c == '_' || c == '.' }) "upload_${System.currentTimeMillis()}.${fileName.substringAfterLast('.', "bin")}" else it }
+
+            val thumbHeaderName = "thumb_${safeHeaderFileName.substringBeforeLast('.')}.jpg"
+
             var thumbnailPart: MultipartBody.Part? = null
             if (isVideo) {
-                var retriever: MediaMetadataRetriever? = null
-                var frame: Bitmap? = null
-                var scaledBitmap: Bitmap? = null
+                var thumbBitmap: Bitmap? = null
                 try {
-                    retriever = MediaMetadataRetriever()
-                    retriever.setDataSource(context, uri)
-                    frame = retriever.getFrameAtTime(1000000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                        ?: retriever.frameAtTime
-                    if (frame != null) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        try {
+                            thumbBitmap = context.contentResolver.loadThumbnail(uri, Size(480, 480), null)
+                        } catch (_: Throwable) {}
+                    }
+                    if (thumbBitmap == null) {
+                        var retriever: MediaMetadataRetriever? = null
+                        try {
+                            retriever = MediaMetadataRetriever()
+                            retriever.setDataSource(context, uri)
+                            thumbBitmap = retriever.getFrameAtTime(1000000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                                ?: retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                                ?: retriever.frameAtTime
+                        } catch (_: Throwable) {
+                        } finally {
+                            try { retriever?.release() } catch (_: Throwable) {}
+                        }
+                    }
+                    if (thumbBitmap != null) {
                         val maxDim = 480
-                        val width = frame.width
-                        val height = frame.height
+                        val width = thumbBitmap.width
+                        val height = thumbBitmap.height
                         val scale = if (width > maxDim || height > maxDim) {
                             maxDim.toFloat() / maxOf(width, height)
                         } else 1f
-                        scaledBitmap = if (scale < 1f) {
-                            Bitmap.createScaledBitmap(frame, (width * scale).toInt(), (height * scale).toInt(), true)
-                        } else frame
+                        val scaledBitmap = if (scale < 1f) {
+                            Bitmap.createScaledBitmap(thumbBitmap, (width * scale).toInt(), (height * scale).toInt(), true)
+                        } else thumbBitmap
                         val baos = ByteArrayOutputStream()
                         scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 80, baos)
+                        if (scaledBitmap !== thumbBitmap) {
+                            scaledBitmap.recycle()
+                        }
                         val thumbBytes = baos.toByteArray()
                         val thumbBody = thumbBytes.toRequestBody("image/jpeg".toMediaTypeOrNull())
-                        thumbnailPart = MultipartBody.Part.createFormData("thumbnail", "thumb_${fileName}.jpg", thumbBody)
+                        thumbnailPart = MultipartBody.Part.createFormData("thumbnail", thumbHeaderName, thumbBody)
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
                 } finally {
                     try {
-                        if (scaledBitmap != null && scaledBitmap !== frame) {
-                            scaledBitmap.recycle()
-                        }
-                        frame?.recycle()
-                        retriever?.release()
+                        thumbBitmap?.recycle()
                     } catch (_: Exception) {}
                 }
             } else if (isImage) {
@@ -263,7 +289,7 @@ class ArticleRepository(
                         scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 85, baos)
                         val thumbBytes = baos.toByteArray()
                         val thumbBody = thumbBytes.toRequestBody("image/jpeg".toMediaTypeOrNull())
-                        thumbnailPart = MultipartBody.Part.createFormData("thumbnail", "thumb_${fileName}.jpg", thumbBody)
+                        thumbnailPart = MultipartBody.Part.createFormData("thumbnail", thumbHeaderName, thumbBody)
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -278,13 +304,14 @@ class ArticleRepository(
             }
 
             val requestFile = StreamingUriRequestBody(contentResolver, uri, mimeType, fileSize)
-            val filePart = MultipartBody.Part.createFormData("file", fileName, requestFile)
+            val filePart = MultipartBody.Part.createFormData("file", safeHeaderFileName, requestFile)
 
             val catBody = categoryId?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
-            val titleBody = customTitle?.toRequestBody("text/plain".toMediaTypeOrNull())
+            val titleBody = (customTitle ?: fileName).toRequestBody("text/plain".toMediaTypeOrNull())
+            val fileNameBody = fileName.toRequestBody("text/plain".toMediaTypeOrNull())
 
             val article = try {
-                getApi().uploadArticleFile(filePart, thumbnailPart, catBody, titleBody)
+                getApi().uploadArticleFile(filePart, thumbnailPart, catBody, titleBody, fileNameBody)
             } catch (e: retrofit2.HttpException) {
                 if (e.code() == 413) {
                     val errDetail = try {
@@ -297,7 +324,7 @@ class ArticleRepository(
                     throw IllegalArgumentException(msg)
                 } else if (e.code() == 405 || e.code() == 404) {
                     // Fallback cho backend chưa cập nhật route /api/articles/upload
-                    val fallbackFilePart = MultipartBody.Part.createFormData("file", fileName, requestFile)
+                    val fallbackFilePart = MultipartBody.Part.createFormData("file", safeHeaderFileName, requestFile)
                     val draft = getApi().extractFile(fallbackFilePart)
                     val createReq = CreateArticleRequest(
                         title = customTitle ?: draft.title,

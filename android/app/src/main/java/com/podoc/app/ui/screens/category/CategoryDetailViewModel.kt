@@ -190,16 +190,26 @@ class CategoryDetailViewModel(
             var firstError: String? = null
 
             for ((index, uri) in uris.withIndex()) {
-                try {
-                    val res = articleRepository.uploadFile(uri, categoryId = categoryId)
-                    res.fold(
-                        onSuccess = { successCount++ },
-                        onFailure = { err ->
-                            if (firstError == null) firstError = err.message
+                var uploaded = false
+                for (attempt in 1..2) {
+                    try {
+                        val res = articleRepository.uploadFile(uri, categoryId = categoryId)
+                        if (res.isSuccess) {
+                            successCount++
+                            uploaded = true
+                            break
+                        } else {
+                            if (firstError == null) firstError = res.exceptionOrNull()?.message ?: "Lỗi tải lên"
+                            if (attempt < 2) {
+                                kotlinx.coroutines.delay(1500)
+                            }
                         }
-                    )
-                } catch (e: Throwable) {
-                    if (firstError == null) firstError = e.message
+                    } catch (e: Throwable) {
+                        if (firstError == null) firstError = e.message ?: "Lỗi kết nối máy chủ"
+                        if (attempt < 2) {
+                            kotlinx.coroutines.delay(1500)
+                        }
+                    }
                 }
                 if ((index + 1) % 5 == 0) {
                     System.gc()

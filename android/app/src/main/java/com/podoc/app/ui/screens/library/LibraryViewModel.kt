@@ -329,28 +329,41 @@ class LibraryViewModel(
                         uploadProgressMessage = "Đang lưu tệp ${index + 1}/${uris.size}..."
                     )
                 }
-                try {
-                    articleRepository.uploadFile(uri, categoryId = _uiState.value.selectedCategoryId).fold(
-                        onSuccess = { successCount++ },
-                        onFailure = { error ->
-                            lastErrorMessage = error.message
+                var uploaded = false
+                for (attempt in 1..2) {
+                    try {
+                        val result = articleRepository.uploadFile(uri, categoryId = _uiState.value.selectedCategoryId)
+                        if (result.isSuccess) {
+                            successCount++
+                            uploaded = true
+                            break
+                        } else {
+                            lastErrorMessage = result.exceptionOrNull()?.message ?: "Lỗi tải lên"
+                            if (attempt < 2) {
+                                kotlinx.coroutines.delay(1500)
+                            }
                         }
-                    )
-                } catch (e: Throwable) {
-                    lastErrorMessage = e.message
+                    } catch (e: Throwable) {
+                        lastErrorMessage = e.message ?: "Lỗi kết nối máy chủ"
+                        if (attempt < 2) {
+                            kotlinx.coroutines.delay(1500)
+                        }
+                    }
                 }
                 if ((index + 1) % 5 == 0) {
                     System.gc()
                 }
             }
+            val failedCount = uris.size - successCount
+            val finalUserMessage = when {
+                failedCount == 0 -> "Đã lưu thành công tất cả $successCount tệp tin vào thư viện"
+                successCount > 0 -> "Đã tải xong $successCount/${uris.size} tệp ($failedCount tệp lỗi: ${lastErrorMessage ?: "Mất kết nối"})"
+                else -> "Không thể lưu tệp: ${lastErrorMessage ?: "Lỗi kết nối máy chủ"}"
+            }
             _uiState.value = _uiState.value.copy(
                 isUploading = false,
                 uploadProgressMessage = null,
-                userMessage = if (successCount > 0) {
-                    "Đã lưu thành công $successCount tệp tin vào thư viện"
-                } else {
-                    lastErrorMessage ?: "Không thể lưu tệp tin"
-                }
+                userMessage = finalUserMessage
             )
             // Tải lại danh sách thư viện và số đếm danh mục ngay lập tức
             loadArticles(refresh = true)

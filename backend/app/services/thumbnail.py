@@ -36,21 +36,24 @@ def generate_image_thumbnail(input_path: str, output_path: str, max_size: int = 
 
 
 def generate_video_thumbnail(input_path: str, output_path: str) -> bool:
-    """Trích xuất 1 khung hình trong video bằng ffmpeg để làm thumbnail sắc nét."""
+    """Trích xuất 1 khung hình trong video bằng ffmpeg với lượng RAM tối thiểu (đơn luồng, giới hạn buffer)."""
     # Thử lấy frame ở giây thứ 1, nếu video ngắn thì lấy frame đầu tiên (giây 0)
     for seek_time in ("00:00:01", "00:00:00.1", "00:00:00"):
         try:
             cmd = [
                 "ffmpeg",
+                "-threads", "1",
+                "-analyzeduration", "5000000",
+                "-probesize", "5000000",
                 "-ss", seek_time,
                 "-i", input_path,
                 "-vframes", "1",
-                "-vf", "scale='min(960,iw)':-2",
-                "-q:v", "2",
+                "-vf", "scale='min(480,iw)':-2",
+                "-q:v", "3",
                 "-y",
                 output_path,
             ]
-            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=12)
+            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
             if res.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
                 return True
         except Exception:

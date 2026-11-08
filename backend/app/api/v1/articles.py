@@ -2,6 +2,7 @@ import logging
 import os
 import shutil
 import tempfile
+import urllib.parse
 import uuid
 from typing import Annotated, List, Optional
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, File, status
@@ -337,13 +338,18 @@ async def upload_article_file(
     thumbnail: Optional[UploadFile] = File(None),
     category_id: Optional[int] = Form(None),
     title: Optional[str] = Form(None),
+    file_name: Optional[str] = Form(None),
 ):
     """
     Tải lên và lưu trực tiếp tệp tin (Video, Ảnh, PDF, DOCX, DOC, HTML, TXT, MD...)
     vào thư viện để mở xem sau mà KHÔNG qua bước trích xuất text.
     Không giới hạn dung lượng tệp tin.
     """
-    orig_name = file.filename or "uploaded_file"
+    raw_orig_name = (file_name.strip() if file_name and file_name.strip() else None) or file.filename or "uploaded_file"
+    try:
+        orig_name = urllib.parse.unquote(raw_orig_name)
+    except Exception:
+        orig_name = raw_orig_name
     orig_ext = os.path.splitext(orig_name)[1].lower()
 
     # 1. Đọc một phần đầu để nhận diện MIME type thực tế mà không tốn RAM
@@ -487,7 +493,10 @@ async def upload_article_file(
             except Exception:
                 saved_thumb = False
         if not saved_thumb:
-            ensure_thumbnail(stored_filename, settings.FILES_STORAGE_DIR, mime_type, orig_name)
+            try:
+                ensure_thumbnail(stored_filename, settings.FILES_STORAGE_DIR, mime_type, orig_name)
+            except Exception as e:
+                logger.warning(f"Could not generate thumbnail for {stored_filename}: {e}")
 
         new_article.image_url = f"/api/articles/{new_article.id}/thumbnail"
 
