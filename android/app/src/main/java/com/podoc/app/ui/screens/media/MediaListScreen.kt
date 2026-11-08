@@ -89,6 +89,27 @@ fun MediaListScreen(
         }
     }
 
+    // Tự động load thêm trang khi cuộn tới gần cuối danh sách
+    LaunchedEffect(listState, gridState, uiState.isGridView, uiState.isLoading, uiState.isRefreshing, uiState.hasMore, uiState.articles.size) {
+        if (!uiState.isLoading && !uiState.isRefreshing && uiState.hasMore && uiState.articles.isNotEmpty()) {
+            if (isMediaFormat && uiState.isGridView) {
+                snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+                    .collect { lastIndex ->
+                        if (lastIndex != null && lastIndex >= uiState.articles.size - 12 && uiState.hasMore && !uiState.isLoading && !uiState.isRefreshing) {
+                            viewModel.loadArticles(refresh = false)
+                        }
+                    }
+            } else {
+                snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+                    .collect { lastIndex ->
+                        if (lastIndex != null && lastIndex >= uiState.articles.size - 5 && uiState.hasMore && !uiState.isLoading && !uiState.isRefreshing) {
+                            viewModel.loadArticles(refresh = false)
+                        }
+                    }
+            }
+        }
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {

@@ -19,6 +19,8 @@ data class MediaListUiState(
     val articles: List<ArticleListItem> = emptyList(),
     val categories: List<Category> = emptyList(),
     val searchQuery: String = "",
+    val page: Int = 1,
+    val hasMore: Boolean = true,
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val isSelectionMode: Boolean = false,
@@ -63,9 +65,10 @@ class MediaListViewModel(
     }
 
     fun loadArticles(refresh: Boolean = false) {
+        val targetPage = if (refresh) 1 else _uiState.value.page + 1
         if (!refresh) {
             val currentState = _uiState.value
-            if (currentState.isLoading || currentState.isRefreshing) return
+            if (currentState.isLoading || currentState.isRefreshing || !currentState.hasMore) return
             _uiState.value = currentState.copy(isLoading = true, errorMessage = null)
         } else {
             loadArticlesJob?.cancel()
@@ -82,14 +85,17 @@ class MediaListViewModel(
             val result = articleRepository.getArticles(
                 query = targetState.searchQuery,
                 contentType = targetState.contentType,
-                page = 1,
-                pageSize = 300
+                page = targetPage,
+                pageSize = 100
             )
 
             result.fold(
                 onSuccess = { list ->
+                    val nextArticles = if (refresh) list else targetState.articles + list
                     _uiState.value = _uiState.value.copy(
-                        articles = list,
+                        articles = nextArticles,
+                        page = targetPage,
+                        hasMore = list.size >= 100,
                         isLoading = false,
                         isRefreshing = false
                     )

@@ -48,7 +48,7 @@ async def list_articles(
     favorite: Optional[bool] = Query(None, description="Lọc bài viết yêu thích"),
     sort: Optional[str] = Query("newest", description="Sắp xếp: newest, oldest, reading_time, title"),
     page: int = Query(1, ge=1, description="Số trang"),
-    page_size: int = Query(20, ge=1, le=150, description="Số bài mỗi trang"),
+    page_size: int = Query(20, ge=1, le=500, description="Số bài mỗi trang"),
 ):
     """
     Lấy danh sách bài viết (chỉ trả về excerpt, không trả full content để tối ưu băng thông).
@@ -119,14 +119,13 @@ async def list_articles(
                 )
             )
         elif ct in ("image", "photo", "anh"):
-            stmt = stmt.where(Article.source_type == "FILE", image_filter)
+            stmt = stmt.where(image_filter)
         elif ct in ("video", "clip"):
-            stmt = stmt.where(Article.source_type == "FILE", video_filter)
+            stmt = stmt.where(video_filter)
         elif ct in ("audio", "amthanh", "music", "sound"):
-            stmt = stmt.where(Article.source_type == "FILE", audio_filter)
+            stmt = stmt.where(audio_filter)
         elif ct in ("file", "document", "doc", "tep"):
             stmt = stmt.where(
-                Article.source_type == "FILE",
                 not_(image_filter),
                 not_(video_filter),
                 not_(audio_filter)
