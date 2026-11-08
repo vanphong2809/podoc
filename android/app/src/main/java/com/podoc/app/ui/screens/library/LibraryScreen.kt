@@ -26,6 +26,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material3.*
@@ -71,6 +72,7 @@ fun LibraryScreen(
     var newTitleInput by remember { mutableStateOf("") }
     var showSortMenu by remember { mutableStateOf(false) }
     var showDeleteMultipleConfirmDialog by remember { mutableStateOf(false) }
+    var showMoveMultipleCategoryDialog by remember { mutableStateOf(false) }
     var articleToDelete by remember { mutableStateOf<ArticleListItem?>(null) }
 
     // Nút Back điện thoại khi đang ở chế độ chọn nhiều
@@ -143,8 +145,15 @@ fun LibraryScreen(
                 label = "topBarTransition"
             ) { isSelectionMode ->
                 if (isSelectionMode) {
-                    SelectionModeTopBar(uiState = uiState, viewModel = viewModel,
-                        onDeleteMultiple = { showDeleteMultipleConfirmDialog = true })
+                    SelectionModeTopBar(
+                        uiState = uiState,
+                        viewModel = viewModel,
+                        onMoveMultiple = {
+                            viewModel.loadCategories()
+                            showMoveMultipleCategoryDialog = true
+                        },
+                        onDeleteMultiple = { showDeleteMultipleConfirmDialog = true }
+                    )
                 } else {
                     LibraryTopBar(
                         uiState = uiState,
@@ -261,10 +270,26 @@ fun LibraryScreen(
                                 modifier = Modifier.fillMaxSize()
                             ) {
                                 items(uiState.articles, key = { it.id }) { article ->
+                                    val isSelected = uiState.selectedMediaIds.contains(article.id)
                                     ArticleCard(
                                             article = article,
                                             isHeroBanner = false,
-                                            onClick = { onArticleClick(article.id) },
+                                            isSelectionMode = uiState.isSelectionMode,
+                                            isSelected = isSelected,
+                                            onClick = {
+                                                if (uiState.isSelectionMode) {
+                                                    viewModel.toggleSelectMedia(article.id)
+                                                } else {
+                                                    onArticleClick(article.id)
+                                                }
+                                            },
+                                            onLongClick = {
+                                                if (!uiState.isSelectionMode) {
+                                                    viewModel.startSelectionMode(article.id)
+                                                } else {
+                                                    viewModel.toggleSelectMedia(article.id)
+                                                }
+                                            },
                                             onToggleFavorite = { viewModel.toggleFavorite(article) },
                                             onDelete = { articleToDelete = article },
                                             onOpenSource = {
@@ -416,13 +441,18 @@ fun LibraryScreen(
     // ── DIALOG: Xác nhận xoá nhiều ───────────────────────────────────────
     if (showDeleteMultipleConfirmDialog) {
         val count = uiState.selectedMediaIds.size
-        val isVideoTab = uiState.selectedContentType == "video"
-        val itemTypeName = if (isVideoTab) "video" else "hình ảnh"
+        val itemTypeName = when (uiState.selectedContentType) {
+            "video" -> "video"
+            "image" -> "hình ảnh"
+            "article" -> "bài viết"
+            "file" -> "tệp tin"
+            else -> "mục"
+        }
         AlertDialog(
             onDismissRequest = { showDeleteMultipleConfirmDialog = false },
             shape = RoundedCornerShape(20.dp),
-            title = { Text(if (isVideoTab) "Xoá video" else "Xoá hình ảnh", fontWeight = FontWeight.SemiBold) },
-            text = { Text("Bạn có chắc chắn muốn xoá $count $itemTypeName đã chọn không? Thao tác này sẽ xoá hoàn toàn các tệp tin này khỏi thư viện và máy chủ.") },
+            title = { Text("Xoá $itemTypeName đã chọn", fontWeight = FontWeight.SemiBold) },
+            text = { Text("Bạn có chắc chắn muốn xoá $count $itemTypeName đã chọn không? Thao tác này sẽ xoá hoàn toàn các mục này khỏi thư viện và máy chủ.") },
             confirmButton = {
                 Button(
                     onClick = {
@@ -437,6 +467,83 @@ fun LibraryScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteMultipleConfirmDialog = false }) { Text(stringResource(R.string.btn_cancel)) }
+            }
+        )
+    }
+
+    // ── DIALOG: Chuyển nhiều mục sang Danh Mục mới ─────────────────────────
+    if (showMoveMultipleCategoryDialog) {
+        val count = uiState.selectedMediaIds.size
+        AlertDialog(
+            onDismissRequest = { showMoveMultipleCategoryDialog = false },
+            shape = RoundedCornerShape(20.dp),
+            title = {
+                Text("Chuyển $count mục đã chọn", fontWeight = FontWeight.SemiBold)
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState())
+                        .padding(top = 8.dp)
+                ) {
+                    Text(
+                        text = "Chọn danh mục đích:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
+                    )
+
+                    uiState.categories.forEach { cat ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .clickable {
+                                    viewModel.moveSelectedArticlesToCategory(cat.id)
+                                    showMoveMultipleCategoryDialog = false
+                                }
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(12.dp)
+                                        .clip(CircleShape)
+                                        .background(com.podoc.app.ui.theme.parseHexColor(cat.color))
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = cat.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showMoveMultipleCategoryDialog = false }) {
+                    Text(stringResource(R.string.btn_cancel))
+                }
             }
         )
     }
@@ -481,6 +588,7 @@ fun LibraryScreen(
 private fun SelectionModeTopBar(
     uiState: LibraryUiState,
     viewModel: LibraryViewModel,
+    onMoveMultiple: () -> Unit,
     onDeleteMultiple: () -> Unit
 ) {
     Surface(
@@ -527,8 +635,22 @@ private fun SelectionModeTopBar(
                 )
             }
             IconButton(
+                onClick = onMoveMultiple,
+                enabled = uiState.selectedMediaIds.isNotEmpty() && !uiState.isMovingMultiple && !uiState.isDeletingMultiple
+            ) {
+                if (uiState.isMovingMultiple) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.DriveFileMove,
+                        contentDescription = "Chuyển danh mục",
+                        tint = if (uiState.selectedMediaIds.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            IconButton(
                 onClick = onDeleteMultiple,
-                enabled = uiState.selectedMediaIds.isNotEmpty() && !uiState.isDeletingMultiple
+                enabled = uiState.selectedMediaIds.isNotEmpty() && !uiState.isDeletingMultiple && !uiState.isMovingMultiple
             ) {
                 if (uiState.isDeletingMultiple) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -754,12 +876,19 @@ private fun LibraryTopBar(
             }
         }
 
-        // ── Media count + Selection button (chỉ hiện khi ở tab Hình ảnh/Video) ──
+        // ── Item count + Selection button ──
         AnimatedVisibility(
-            visible = isMediaGrid && uiState.articles.isNotEmpty(),
+            visible = uiState.articles.isNotEmpty(),
             enter = expandVertically(tween(200)) + fadeIn(tween(200)),
             exit = shrinkVertically(tween(150)) + fadeOut(tween(150))
         ) {
+            val countText = when (uiState.selectedContentType) {
+                "video" -> "${uiState.articles.size} video"
+                "image" -> "${uiState.articles.size} hình ảnh"
+                "article" -> "${uiState.articles.size} bài viết"
+                "file" -> "${uiState.articles.size} tệp tin"
+                else -> "${uiState.articles.size} mục"
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -768,7 +897,7 @@ private fun LibraryTopBar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "${uiState.articles.size} ${if (uiState.selectedContentType == "video") "video" else "hình ảnh"}",
+                    text = countText,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )

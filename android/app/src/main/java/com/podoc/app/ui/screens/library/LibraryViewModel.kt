@@ -35,7 +35,8 @@ data class LibraryUiState(
     val userMessage: String? = null,
     val isSelectionMode: Boolean = false,
     val selectedMediaIds: Set<Int> = emptySet(),
-    val isDeletingMultiple: Boolean = false
+    val isDeletingMultiple: Boolean = false,
+    val isMovingMultiple: Boolean = false
 )
 
 class LibraryViewModel(
@@ -448,6 +449,52 @@ class LibraryViewModel(
                     _uiState.value = _uiState.value.copy(
                         isDeletingMultiple = false,
                         errorMessage = err.message ?: "Lỗi khi xoá các mục đã chọn"
+                    )
+                }
+            )
+        }
+    }
+
+    fun moveSelectedArticlesToCategory(targetCategoryId: Int, onDone: ((count: Int) -> Unit)? = null) {
+        val selectedIds = _uiState.value.selectedMediaIds.toList()
+        if (selectedIds.isEmpty()) return
+
+        val targetCategory = _uiState.value.categories.find { it.id == targetCategoryId }
+        val targetCatName = targetCategory?.name ?: "danh mục mới"
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isMovingMultiple = true)
+            val result = articleRepository.batchUpdateCategory(selectedIds, targetCategoryId)
+            result.fold(
+                onSuccess = {
+                    val count = selectedIds.size
+                    val updatedArticles = _uiState.value.articles.map { art ->
+                        if (art.id in selectedIds) {
+                            art.copy(categoryId = targetCategoryId, categoryName = targetCatName)
+                        } else {
+                            art
+                        }
+                    }
+                    val finalArticles = if (_uiState.value.selectedCategoryId != null && _uiState.value.selectedCategoryId != targetCategoryId) {
+                        updatedArticles.filterNot { it.id in selectedIds }
+                    } else {
+                        updatedArticles
+                    }
+
+                    _uiState.value = _uiState.value.copy(
+                        articles = finalArticles,
+                        isSelectionMode = false,
+                        selectedMediaIds = emptySet(),
+                        isMovingMultiple = false,
+                        userMessage = "Đã chuyển $count mục sang '$targetCatName'"
+                    )
+                    categoryRepository.getCategories()
+                    onDone?.invoke(count)
+                },
+                onFailure = { err ->
+                    _uiState.value = _uiState.value.copy(
+                        isMovingMultiple = false,
+                        errorMessage = err.message ?: "Lỗi khi chuyển danh mục"
                     )
                 }
             )

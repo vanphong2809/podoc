@@ -89,6 +89,11 @@ class BatchDeleteRequest(BaseModel):
     ids: list[int]
 
 
+class BatchUpdateCategoryRequest(BaseModel):
+    ids: list[int]
+    category_id: int
+
+
 class StorageItemStat(BaseModel):
     content_type: str        # "image", "video", "audio", "file"
     label: str               # "Hình ảnh", "Video", "Âm thanh", "Tệp tin"

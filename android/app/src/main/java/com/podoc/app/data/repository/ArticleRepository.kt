@@ -361,6 +361,30 @@ class ArticleRepository(
         }
     }
 
+    suspend fun batchUpdateCategory(ids: List<Int>, categoryId: Int): Result<Unit> {
+        if (ids.isEmpty()) return Result.success(Unit)
+        return try {
+            val res = getApi().batchUpdateCategory(BatchUpdateCategoryRequest(ids, categoryId))
+            if (res.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                for (id in ids) {
+                    getApi().updateArticle(id, UpdateArticleRequest(categoryId = categoryId))
+                }
+                Result.success(Unit)
+            }
+        } catch (e: Exception) {
+            try {
+                for (id in ids) {
+                    getApi().updateArticle(id, UpdateArticleRequest(categoryId = categoryId))
+                }
+                Result.success(Unit)
+            } catch (fallbackEx: Exception) {
+                Result.failure(fallbackEx)
+            }
+        }
+    }
+
     suspend fun exportData(): Result<ResponseBody> {
         return try {
             val body = getApi().exportData()

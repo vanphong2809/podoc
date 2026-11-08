@@ -111,6 +111,12 @@ data class BatchDeleteRequest(
 )
 
 @Serializable
+data class BatchUpdateCategoryRequest(
+    @SerialName("ids") val ids: List<Int>,
+    @SerialName("category_id") val categoryId: Int
+)
+
+@Serializable
 data class BatchDeleteResponse(
     @SerialName("deleted_count") val deletedCount: Int = 0
 )

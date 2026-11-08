@@ -80,6 +80,9 @@ interface PoDocApiService {
     @POST("api/articles/batch-delete")
     suspend fun batchDeleteArticles(@Body request: BatchDeleteRequest): Response<BatchDeleteResponse>
 
+    @POST("api/articles/batch-update-category")
+    suspend fun batchUpdateCategory(@Body request: BatchUpdateCategoryRequest): Response<Unit>
+
     // Export ZIP
     @Streaming
     @GET("api/export")

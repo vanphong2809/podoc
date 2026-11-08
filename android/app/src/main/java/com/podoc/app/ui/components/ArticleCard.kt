@@ -2,9 +2,12 @@ package com.podoc.app.ui.components
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -203,11 +206,15 @@ private val imageBadgeText    = Color(0xFF7C3AED)
 // ARTICLE CARD — Entry point
 // ─────────────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ArticleCard(
     article: ArticleListItem,
     isHeroBanner: Boolean = false,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     onToggleFavorite: () -> Unit,
     onDelete: () -> Unit,
     onOpenSource: () -> Unit,
@@ -249,22 +256,33 @@ fun ArticleCard(
         }
     }
 
-    val cardBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+    val cardBorderColor = if (isSelected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+    }
 
     ElevatedCard(
         shape = RoundedCornerShape(22.dp),
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp, pressedElevation = 5.dp),
+        elevation = CardDefaults.elevatedCardElevation(
+            defaultElevation = if (isSelected) 4.dp else 2.dp,
+            pressedElevation = 5.dp
+        ),
         colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+            else MaterialTheme.colorScheme.surface
         ),
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
     ) {
         // Viền mờ tinh tế
         Surface(
             shape = RoundedCornerShape(22.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, cardBorderColor),
+            border = androidx.compose.foundation.BorderStroke(if (isSelected) 2.dp else 1.dp, cardBorderColor),
             color = Color.Transparent
         ) {
             if (isHeroBanner && !article.imageUrl.isNullOrBlank() && isImageValid) {
@@ -275,6 +293,8 @@ fun ArticleCard(
                     typeBadgeColor = typeBadgeColor,
                     isImageValid = isImageValid,
                     onImageError = { isImageValid = false },
+                    isSelectionMode = isSelectionMode,
+                    isSelected = isSelected,
                     showMenu = showMenu,
                     onShowMenu = { showMenu = true },
                     onDismissMenu = { showMenu = false },
@@ -293,6 +313,8 @@ fun ArticleCard(
                     typeBadgeColor = typeBadgeColor,
                     isImageValid = isImageValid,
                     onImageError = { isImageValid = false },
+                    isSelectionMode = isSelectionMode,
+                    isSelected = isSelected,
                     showMenu = showMenu,
                     onShowMenu = { showMenu = true },
                     onDismissMenu = { showMenu = false },
@@ -320,6 +342,8 @@ private fun HeroBannerContent(
     typeBadgeColor: Color,
     isImageValid: Boolean,
     onImageError: () -> Unit,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
     showMenu: Boolean,
     onShowMenu: () -> Unit,
     onDismissMenu: () -> Unit,
@@ -392,30 +416,58 @@ private fun HeroBannerContent(
                     )
                 }
                 Spacer(modifier = Modifier.weight(1f))
-                Box {
-                    IconButton(
-                        onClick = onShowMenu,
+                if (isSelectionMode) {
+                    Box(
                         modifier = Modifier
-                            .size(34.dp)
+                            .size(28.dp)
                             .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.90f))
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.primary
+                                else Color.White.copy(alpha = 0.90f)
+                            )
+                            .border(
+                                1.5.dp,
+                                if (isSelected) MaterialTheme.colorScheme.primary
+                                else Color.White,
+                                CircleShape
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Thao tác",
-                            tint = Color(0xFF374151),
-                            modifier = Modifier.size(18.dp)
+                        if (isSelected) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Đã chọn",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                } else {
+                    Box {
+                        IconButton(
+                            onClick = onShowMenu,
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.90f))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "Thao tác",
+                                tint = Color(0xFF374151),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        ArticleActionDropdownMenu(
+                            expanded = showMenu,
+                            onDismiss = onDismissMenu,
+                            onEditTitle = onEditTitle,
+                            onChangeCategory = onChangeCategory,
+                            onOpenSource = onOpenSource,
+                            onShare = onShare,
+                            onDelete = onDelete
                         )
                     }
-                    ArticleActionDropdownMenu(
-                        expanded = showMenu,
-                        onDismiss = onDismissMenu,
-                        onEditTitle = onEditTitle,
-                        onChangeCategory = onChangeCategory,
-                        onOpenSource = onOpenSource,
-                        onShare = onShare,
-                        onDelete = onDelete
-                    )
                 }
             }
         }
@@ -467,6 +519,8 @@ private fun StandardCardContent(
     typeBadgeColor: Color,
     isImageValid: Boolean,
     onImageError: () -> Unit,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
     showMenu: Boolean,
     onShowMenu: () -> Unit,
     onDismissMenu: () -> Unit,
@@ -510,27 +564,55 @@ private fun StandardCardContent(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
-            Box {
-                IconButton(
-                    onClick = onShowMenu,
-                    modifier = Modifier.size(28.dp)
+            if (isSelectionMode) {
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (isSelected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.surface
+                        )
+                        .border(
+                            1.5.dp,
+                            if (isSelected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.outlineVariant,
+                            CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Thao tác",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
+                    if (isSelected) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Đã chọn",
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            } else {
+                Box {
+                    IconButton(
+                        onClick = onShowMenu,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Thao tác",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    ArticleActionDropdownMenu(
+                        expanded = showMenu,
+                        onDismiss = onDismissMenu,
+                        onEditTitle = onEditTitle,
+                        onChangeCategory = onChangeCategory,
+                        onOpenSource = onOpenSource,
+                        onShare = onShare,
+                        onDelete = onDelete
                     )
                 }
-                ArticleActionDropdownMenu(
-                    expanded = showMenu,
-                    onDismiss = onDismissMenu,
-                    onEditTitle = onEditTitle,
-                    onChangeCategory = onChangeCategory,
-                    onOpenSource = onOpenSource,
-                    onShare = onShare,
-                    onDelete = onDelete
-                )
             }
         }
 

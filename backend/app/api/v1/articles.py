@@ -6,7 +6,7 @@ import uuid
 from typing import Annotated, List, Optional
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, File, status
 from fastapi.responses import FileResponse
-from sqlalchemy import func, or_, select, text, not_
+from sqlalchemy import func, or_, select, text, not_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -22,6 +22,7 @@ from app.schemas.article import (
     ArticleListResponse,
     ArticleUpdate,
     BatchDeleteRequest,
+    BatchUpdateCategoryRequest,
     CategoryStorageStat,
     StorageItemStat,
     StorageStatsResponse,
@@ -698,6 +699,30 @@ async def batch_delete_articles(
 
     await db.commit()
     return {"deleted_count": len(articles)}
+
+
+@router.post("/batch-update-category")
+async def batch_update_category(
+    data: BatchUpdateCategoryRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Cập nhật danh mục hàng loạt cho danh sách ID bài viết / tài liệu / hình ảnh / video."""
+    if not data.ids:
+        return {"updated_count": 0}
+
+    # Kiểm tra danh mục đích có tồn tại không
+    cat_stmt = select(Category).where(Category.id == data.category_id)
+    cat_res = await db.execute(cat_stmt)
+    cat = cat_res.scalar_one_or_none()
+    if not cat:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Danh mục đích không tồn tại")
+
+    stmt = update(Article).where(Article.id.in_(data.ids)).values(category_id=data.category_id)
+    result = await db.execute(stmt)
+    await db.commit()
+
+    return {"updated_count": result.rowcount, "category_id": cat.id, "category_name": cat.name}
 
 
 @router.get("/{id}/thumbnail")
