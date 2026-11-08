@@ -132,10 +132,19 @@ class SettingsViewModel(
         }
     }
 
-    fun setServerUrl(url: String) {
+    fun setServerUrl(url: String, onApplied: (() -> Unit)? = null) {
         viewModelScope.launch {
-            dataStoreManager.setServerUrl(url)
+            var cleanUrl = url.trim().trimEnd('/')
+            if (cleanUrl.isNotBlank() && !cleanUrl.startsWith("http://", ignoreCase = true) && !cleanUrl.startsWith("https://", ignoreCase = true)) {
+                cleanUrl = if (cleanUrl.contains("localhost") || cleanUrl.matches(Regex("^[0-9.:]+.*"))) {
+                    "http://$cleanUrl"
+                } else {
+                    "https://$cleanUrl"
+                }
+            }
+            dataStoreManager.setServerUrl(cleanUrl)
             loadServerStats()
+            onApplied?.invoke()
         }
     }
 

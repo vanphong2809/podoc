@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import com.podoc.app.R
 import com.podoc.app.ui.theme.AccentColors
 import com.podoc.app.ui.theme.parseHexColor
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -272,18 +273,45 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.height(18.dp))
 
                         // Cỡ chữ đọc mặc định
-                        Text(
-                            text = "${stringResource(R.string.default_font_size_label)}: ${uiState.defaultFontSize}sp",
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 15.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        var sliderFontSize by remember(uiState.defaultFontSize) {
+                            mutableFloatStateOf(uiState.defaultFontSize.toFloat())
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = stringResource(R.string.default_font_size_label),
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 15.sp
+                                ),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = brandPrimary.copy(alpha = if (isDark) 0.25f else 0.12f)
+                            ) {
+                                Text(
+                                    text = "${sliderFontSize.roundToInt()}sp",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    ),
+                                    color = brandPrimary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
                         Spacer(modifier = Modifier.height(6.dp))
                         Slider(
-                            value = uiState.defaultFontSize.toFloat(),
-                            onValueChange = { viewModel.setDefaultFontSize(it.toInt()) },
+                            value = sliderFontSize,
+                            onValueChange = { sliderFontSize = it },
+                            onValueChangeFinished = {
+                                viewModel.setDefaultFontSize(sliderFontSize.roundToInt())
+                            },
                             valueRange = 14f..24f,
                             steps = 4,
                             colors = SliderDefaults.colors(
@@ -295,6 +323,35 @@ fun SettingsScreen(
                             ),
                             modifier = Modifier.fillMaxWidth()
                         )
+
+                        // Khung xem trước trực tiếp cỡ chữ
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isDark) Color(0xFF1E293B) else Color(0xFFF8FAFC),
+                            border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text(
+                                    text = "Xem trước cỡ chữ đọc:",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 11.5.sp
+                                    ),
+                                    color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "PoDoc lưu trữ và đọc tài liệu cá nhân của bạn trên mọi thiết bị.",
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontSize = sliderFontSize.sp,
+                                        lineHeight = (sliderFontSize * 1.5f).sp
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -715,7 +772,13 @@ fun SettingsScreen(
                 Button(
                     onClick = {
                         showServerDialog = false
-                        viewModel.setServerUrl(editingServerUrl)
+                        viewModel.setServerUrl(editingServerUrl) {
+                            android.widget.Toast.makeText(
+                                context,
+                                "Đã áp dụng cấu hình máy chủ mới!",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     },
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(

@@ -104,6 +104,13 @@ fun LibraryScreen(
         }
     }
 
+    // Tự động tải lại nếu danh sách bài viết đang trống (ví dụ sau khi đổi máy chủ hoặc mở lại app)
+    LaunchedEffect(Unit) {
+        if (uiState.articles.isEmpty() && !uiState.isLoading && !uiState.isRefreshing) {
+            viewModel.loadArticles(refresh = true)
+        }
+    }
+
     // Cuộn về đầu khi đổi bộ lọc
     LaunchedEffect(uiState.selectedContentType, uiState.selectedCategoryId, uiState.onlyFavorites) {
         listState.scrollToItem(0)

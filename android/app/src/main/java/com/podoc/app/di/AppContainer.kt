@@ -39,6 +39,28 @@ class AppContainer(private val context: Context) {
     private var currentApi: PoDocApiService? = null
     private var currentServerUrl: String = ""
 
+    init {
+        CoroutineScope(Dispatchers.IO).launch {
+            dataStoreManager.serverUrlFlow.collect { url ->
+                val formatted = if (url.isNotBlank() && !url.endsWith("/")) "$url/" else url
+                if (currentServerUrl.isNotEmpty() && formatted != currentServerUrl) {
+                    resetApi()
+                }
+            }
+        }
+    }
+
+    fun resetApi() {
+        currentApi = null
+        currentServerUrl = ""
+        try {
+            okHttpClient.connectionPool.evictAll()
+        } catch (_: Exception) {}
+        try {
+            coil.Coil.imageLoader(context).memoryCache?.clear()
+        } catch (_: Exception) {}
+    }
+
     private val authInterceptor = AuthInterceptor(
         tokenProvider = {
             runBlocking { dataStoreManager.authTokenFlow.first().takeIf { it.isNotBlank() } }
@@ -104,9 +126,8 @@ class AppContainer(private val context: Context) {
             apiServiceProvider = { getApiService() },
             context = context,
             serverUrlProvider = {
-                currentServerUrl.ifBlank {
-                    runBlocking { dataStoreManager.serverUrlFlow.first() }
-                }
+                val url = runBlocking { dataStoreManager.serverUrlFlow.first() }
+                if (url.endsWith("/")) url else "$url/"
             }
         )
     }

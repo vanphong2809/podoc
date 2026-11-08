@@ -94,8 +94,10 @@ class MainActivity : ComponentActivity() {
             val serverUrl by container.dataStoreManager.serverUrlFlow.collectAsState(initial = "")
             LaunchedEffect(serverUrl) {
                 if (serverUrl.isNotBlank()) {
+                    container.resetApi()
                     libraryViewModel.loadArticles(refresh = true)
                     categoryViewModel.loadCategories()
+                    settingsViewModel.loadServerStats()
                 }
             }
 

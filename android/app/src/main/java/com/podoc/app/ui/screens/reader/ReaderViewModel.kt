@@ -65,8 +65,9 @@ class ReaderViewModel(
 
     init {
         viewModelScope.launch {
-            val defaultSize = dataStoreManager.defaultFontSizeFlow.first()
-            _uiState.value = _uiState.value.copy(fontSizeSp = defaultSize)
+            dataStoreManager.defaultFontSizeFlow.collect { size ->
+                _uiState.value = _uiState.value.copy(fontSizeSp = size)
+            }
         }
     }
 
@@ -220,13 +221,21 @@ class ReaderViewModel(
 
     fun increaseFontSize() {
         if (_uiState.value.fontSizeSp < 28) {
-            _uiState.value = _uiState.value.copy(fontSizeSp = _uiState.value.fontSizeSp + 2)
+            val newSize = _uiState.value.fontSizeSp + 2
+            _uiState.value = _uiState.value.copy(fontSizeSp = newSize)
+            viewModelScope.launch {
+                dataStoreManager.setDefaultFontSize(newSize)
+            }
         }
     }
 
     fun decreaseFontSize() {
         if (_uiState.value.fontSizeSp > 12) {
-            _uiState.value = _uiState.value.copy(fontSizeSp = _uiState.value.fontSizeSp - 2)
+            val newSize = _uiState.value.fontSizeSp - 2
+            _uiState.value = _uiState.value.copy(fontSizeSp = newSize)
+            viewModelScope.launch {
+                dataStoreManager.setDefaultFontSize(newSize)
+            }
         }
     }
 
