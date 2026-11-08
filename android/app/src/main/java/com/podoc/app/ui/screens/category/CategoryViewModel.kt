@@ -3,6 +3,8 @@ package com.podoc.app.ui.screens.category
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.podoc.app.data.model.Category
+import com.podoc.app.data.model.StorageStats
+import com.podoc.app.data.repository.ArticleRepository
 import com.podoc.app.data.repository.CategoryRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -11,12 +13,16 @@ import kotlinx.coroutines.launch
 
 data class CategoryUiState(
     val categories: List<Category> = emptyList(),
+    val storageStats: StorageStats? = null,
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null
 )
 
-class CategoryViewModel(private val categoryRepository: CategoryRepository) : ViewModel() {
+class CategoryViewModel(
+    private val categoryRepository: CategoryRepository,
+    private val articleRepository: ArticleRepository
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CategoryUiState())
     val uiState: StateFlow<CategoryUiState> = _uiState.asStateFlow()
@@ -54,6 +60,20 @@ class CategoryViewModel(private val categoryRepository: CategoryRepository) : Vi
                         isRefreshing = false,
                         errorMessage = error.message ?: "Lỗi tải danh mục"
                     )
+                }
+            )
+        }
+        loadStorageStats()
+    }
+
+    fun loadStorageStats() {
+        viewModelScope.launch {
+            articleRepository.getStorageStats().fold(
+                onSuccess = { stats ->
+                    _uiState.value = _uiState.value.copy(storageStats = stats)
+                },
+                onFailure = {
+                    // Không chặn UI nếu thống kê dung lượng chưa tải được
                 }
             )
         }

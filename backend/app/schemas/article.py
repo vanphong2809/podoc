@@ -88,3 +88,28 @@ class ArticleDraft(BaseModel):
 class BatchDeleteRequest(BaseModel):
     ids: list[int]
 
+
+class StorageItemStat(BaseModel):
+    content_type: str        # "image", "video", "audio", "file"
+    label: str               # "Hình ảnh", "Video", "Âm thanh", "Tệp tin"
+    count: int
+    total_bytes: int
+    formatted_size: str
+
+
+class CategoryStorageStat(BaseModel):
+    category_id: int
+    category_name: str
+    count: int
+    total_bytes: int
+    formatted_size: str
+
+
+class StorageStatsResponse(BaseModel):
+    total_bytes: int
+    formatted_total_size: str
+    total_files: int
+    items: list[StorageItemStat]
+    by_category: list[CategoryStorageStat] = []
+
+

@@ -109,6 +109,12 @@ interface PoDocApiService {
         @Part("title") title: RequestBody? = null
     ): ArticleDetail
 
+    // Thống kê dung lượng lưu trữ các danh mục (Hình ảnh, Video, Âm thanh, Tệp tin)
+    @GET("api/articles/storage-stats")
+    suspend fun getStorageStats(
+        @Query("category_id") categoryId: Int? = null
+    ): StorageStats
+
     // OCR & IDP Structured Extraction
     @POST("api/ocr/extract-structured")
     suspend fun extractStructuredOcr(@Body request: OcrExtractRequest): OcrExtractResponse

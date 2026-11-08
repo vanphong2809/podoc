@@ -441,6 +441,15 @@ class ArticleRepository(
         }
     }
 
+    suspend fun getStorageStats(categoryId: Int? = null): Result<StorageStats> = withContext(Dispatchers.IO) {
+        try {
+            val stats = getApi().getStorageStats(categoryId = categoryId)
+            Result.success(stats)
+        } catch (e: Exception) {
+            Result.failure(Exception(extractErrorMessage(e)))
+        }
+    }
+
     private fun queryFileName(uri: Uri): String? {
         var name: String? = null
         if (uri.scheme == "content") {

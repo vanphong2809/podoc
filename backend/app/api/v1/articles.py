@@ -22,6 +22,9 @@ from app.schemas.article import (
     ArticleListResponse,
     ArticleUpdate,
     BatchDeleteRequest,
+    CategoryStorageStat,
+    StorageItemStat,
+    StorageStatsResponse,
 )
 from app.services.extractors.base import generate_excerpt
 from app.services.extractors.registry import extractor_registry
@@ -196,6 +199,133 @@ async def list_articles(
         )
 
     return response_items
+
+
+def format_byte_size(size_bytes: int) -> str:
+    """Định dạng kích thước byte sang đơn vị đọc thân thiện (B, KB, MB, GB)."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    else:
+        return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+
+@router.get("/storage-stats", response_model=StorageStatsResponse)
+async def get_storage_stats(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    category_id: Optional[int] = Query(None, description="Lọc theo id danh mục nếu cần"),
+):
+    """
+    Thống kê tổng kích thước và số lượng tệp tin theo các danh mục nội dung:
+    - Hình ảnh (Image)
+    - Video
+    - Âm thanh (Audio)
+    - Tệp tin (File)
+    Đồng thời phân tích chi tiết dung lượng của từng danh mục người dùng.
+    """
+    image_exts = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp")
+    video_exts = (".mp4", ".mkv", ".mov", ".webm", ".avi", ".flv", ".3gp", ".ts")
+    audio_exts = (".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".wma", ".opus")
+
+    stmt = select(Article).options(selectinload(Article.category))
+    if category_id is not None and category_id > 0:
+        stmt = stmt.where(Article.category_id == category_id)
+
+    result = await db.execute(stmt)
+    articles = result.scalars().all()
+
+    type_counts = {"image": 0, "video": 0, "audio": 0, "file": 0}
+    type_bytes = {"image": 0, "video": 0, "audio": 0, "file": 0}
+
+    cat_counts: dict[int, int] = {}
+    cat_bytes: dict[int, int] = {}
+    cat_names: dict[int, str] = {}
+
+    total_bytes = 0
+    total_files = 0
+
+    for art in articles:
+        # Xác định kích thước tệp vật lý trên đĩa
+        art_size = 0
+        has_file = False
+        if art.file_path:
+            disk_path = os.path.join(settings.FILES_STORAGE_DIR, art.file_path)
+            if os.path.isfile(disk_path):
+                art_size = os.path.getsize(disk_path)
+                has_file = True
+
+        if not has_file and art.source_type != "FILE":
+            # Bỏ qua bài viết web không có file đính kèm
+            continue
+
+        lower_name = (art.file_name or "").lower()
+        lower_path = (art.file_path or "").lower()
+        mime = (art.mime_type or "").lower()
+
+        is_image = mime.startswith("image/") or any(lower_name.endswith(ext) or lower_path.endswith(ext) for ext in image_exts)
+        is_video = mime.startswith("video/") or any(lower_name.endswith(ext) or lower_path.endswith(ext) for ext in video_exts)
+        is_audio = mime.startswith("audio/") or any(lower_name.endswith(ext) or lower_path.endswith(ext) for ext in audio_exts)
+
+        if is_image:
+            ctype = "image"
+        elif is_video:
+            ctype = "video"
+        elif is_audio:
+            ctype = "audio"
+        else:
+            ctype = "file"
+
+        type_counts[ctype] += 1
+        type_bytes[ctype] += art_size
+        total_bytes += art_size
+        total_files += 1
+
+        cid = art.category_id
+        cname = art.category.name if art.category else "Chưa phân loại"
+        cat_counts[cid] = cat_counts.get(cid, 0) + 1
+        cat_bytes[cid] = cat_bytes.get(cid, 0) + art_size
+        cat_names[cid] = cname
+
+    type_labels = {
+        "image": "Hình ảnh",
+        "video": "Video",
+        "audio": "Âm thanh",
+        "file": "Tệp tin"
+    }
+
+    items = [
+        StorageItemStat(
+            content_type=ct,
+            label=type_labels[ct],
+            count=type_counts[ct],
+            total_bytes=type_bytes[ct],
+            formatted_size=format_byte_size(type_bytes[ct])
+        )
+        for ct in ["image", "video", "audio", "file"]
+    ]
+
+    by_category = [
+        CategoryStorageStat(
+            category_id=cid,
+            category_name=cat_names[cid],
+            count=cat_counts[cid],
+            total_bytes=cat_bytes[cid],
+            formatted_size=format_byte_size(cat_bytes[cid])
+        )
+        for cid in sorted(cat_bytes.keys(), key=lambda x: cat_bytes[x], reverse=True)
+    ]
+
+    return StorageStatsResponse(
+        total_bytes=total_bytes,
+        formatted_total_size=format_byte_size(total_bytes),
+        total_files=total_files,
+        items=items,
+        by_category=by_category
+    )
 
 
 @router.post("/upload", response_model=ArticleDetailResponse, status_code=status.HTTP_201_CREATED)

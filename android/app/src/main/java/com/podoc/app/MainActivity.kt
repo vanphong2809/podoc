@@ -73,7 +73,7 @@ class MainActivity : ComponentActivity() {
                 PreviewViewModel(container.articleRepository, container.categoryRepository)
             }
             val categoryViewModel = remember {
-                CategoryViewModel(container.categoryRepository)
+                CategoryViewModel(container.categoryRepository, container.articleRepository)
             }
             val settingsViewModel = remember {
                 SettingsViewModel(container.authRepository, container.articleRepository, container.dataStoreManager)

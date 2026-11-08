@@ -115,3 +115,43 @@ data class BatchDeleteResponse(
     @SerialName("deleted_count") val deletedCount: Int = 0
 )
 
+@Serializable
+data class StorageItemStat(
+    @SerialName("content_type") val contentType: String = "",
+    @SerialName("label") val label: String = "",
+    @SerialName("count") val count: Int = 0,
+    @SerialName("total_bytes") val totalBytes: Long = 0L,
+    @SerialName("formatted_size") val formattedSize: String = "0 B"
+)
+
+@Serializable
+data class CategoryStorageStat(
+    @SerialName("category_id") val categoryId: Int = 0,
+    @SerialName("category_name") val categoryName: String = "",
+    @SerialName("count") val count: Int = 0,
+    @SerialName("total_bytes") val totalBytes: Long = 0L,
+    @SerialName("formatted_size") val formattedSize: String = "0 B"
+)
+
+@Serializable
+data class StorageStats(
+    @SerialName("total_bytes") val totalBytes: Long = 0L,
+    @SerialName("formatted_total_size") val formattedTotalSize: String = "0 B",
+    @SerialName("total_files") val totalFiles: Int = 0,
+    @SerialName("items") val items: List<StorageItemStat> = emptyList(),
+    @SerialName("by_category") val byCategory: List<CategoryStorageStat> = emptyList()
+) {
+    val image: StorageItemStat
+        get() = items.find { it.contentType == "image" } ?: StorageItemStat(contentType = "image", label = "Hình ảnh")
+
+    val video: StorageItemStat
+        get() = items.find { it.contentType == "video" } ?: StorageItemStat(contentType = "video", label = "Video")
+
+    val audio: StorageItemStat
+        get() = items.find { it.contentType == "audio" } ?: StorageItemStat(contentType = "audio", label = "Âm thanh")
+
+    val file: StorageItemStat
+        get() = items.find { it.contentType == "file" } ?: StorageItemStat(contentType = "file", label = "Tệp tin")
+}
+
+

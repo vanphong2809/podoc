@@ -23,10 +23,13 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.podoc.app.R
 import com.podoc.app.data.model.Category
+import com.podoc.app.data.model.StorageItemStat
+import com.podoc.app.data.model.StorageStats
 import com.podoc.app.ui.theme.AccentColors
 import com.podoc.app.ui.theme.parseHexColor
 
@@ -187,9 +190,22 @@ fun CategoryScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(bottom = 80.dp)
                 ) {
+                    if (searchQuery.isBlank() && uiState.storageStats != null) {
+                        item(key = "storage_overview") {
+                            StorageOverviewCard(
+                                stats = uiState.storageStats!!,
+                                isDark = isDark,
+                                cardBg = cardBg
+                            )
+                        }
+                    }
+
                     items(filteredCategories, key = { it.id }) { cat ->
                         var showItemMenu by remember { mutableStateOf(false) }
                         val catColor = remember(cat.color) { parseHexColor(cat.color) }
+                        val catStat = remember(uiState.storageStats, cat.id) {
+                            uiState.storageStats?.byCategory?.find { it.categoryId == cat.id }
+                        }
 
                         Card(
                             shape = RoundedCornerShape(20.dp),
@@ -225,7 +241,7 @@ fun CategoryScreen(
 
                                 Spacer(modifier = Modifier.width(14.dp))
 
-                                // Tên danh mục và số lượng bài viết
+                                // Tên danh mục và số lượng bài viết + dung lượng
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = cat.name,
@@ -239,8 +255,9 @@ fun CategoryScreen(
                                     Spacer(modifier = Modifier.height(2.dp))
 
                                     val count = cat.articleCount ?: 0
+                                    val sizeStr = if (catStat != null && catStat.totalBytes > 0) " • ${catStat.formattedSize}" else ""
                                     Text(
-                                        text = "$count mục",
+                                        text = "$count mục$sizeStr",
                                         style = MaterialTheme.typography.bodySmall.copy(
                                             fontSize = 13.sp,
                                             fontWeight = if (count > 0) FontWeight.Bold else FontWeight.Normal
@@ -523,5 +540,260 @@ private fun getCategoryIcon(name: String, iconStr: String?): ImageVector {
         lower.contains("sách") || lower.contains("book") || lower.contains("đọc") -> Icons.Default.MenuBook
         lower.contains("âm thanh") || lower.contains("audio") || lower.contains("music") || lower.contains("nhạc") || lower.contains("headphone") || lower.contains("tai nghe") -> Icons.Default.Headphones
         else -> Icons.Default.Folder
+    }
+}
+
+/**
+ * Thẻ hiển thị tổng quan dung lượng lưu trữ phân bổ theo các loại dữ liệu
+ */
+@Composable
+private fun StorageOverviewCard(
+    stats: StorageStats,
+    isDark: Boolean,
+    cardBg: Color,
+    modifier: Modifier = Modifier
+) {
+    val totalBytes = stats.totalBytes
+    val imageColor = Color(0xFF8B5CF6)
+    val videoColor = Color(0xFFF43F5E)
+    val audioColor = Color(0xFF10B981)
+    val fileColor = Color(0xFF0284C7)
+
+    val imgWeight = if (totalBytes > 0) (stats.image.totalBytes.toFloat() / totalBytes).coerceIn(0f, 1f) else 0f
+    val vidWeight = if (totalBytes > 0) (stats.video.totalBytes.toFloat() / totalBytes).coerceIn(0f, 1f) else 0f
+    val audWeight = if (totalBytes > 0) (stats.audio.totalBytes.toFloat() / totalBytes).coerceIn(0f, 1f) else 0f
+    val fileWeight = if (totalBytes > 0) (stats.file.totalBytes.toFloat() / totalBytes).coerceIn(0f, 1f) else 0f
+
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBg),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDark) 0.dp else 1.5.dp),
+        border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0)),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            // Header: Tiêu đề + Tổng kích thước
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isDark) Color(0xFF312E81) else Color(0xFFEEF2FF)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PieChart,
+                        contentDescription = null,
+                        tint = if (isDark) Color(0xFF818CF8) else Color(0xFF4F46E5),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Dung lượng lưu trữ",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Thống kê kích thước danh mục",
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                        color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isDark) Color(0xFF312E81) else Color(0xFFEEF2FF),
+                    border = BorderStroke(1.dp, if (isDark) Color(0xFF4338CA) else Color(0xFFC7D2FE))
+                ) {
+                    Text(
+                        text = stats.formattedTotalSize,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        ),
+                        color = if (isDark) Color(0xFFA5B4FC) else Color(0xFF4F46E5),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Thanh phân bổ màu đa sắc (Segmented progress bar)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(if (isDark) Color(0xFF1E293B) else Color(0xFFE2E8F0))
+            ) {
+                if (totalBytes > 0) {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        if (imgWeight > 0f) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(imgWeight.coerceAtLeast(0.01f))
+                                    .fillMaxHeight()
+                                    .background(imageColor)
+                            )
+                        }
+                        if (vidWeight > 0f) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(vidWeight.coerceAtLeast(0.01f))
+                                    .fillMaxHeight()
+                                    .background(videoColor)
+                            )
+                        }
+                        if (audWeight > 0f) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(audWeight.coerceAtLeast(0.01f))
+                                    .fillMaxHeight()
+                                    .background(audioColor)
+                            )
+                        }
+                        if (fileWeight > 0f) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(fileWeight.coerceAtLeast(0.01f))
+                                    .fillMaxHeight()
+                                    .background(fileColor)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // 4 thẻ con lưới 2x2 cho 4 loại danh mục
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                StorageMiniCard(
+                    title = "Hình ảnh",
+                    stat = stats.image,
+                    icon = Icons.Default.Image,
+                    color = imageColor,
+                    isDark = isDark,
+                    modifier = Modifier.weight(1f)
+                )
+                StorageMiniCard(
+                    title = "Video",
+                    stat = stats.video,
+                    icon = Icons.Default.Videocam,
+                    color = videoColor,
+                    isDark = isDark,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                StorageMiniCard(
+                    title = "Âm thanh",
+                    stat = stats.audio,
+                    icon = Icons.Default.Headphones,
+                    color = audioColor,
+                    isDark = isDark,
+                    modifier = Modifier.weight(1f)
+                )
+                StorageMiniCard(
+                    title = "Tệp tin",
+                    stat = stats.file,
+                    icon = Icons.Default.InsertDriveFile,
+                    color = fileColor,
+                    isDark = isDark,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StorageMiniCard(
+    title: String,
+    stat: StorageItemStat,
+    icon: ImageVector,
+    color: Color,
+    isDark: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val bg = if (isDark) Color(0xFF1E293B) else Color(0xFFF8FAFC)
+    val border = if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0)
+
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = bg,
+        border = BorderStroke(1.dp, border),
+        modifier = modifier
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(color.copy(alpha = if (isDark) 0.2f else 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = color,
+                    modifier = Modifier.size(17.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${stat.formattedSize} • ${stat.count}",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
     }
 }
