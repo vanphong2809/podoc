@@ -384,6 +384,7 @@ class ArticleRepository(
                         504 -> "Máy chủ hết thời gian xử lý (Proxy 100s timeout do tệp quá nặng)"
                         502 -> "Máy chủ đang khởi động lại hoặc ngắt kết nối (502)"
                         413 -> "Dung lượng tệp vượt quá giới hạn máy chủ"
+                        507 -> "Ổ cứng máy chủ đã đầy (Hết dung lượng lưu trữ)"
                         else -> extractErrorMessage(e)
                     }
                 }

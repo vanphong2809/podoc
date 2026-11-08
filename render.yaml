@@ -12,7 +12,7 @@ services:
 
     disk:
       mountPath: /data/files
-      sizeGB: 1
+      sizeGB: 10
       # The Python image runs as root with all Linux capabilities dropped.
       uid: 0
       gid: 0

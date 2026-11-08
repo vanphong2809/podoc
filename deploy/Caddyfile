@@ -1,9 +1,9 @@
 {$DOMAIN:localhost} {
     # Tự động cấp và gia hạn chứng chỉ SSL Let's Encrypt / ZeroSSL
 
-    # Giới hạn kích thước tải lên tối đa 60MB (cho upload file 50MB)
+    # Cho phép tải lên các tệp tin/video dung lượng lớn (tối đa 10GB)
     request_body {
-        max_size 60MB
+        max_size 10GB
     }
 
     # Reverse proxy tới container Backend FastAPI

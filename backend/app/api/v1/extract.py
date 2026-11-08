@@ -159,8 +159,24 @@ async def extract_file(
     unique_filename = f"{uuid.uuid4().hex}{orig_ext}"
     disk_path = os.path.join(settings.FILES_STORAGE_DIR, unique_filename)
 
-    with open(disk_path, "wb") as f:
-        f.write(file_bytes)
+    try:
+        with open(disk_path, "wb") as f:
+            f.write(file_bytes)
+    except OSError as e:
+        if os.path.exists(disk_path):
+            try:
+                os.remove(disk_path)
+            except Exception:
+                pass
+        if e.errno == 28:
+            raise HTTPException(
+                status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+                detail="Ổ cứng máy chủ đã đầy (Hết dung lượng lưu trữ). Vui lòng nâng dung lượng Disk hoặc xóa bớt tệp.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi ghi tệp lên máy chủ: {e.strerror}",
+        )
 
     # Tiêu đề mặc định lấy tên file bỏ đuôi
     title = os.path.splitext(orig_name)[0].strip() or orig_name

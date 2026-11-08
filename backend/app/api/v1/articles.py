@@ -425,15 +425,31 @@ async def upload_article_file(
     disk_path = os.path.join(settings.FILES_STORAGE_DIR, stored_filename)
 
     total_size = len(first_chunk)
-    with open(disk_path, "wb") as f_out:
-        if first_chunk:
-            f_out.write(first_chunk)
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            f_out.write(chunk)
-            total_size += len(chunk)
+    try:
+        with open(disk_path, "wb") as f_out:
+            if first_chunk:
+                f_out.write(first_chunk)
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                f_out.write(chunk)
+                total_size += len(chunk)
+    except OSError as e:
+        if os.path.exists(disk_path):
+            try:
+                os.remove(disk_path)
+            except Exception:
+                pass
+        if e.errno == 28:  # ENOSPC: No space left on device
+            raise HTTPException(
+                status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+                detail="Ổ cứng máy chủ đã đầy (Hết dung lượng lưu trữ). Vui lòng nâng dung lượng Disk hoặc xóa bớt tệp.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi ghi tệp lên máy chủ: {e.strerror}",
+        )
 
     final_title = title.strip() if (title and title.strip()) else os.path.splitext(orig_name)[0].strip() or orig_name
 
