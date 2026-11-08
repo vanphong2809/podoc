@@ -3,6 +3,7 @@ package com.podoc.app
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -50,6 +51,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
 
         val container = (application as PoDocApplication).container
 
@@ -191,6 +193,10 @@ class MainActivity : ComponentActivity() {
                 )
 
                 Scaffold(
+                    // Main tabs share one safe area. Detail screens own their app bars/insets.
+                    contentWindowInsets = if (isBottomBarVisible) {
+                        ScaffoldDefaults.contentWindowInsets
+                    } else WindowInsets(0, 0, 0, 0),
                     bottomBar = {
                         if (isBottomBarVisible) {
                             PoDocBottomBar(
@@ -233,7 +239,9 @@ class MainActivity : ComponentActivity() {
                     NavHost(
                         navController = navController,
                         startDestination = Screen.Library.route,
-                        modifier = Modifier.padding(innerPadding)
+                        modifier = Modifier
+                            .padding(innerPadding)
+                            .consumeWindowInsets(innerPadding)
                     ) {
 
                         // Màn hình Thư viện

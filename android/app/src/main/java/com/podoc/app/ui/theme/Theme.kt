@@ -1,15 +1,16 @@
 package com.podoc.app.ui.theme
 
-import android.app.Activity
 import android.os.Build
+import android.graphics.Color as AndroidColor
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
 
 private val LightColorScheme = lightColorScheme(
     primary = PrimaryLight,
@@ -69,15 +70,24 @@ fun PoDocTheme(
 
     val view = LocalView.current
     if (!view.isInEditMode) {
-        SideEffect {
-            val window = (view.context as? Activity)?.window
+        val applySystemBars = {
+            val window = view.context.findActivity()?.window
             if (window != null) {
-                window.statusBarColor = colorScheme.background.toArgb()
-                window.navigationBarColor = colorScheme.surface.toArgb()
+                window.statusBarColor = AndroidColor.TRANSPARENT
+                // API 26 cannot draw dark navigation icons, so retain a dark fallback there.
+                window.navigationBarColor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    AndroidColor.TRANSPARENT
+                } else AndroidColor.BLACK
                 val insetsController = WindowCompat.getInsetsController(window, view)
-                insetsController.isAppearanceLightStatusBars = !isDark
-                insetsController.isAppearanceLightNavigationBars = !isDark
+                insetsController.isAppearanceLightStatusBars = colorScheme.background.luminance() > 0.5f
+                insetsController.isAppearanceLightNavigationBars =
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 && colorScheme.surface.luminance() > 0.5f
             }
+        }
+        SideEffect { applySystemBars() }
+        LifecycleResumeEffect(view, colorScheme) {
+            applySystemBars()
+            onPauseOrDispose { }
         }
     }
 

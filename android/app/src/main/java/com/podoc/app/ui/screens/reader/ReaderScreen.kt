@@ -54,7 +54,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import com.podoc.app.ui.components.formatArticleDate
@@ -65,7 +64,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.view.WindowCompat
+import com.podoc.app.ui.theme.MediaSystemBars
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.decode.SvgDecoder
@@ -156,15 +155,8 @@ fun ReaderScreen(
     val isMediaViewer = isVideo || isImage
     val isAudio = fileExt in listOf("mp3", "wav", "m4a", "aac", "flac", "ogg", "wma", "opus") || article?.mimeType?.startsWith("audio/") == true
 
-    // Đổi màu icon Status Bar khi ở chế độ xem media (ảnh/video nền đen -> icon trắng)
-    val currentView = LocalView.current
-    if (!currentView.isInEditMode && isMediaViewer) {
-        SideEffect {
-            val window = (currentView.context as? Activity)?.window
-            if (window != null) {
-                WindowCompat.getInsetsController(window, currentView).isAppearanceLightStatusBars = false
-            }
-        }
+    if (isMediaViewer) {
+        MediaSystemBars()
     }
     val isOfficeDoc = fileExt in listOf("doc", "docx", "xls", "xlsx", "ppt", "pptx", "rtf", "odt", "ods", "odp", "csv") ||
             article?.mimeType in listOf(
@@ -283,7 +275,15 @@ fun ReaderScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(if (isMediaViewer) PaddingValues(0.dp) else innerPadding)
+                .then(
+                    if (isMediaViewer) {
+                        Modifier.background(Color.Black).windowInsetsPadding(
+                            WindowInsets.navigationBars.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)
+                        )
+                    } else {
+                        Modifier.padding(innerPadding).consumeWindowInsets(innerPadding)
+                    }
+                )
         ) {
             when {
                 uiState.isLoading -> {

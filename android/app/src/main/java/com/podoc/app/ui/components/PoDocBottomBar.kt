@@ -54,9 +54,12 @@ fun PoDocBottomBar(
         modifier = Modifier.fillMaxWidth()
     ) {
         NavigationBar(
+            windowInsets = WindowInsets(0, 0, 0, 0),
             containerColor = Color.Transparent,
             tonalElevation = 0.dp,
-            modifier = Modifier.height(72.dp)
+            modifier = Modifier
+                .windowInsetsPadding(NavigationBarDefaults.windowInsets)
+                .height(72.dp)
         ) {
             items.forEach { item ->
                 val selected = currentRoute == item.route
