@@ -34,6 +34,7 @@ import com.podoc.app.service.MediaPlaybackManager
 import com.podoc.app.ui.components.AddOptionBottomSheet
 import com.podoc.app.ui.components.ArticleCard
 import com.podoc.app.ui.components.EmptyStateView
+import com.podoc.app.ui.components.UploadFailureDialog
 import com.podoc.app.ui.theme.parseHexColor
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -513,6 +514,15 @@ fun CategoryDetailScreen(
                     Text(stringResource(R.string.btn_cancel))
                 }
             }
+        )
+    }
+
+    // Dialog Báo cáo lỗi tải lên
+    uiState.uploadFailureDialogData?.let { failureData ->
+        UploadFailureDialog(
+            data = failureData,
+            onRetry = { viewModel.retryFailedUploads() },
+            onDismiss = { viewModel.dismissUploadFailureDialog() }
         )
     }
 }

@@ -48,6 +48,7 @@ import coil.request.ImageRequest
 import com.podoc.app.R
 import com.podoc.app.data.model.ArticleListItem
 import com.podoc.app.service.MediaPlaybackManager
+import com.podoc.app.ui.components.UploadFailureDialog
 import com.podoc.app.ui.components.ArticleCard
 import com.podoc.app.ui.components.ArticleCardSkeleton
 import com.podoc.app.ui.components.EmptyStateView
@@ -583,6 +584,15 @@ fun LibraryScreen(
             dismissButton = {
                 TextButton(onClick = { articleToDelete = null }) { Text(stringResource(R.string.btn_cancel)) }
             }
+        )
+    }
+
+    // ── DIALOG: Báo cáo lỗi tải lên ──────────────────────────────────────
+    uiState.uploadFailureDialogData?.let { failureData ->
+        UploadFailureDialog(
+            data = failureData,
+            onRetry = { viewModel.retryFailedUploads() },
+            onDismiss = { viewModel.dismissUploadFailureDialog() }
         )
     }
 }

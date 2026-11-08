@@ -32,7 +32,9 @@ class StreamingUriRequestBody(
 ) : RequestBody() {
     override fun contentType(): MediaType? = mimeType?.toMediaTypeOrNull()
 
-    override fun contentLength(): Long = if (size > 0) size else -1L
+    // Sử dụng -1L để OkHttp truyền chunked streaming an toàn, tránh lỗi ProtocolException
+    // khi OpenableColumns.SIZE trên Android bị lệch so với byte thực tế trong stream
+    override fun contentLength(): Long = -1L
 
     @Throws(IOException::class)
     override fun writeTo(sink: BufferedSink) {
@@ -371,7 +373,23 @@ class ArticleRepository(
             }
             Result.success(article.copy(imageUrl = finalUrl))
         } catch (e: Exception) {
-            Result.failure(e)
+            val userFriendlyMsg = when {
+                e is java.net.SocketTimeoutException -> "Hết thời gian chờ kết nối (Tệp quá lớn hoặc mạng quá chậm)"
+                e is java.net.UnknownHostException -> "Không thể kết nối máy chủ (Vui lòng kiểm tra mạng)"
+                e is java.net.ConnectException -> "Không thể kết nối máy chủ"
+                e is java.io.FileNotFoundException -> "Không thể đọc tệp trên thiết bị (Có thể tệp lưu trên Cloud chưa tải về máy)"
+                e is java.net.ProtocolException -> "Lỗi truyền luồng dữ liệu (${e.message})"
+                e is retrofit2.HttpException -> {
+                    when (e.code()) {
+                        504 -> "Máy chủ hết thời gian xử lý (Proxy 100s timeout do tệp quá nặng)"
+                        502 -> "Máy chủ đang khởi động lại hoặc ngắt kết nối (502)"
+                        413 -> "Dung lượng tệp vượt quá giới hạn máy chủ"
+                        else -> extractErrorMessage(e)
+                    }
+                }
+                else -> extractErrorMessage(e)
+            }
+            Result.failure(Exception(userFriendlyMsg, e))
         }
     }
 
@@ -569,7 +587,7 @@ class ArticleRepository(
         }
     }
 
-    private fun queryFileInfo(uri: Uri): Pair<String?, Long> {
+    fun queryFileInfo(uri: Uri): Pair<String?, Long> {
         var name: String? = null
         var size: Long = -1L
         if (uri.scheme == "content") {

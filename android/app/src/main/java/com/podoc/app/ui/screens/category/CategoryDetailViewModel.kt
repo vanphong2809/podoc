@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.podoc.app.data.model.ArticleListItem
 import com.podoc.app.data.model.Category
+import com.podoc.app.data.model.UploadFailureDialogData
+import com.podoc.app.data.model.UploadFailureItem
 import com.podoc.app.data.repository.ArticleRepository
 import com.podoc.app.data.repository.CategoryRepository
 import kotlinx.coroutines.Job
@@ -26,7 +28,9 @@ data class CategoryDetailUiState(
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
     val userMessage: String? = null,
-    val isUploading: Boolean = false
+    val isUploading: Boolean = false,
+    val uploadProgressMessage: String? = null,
+    val uploadFailureDialogData: UploadFailureDialogData? = null
 )
 
 class CategoryDetailViewModel(
@@ -185,12 +189,28 @@ class CategoryDetailViewModel(
     fun uploadFiles(uris: List<Uri>) {
         if (uris.isEmpty()) return
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isUploading = true)
+            _uiState.value = _uiState.value.copy(
+                isUploading = true,
+                uploadProgressMessage = if (uris.size == 1) "Đang lưu tệp tin vào danh mục..." else "Đang lưu ${uris.size} tệp tin vào danh mục...",
+                uploadFailureDialogData = null
+            )
             var successCount = 0
-            var firstError: String? = null
+            val failures = mutableListOf<UploadFailureItem>()
 
             for ((index, uri) in uris.withIndex()) {
+                val (qName, qSize) = articleRepository.queryFileInfo(uri)
+                val fileName = qName ?: "tệp_${index + 1}"
+                val sizeMb = if (qSize > 0) qSize.toDouble() / (1024 * 1024) else 0.0
+
+                if (uris.size > 1) {
+                    val sizeText = if (sizeMb > 0) String.format(" (%.1f MB)", sizeMb) else ""
+                    _uiState.value = _uiState.value.copy(
+                        uploadProgressMessage = "Đang lưu tệp ${index + 1}/${uris.size}: $fileName$sizeText..."
+                    )
+                }
+
                 var uploaded = false
+                var lastErr = "Lỗi không xác định"
                 for (attempt in 1..2) {
                     try {
                         val res = articleRepository.uploadFile(uri, categoryId = categoryId)
@@ -199,33 +219,66 @@ class CategoryDetailViewModel(
                             uploaded = true
                             break
                         } else {
-                            if (firstError == null) firstError = res.exceptionOrNull()?.message ?: "Lỗi tải lên"
+                            lastErr = res.exceptionOrNull()?.message ?: "Lỗi tải lên"
                             if (attempt < 2) {
-                                kotlinx.coroutines.delay(1500)
+                                kotlinx.coroutines.delay(1000)
                             }
                         }
                     } catch (e: Throwable) {
-                        if (firstError == null) firstError = e.message ?: "Lỗi kết nối máy chủ"
+                        lastErr = e.message ?: "Lỗi kết nối máy chủ"
                         if (attempt < 2) {
-                            kotlinx.coroutines.delay(1500)
+                            kotlinx.coroutines.delay(1000)
                         }
                     }
                 }
+
+                if (!uploaded) {
+                    failures.add(
+                        UploadFailureItem(
+                            fileName = fileName,
+                            fileSizeMb = sizeMb,
+                            errorReason = lastErr,
+                            uri = uri
+                        )
+                    )
+                }
+
                 if ((index + 1) % 5 == 0) {
                     System.gc()
                 }
             }
 
+            val failedCount = failures.size
             _uiState.value = _uiState.value.copy(
                 isUploading = false,
+                uploadProgressMessage = null,
                 userMessage = when {
-                    firstError != null && successCount > 0 -> "Đã lưu $successCount tệp. Lỗi: $firstError"
-                    firstError != null -> "Tải lên thất bại: $firstError"
-                    else -> "Đã lưu thành công $successCount mục vào danh mục!"
-                }
+                    failedCount == 0 -> "Đã lưu thành công tất cả $successCount mục vào danh mục!"
+                    successCount > 0 -> "Đã lưu $successCount/${uris.size} mục ($failedCount mục không thành công)"
+                    else -> "Không thể lưu tệp: ${failures.firstOrNull()?.errorReason ?: "Lỗi kết nối"}"
+                },
+                uploadFailureDialogData = if (failures.isNotEmpty()) {
+                    UploadFailureDialogData(
+                        successCount = successCount,
+                        totalCount = uris.size,
+                        failures = failures
+                    )
+                } else null
             )
             loadArticles(refresh = true)
             categoryRepository.getCategories()
+        }
+    }
+
+    fun dismissUploadFailureDialog() {
+        _uiState.value = _uiState.value.copy(uploadFailureDialogData = null)
+    }
+
+    fun retryFailedUploads() {
+        val failedUris = _uiState.value.uploadFailureDialogData?.failures?.map { it.uri } ?: emptyList()
+        dismissUploadFailureDialog()
+        if (failedUris.isNotEmpty()) {
+            uploadFiles(failedUris)
         }
     }
 
