@@ -24,11 +24,14 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -456,7 +459,7 @@ private fun InAppFileContent(
     val isImage = fileExt in listOf("png", "svg", "jpg", "jpeg", "webp", "gif") || article.mimeType?.startsWith("image/") == true
     val isSvg = fileExt == "svg" || article.mimeType == "image/svg+xml"
 
-    if (uiState.isFileLoading && !isVideo) {
+    if (uiState.isFileLoading && !isVideo && !isImage) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 CircularProgressIndicator(strokeWidth = 3.dp)
@@ -467,7 +470,7 @@ private fun InAppFileContent(
         return
     }
 
-    if (uiState.fileError != null && uiState.localFile == null && uiState.htmlContent == null && !isVideo) {
+    if (uiState.fileError != null && uiState.localFile == null && uiState.htmlContent == null && !isVideo && !isImage) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -533,23 +536,16 @@ private fun InAppFileContent(
             }
         }
 
-        // 2. Xem ảnh (PNG, SVG, JPG, JPEG, WEBP) với phóng to/thu nhỏ
+        // 2. Xem ảnh (PNG, SVG, JPG, JPEG, WEBP) dạng Gallery vuốt trái/phải mượt mà
         isImage -> {
-            val file = uiState.localFile
-            if (file != null && file.exists()) {
-                InAppImageViewer(
-                    file = file,
-                    isSvg = isSvg,
-                    article = article,
-                    onOpenExternal = onOpenExternal,
-                    onNavigateBack = onNavigateBack,
-                    onDeleteClick = onDeleteClick
-                )
-            } else {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            }
+            ImageGalleryViewer(
+                initialArticle = article,
+                uiState = uiState,
+                viewModel = viewModel,
+                onOpenExternal = onOpenExternal,
+                onNavigateBack = onNavigateBack,
+                onDeleteClick = onDeleteClick
+            )
         }
 
         // 3. Xem HTML hoặc Word (DOCX / DOC) qua WebView kèm tuỳ chọn convert sang PDF
@@ -785,63 +781,147 @@ private fun PdfPageItem(renderer: PdfRenderer?, pageIndex: Int, pageCount: Int) 
 }
 
 /**
- * Trình xem ảnh (PNG, SVG, JPG, WEBP) hỗ trợ zoom đa điểm, kéo và thanh công cụ Overlay nổi tinh tế
+ * Trình xem ảnh dạng Gallery lướt ngang (Horizontal Pager):
+ * - Vuốt sang trái (Swipe Left) để xem ảnh kế tiếp, vuốt sang phải (Swipe Right) để xem ảnh trước đó.
+ * - Hỗ trợ zoom đa điểm (Pinch-to-zoom), chạm 2 lần (Double tap) để phóng to/thu nhỏ nhanh.
+ * - Tự động tải trước (prefetch) các ảnh liền kề để lướt mượt mà không có độ trễ.
+ * - Thanh công cụ TopBar nổi thanh mảnh kèm bộ đếm trang (ví dụ: 3 / 15), mở app ngoài, chia sẻ và xoá ảnh.
+ * - Chạm vào ảnh để ẩn/hiện thanh công cụ giúp xem ảnh toàn màn hình trọn vẹn.
  */
 @Composable
-private fun InAppImageViewer(
-    file: File,
-    isSvg: Boolean,
-    article: ArticleDetail,
+private fun ImageGalleryViewer(
+    initialArticle: ArticleDetail,
+    uiState: ReaderUiState,
+    viewModel: ReaderViewModel,
     onOpenExternal: () -> Unit,
     onNavigateBack: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
-    var scale by remember { mutableStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-    var showControls by remember { mutableStateOf(true) }
-
     val context = LocalContext.current
-    val imageLoader = remember(isSvg) {
-        ImageLoader.Builder(context)
-            .components {
-                if (isSvg) add(SvgDecoder.Factory())
+    var showControls by remember { mutableStateOf(true) }
+    var showHint by remember { mutableStateOf(true) }
+    var isCurrentPageZoomed by remember { mutableStateOf(false) }
+    var itemToDelete by remember { mutableStateOf<ArticleListItem?>(null) }
+    var feedInitialized by remember(initialArticle.id) { mutableStateOf(false) }
+
+    // Tự động tắt gợi ý vuốt sau 3 giây
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(3000)
+        showHint = false
+    }
+
+    // Danh sách ảnh trong feed
+    val feedList = remember(uiState.imageFeed, initialArticle) {
+        if (uiState.imageFeed.isNotEmpty()) {
+            uiState.imageFeed
+        } else {
+            listOf(
+                ArticleListItem(
+                    id = initialArticle.id,
+                    title = initialArticle.title,
+                    sourceType = initialArticle.sourceType,
+                    sourceUrl = initialArticle.sourceUrl,
+                    fileName = initialArticle.fileName,
+                    filePath = initialArticle.filePath,
+                    mimeType = initialArticle.mimeType,
+                    categoryId = initialArticle.categoryId,
+                    categoryName = initialArticle.categoryName,
+                    isFavorite = initialArticle.isFavorite,
+                    readProgress = initialArticle.readProgress,
+                    createdAt = initialArticle.createdAt,
+                    updatedAt = initialArticle.updatedAt
+                )
+            )
+        }
+    }
+
+    val initialPage = remember(feedList) {
+        val found = feedList.indexOfFirst { it.id == initialArticle.id }
+        if (found >= 0) found else 0
+    }
+
+    val pagerState = rememberPagerState(
+        initialPage = initialPage,
+        pageCount = { feedList.size }
+    )
+
+    // Đồng bộ trang ban đầu khi feed hoàn tất tải về
+    LaunchedEffect(uiState.imageFeed) {
+        if (!feedInitialized && uiState.imageFeed.isNotEmpty()) {
+            val index = feedList.indexOfFirst { it.id == initialArticle.id }.coerceAtLeast(0)
+            pagerState.scrollToPage(index)
+            feedInitialized = true
+        }
+    }
+
+    val isFeedReady = uiState.imageFeed.isEmpty() || feedInitialized
+
+    // Tự động tải trước các ảnh lân cận khi trang dừng lại
+    LaunchedEffect(pagerState, feedList, isFeedReady) {
+        if (!isFeedReady) return@LaunchedEffect
+        snapshotFlow { pagerState.settledPage }
+            .collectLatest { settled ->
+                if (settled in feedList.indices) {
+                    val neighbours = listOf(settled - 1, settled + 1, settled + 2, settled - 2)
+                    neighbours.filter { it in feedList.indices }.forEach { idx ->
+                        viewModel.preloadImage(idx, feedList, context)
+                    }
+                }
             }
-            .build()
+    }
+
+    val flingBehavior = PagerDefaults.flingBehavior(
+        state = pagerState,
+        snapAnimationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
+        )
+    )
+
+    BackHandler(enabled = true) {
+        onNavigateBack()
+    }
+
+    val currentItem = feedList.getOrElse(pagerState.currentPage.coerceIn(0, (feedList.size - 1).coerceAtLeast(0))) {
+        ArticleListItem(
+            id = initialArticle.id,
+            title = initialArticle.title,
+            categoryId = initialArticle.categoryId,
+            categoryName = initialArticle.categoryName
+        )
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInput(Unit) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    scale = (scale * zoom).coerceIn(0.8f, 5f)
-                    offset = if (scale > 1f) offset + pan else Offset.Zero
-                }
-            }
-            .clickable { showControls = !showControls },
-        contentAlignment = Alignment.Center
     ) {
-        // Ảnh hiển thị cân bằng hoàn hảo ở chính giữa màn hình (cả chiều dọc lẫn chiều ngang)
-        AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(file)
-                .crossfade(true)
-                .build(),
-            imageLoader = imageLoader,
-            contentDescription = null,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offset.x,
-                    translationY = offset.y
-                )
-        )
+        HorizontalPager(
+            state = pagerState,
+            beyondViewportPageCount = 1,
+            flingBehavior = flingBehavior,
+            userScrollEnabled = !isCurrentPageZoomed,
+            key = { index -> if (index in feedList.indices) feedList[index].id else index },
+            modifier = Modifier.fillMaxSize()
+        ) { pageIndex ->
+            val item = feedList[pageIndex]
+            val isCurrentPage = (pageIndex == pagerState.currentPage)
+            ImageGalleryPage(
+                item = item,
+                initialFile = if (item.id == initialArticle.id) uiState.localFile else null,
+                isCurrentPage = isCurrentPage,
+                uiState = uiState,
+                viewModel = viewModel,
+                onToggleControls = { showControls = !showControls },
+                onZoomChanged = { zoomed ->
+                    if (isCurrentPage) {
+                        isCurrentPageZoomed = zoomed
+                    }
+                }
+            )
+        }
 
-        // Thanh công cụ nổi phía trên (Overlay TopBar) mờ trong suốt, không chiếm không gian
+        // 1. Thanh công cụ nổi phía trên (TopBar Overlay)
         AnimatedVisibility(
             visible = showControls,
             enter = fadeIn(),
@@ -883,21 +963,31 @@ private fun InAppImageViewer(
 
                     Spacer(modifier = Modifier.width(10.dp))
 
-                    Text(
-                        text = article.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = currentItem.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (feedList.size > 1) {
+                            Text(
+                                text = "${pagerState.currentPage + 1} / ${feedList.size}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
 
                     Spacer(modifier = Modifier.width(6.dp))
 
                     // Nút Mở app ngoài
                     IconButton(
-                        onClick = onOpenExternal,
+                        onClick = {
+                            viewModel.openImageItemFile(context, currentItem)
+                        },
                         modifier = Modifier
                             .size(38.dp)
                             .background(Color.Black.copy(alpha = 0.5f), CircleShape)
@@ -917,8 +1007,8 @@ private fun InAppImageViewer(
                         onClick = {
                             val intent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
-                                putExtra(Intent.EXTRA_SUBJECT, article.title)
-                                putExtra(Intent.EXTRA_TEXT, "${article.title}\n\n${article.sourceUrl ?: ""}")
+                                putExtra(Intent.EXTRA_SUBJECT, currentItem.title)
+                                putExtra(Intent.EXTRA_TEXT, "${currentItem.title}\n\n${currentItem.sourceUrl ?: ""}")
                             }
                             context.startActivity(Intent.createChooser(intent, "Chia sẻ"))
                         },
@@ -938,7 +1028,9 @@ private fun InAppImageViewer(
 
                     // Nút Xoá
                     IconButton(
-                        onClick = onDeleteClick,
+                        onClick = {
+                            itemToDelete = currentItem
+                        },
                         modifier = Modifier
                             .size(38.dp)
                             .background(Color.Black.copy(alpha = 0.5f), CircleShape)
@@ -951,6 +1043,268 @@ private fun InAppImageViewer(
                         )
                     }
                 }
+            }
+        }
+
+        // 2. Thông tin phía dưới & gợi ý vuốt
+        AnimatedVisibility(
+            visible = showControls,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color.Transparent,
+                                Color(0x66000000),
+                                Color(0xD9000000)
+                            )
+                        )
+                    )
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            color = Color(0xFF7C3AED),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Image,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "HÌNH ẢNH",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+
+                        if (!currentItem.categoryName.isNullOrBlank()) {
+                            Surface(
+                                color = Color.White.copy(alpha = 0.18f),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = currentItem.categoryName ?: "",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    if (showHint && feedList.size > 1) {
+                        Text(
+                            text = "Vuốt trái / phải để xem ảnh khác",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.7f),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // Dialog xác nhận xoá ảnh
+    if (itemToDelete != null) {
+        val deletingItem = itemToDelete!!
+        AlertDialog(
+            onDismissRequest = { itemToDelete = null },
+            icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("Xoá hình ảnh", fontWeight = FontWeight.Bold) },
+            text = { Text("Bạn có chắc chắn muốn xoá hình ảnh \"${deletingItem.title}\" không?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val wasLast = feedList.size <= 1
+                        viewModel.deleteFeedItem(deletingItem) {
+                            itemToDelete = null
+                            if (wasLast) {
+                                onNavigateBack()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Xoá")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { itemToDelete = null }) {
+                    Text("Huỷ")
+                }
+            }
+        )
+    }
+}
+
+/**
+ * Trang ảnh đơn lẻ trong Horizontal Pager:
+ * - Hỗ trợ Double-tap để zoom nhanh 2.5x / trả về 1x
+ * - Hỗ trợ kéo di chuyển ảnh khi đang phóng to (Zoomed pan)
+ * - Tự động tải ảnh từ cache hoặc nạp nền
+ */
+@Composable
+private fun ImageGalleryPage(
+    item: ArticleListItem,
+    initialFile: File?,
+    isCurrentPage: Boolean,
+    uiState: ReaderUiState,
+    viewModel: ReaderViewModel,
+    onToggleControls: () -> Unit,
+    onZoomChanged: (Boolean) -> Unit
+) {
+    val context = LocalContext.current
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+
+    // Tự động đưa về tỷ lệ 1x khi người dùng chuyển sang trang khác
+    LaunchedEffect(isCurrentPage) {
+        if (!isCurrentPage) {
+            scale = 1f
+            offset = Offset.Zero
+            onZoomChanged(false)
+        }
+    }
+
+    val cachedFile = uiState.imageFilesCache[item.id] ?: initialFile
+    var loadedFile by remember(item.id, cachedFile) { mutableStateOf(cachedFile) }
+    var isLoading by remember(item.id, cachedFile) { mutableStateOf(cachedFile == null || !cachedFile.exists()) }
+
+    LaunchedEffect(item.id, cachedFile) {
+        if (loadedFile == null || !loadedFile!!.exists()) {
+            isLoading = true
+            try {
+                val f = viewModel.awaitImageFile(context, item)
+                loadedFile = f
+            } catch (_: Exception) {
+            } finally {
+                isLoading = false
+            }
+        } else {
+            isLoading = false
+        }
+    }
+
+    val isSvg = remember(item.fileName, item.mimeType) {
+        item.mimeType == "image/svg+xml" || (item.fileName ?: "").endsWith(".svg", ignoreCase = true)
+    }
+
+    val imageLoader = remember(isSvg) {
+        ImageLoader.Builder(context)
+            .components {
+                if (isSvg) add(SvgDecoder.Factory())
+            }
+            .build()
+    }
+
+    val isZoomed = scale > 1.05f
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(isZoomed) {
+                detectTapGestures(
+                    onTap = { onToggleControls() },
+                    onDoubleTap = {
+                        if (scale > 1.05f) {
+                            scale = 1f
+                            offset = Offset.Zero
+                            onZoomChanged(false)
+                        } else {
+                            scale = 2.5f
+                            onZoomChanged(true)
+                        }
+                    }
+                )
+            }
+            .then(
+                if (isZoomed) {
+                    Modifier.pointerInput(Unit) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            val newScale = (scale * zoom).coerceIn(1f, 5f)
+                            scale = newScale
+                            if (newScale > 1.05f) {
+                                offset += pan
+                                onZoomChanged(true)
+                            } else {
+                                scale = 1f
+                                offset = Offset.Zero
+                                onZoomChanged(false)
+                            }
+                        }
+                    }
+                } else {
+                    Modifier
+                }
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        if (loadedFile != null && loadedFile!!.exists()) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(loadedFile)
+                    .crossfade(true)
+                    .build(),
+                imageLoader = imageLoader,
+                contentDescription = item.title,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = offset.x,
+                        translationY = offset.y
+                    )
+            )
+        } else if (isLoading) {
+            CircularProgressIndicator(
+                strokeWidth = 2.5.dp,
+                color = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.size(36.dp)
+            )
+        } else {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    imageVector = Icons.Default.Image,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.5f),
+                    modifier = Modifier.size(48.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Không thể tải ảnh",
+                    color = Color.White.copy(alpha = 0.7f),
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
     }

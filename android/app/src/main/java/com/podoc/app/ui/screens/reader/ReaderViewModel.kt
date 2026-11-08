@@ -43,7 +43,11 @@ data class ReaderUiState(
     val currentVideoIndex: Int = 0,
     val videoFilesCache: Map<Int, File> = emptyMap(),
     val videoAspectRatios: Map<Int, Float> = emptyMap(),
-    val videoThumbnails: Map<Int, android.graphics.Bitmap> = emptyMap()
+    val videoThumbnails: Map<Int, android.graphics.Bitmap> = emptyMap(),
+    // Image Gallery Feed states (Vuốt ngang lướt ảnh)
+    val imageFeed: List<ArticleListItem> = emptyList(),
+    val currentImageIndex: Int = 0,
+    val imageFilesCache: Map<Int, File> = emptyMap()
 )
 
 class ReaderViewModel(
@@ -78,8 +82,12 @@ class ReaderViewModel(
                     // Video uses the shared feed cache so initial playback and prefetch never write the same file twice.
                     val rawExt = (detail.fileName ?: detail.filePath ?: "").let { if (it.contains('.')) it.substringAfterLast('.', "").lowercase() else "" }
                     val isVideo = rawExt in listOf("mp4", "mkv", "mov", "webm", "avi", "3gp", "ts") || detail.mimeType?.startsWith("video/") == true
+                    val isImage = rawExt in listOf("png", "svg", "jpg", "jpeg", "webp", "gif") || detail.mimeType?.startsWith("image/") == true
                     if (isVideo) {
                         loadVideoFeed(detail.id, detail.categoryId, context)
+                    } else if (isImage) {
+                        loadImageFeed(detail.id, detail.categoryId, context)
+                        loadFileForInApp(context, detail)
                     } else if (detail.sourceType == "FILE" || !detail.fileName.isNullOrBlank()) {
                         loadFileForInApp(context, detail)
                     }
@@ -177,6 +185,7 @@ class ReaderViewModel(
         } else _uiState.value.htmlContent
 
         val isVid = ext in listOf("mp4", "mkv", "mov", "webm", "avi", "3gp", "ts")
+        val isImg = ext in listOf("png", "svg", "jpg", "jpeg", "webp", "gif") || _uiState.value.article?.mimeType?.startsWith("image/") == true
         val curId = _uiState.value.article?.id
         if (isVid && curId != null) {
             extractMetadataAndThumbnailInBackground(curId, file)
@@ -188,7 +197,8 @@ class ReaderViewModel(
                 localFile = file,
                 textContent = text,
                 htmlContent = html,
-                videoFilesCache = if (isVid && curId != null) _uiState.value.videoFilesCache + (curId to file) else _uiState.value.videoFilesCache
+                videoFilesCache = if (isVid && curId != null) _uiState.value.videoFilesCache + (curId to file) else _uiState.value.videoFilesCache,
+                imageFilesCache = if (isImg && curId != null) _uiState.value.imageFilesCache + (curId to file) else _uiState.value.imageFilesCache
             )
         }
     }
@@ -469,12 +479,129 @@ class ReaderViewModel(
         }
     }
 
+    /**
+     * Tải danh sách hình ảnh cho chế độ vuốt ngang (Horizontal Image Gallery Pager)
+     */
+    fun loadImageFeed(currentArticleId: Int, categoryId: Int?, context: Context) {
+        viewModelScope.launch {
+            // Tải ảnh từ danh mục hiện tại nếu có
+            val categoryImages = if (categoryId != null && categoryId > 0) {
+                articleRepository.getArticles(categoryId = categoryId, contentType = "image", pageSize = 100).getOrNull()
+            } else null
+
+            // Nếu trong danh mục có ít hơn 2 ảnh, lấy toàn bộ ảnh trong thư viện để lướt phong phú
+            val baseList = if (!categoryImages.isNullOrEmpty() && categoryImages.size >= 2) {
+                categoryImages
+            } else {
+                articleRepository.getArticles(contentType = "image", pageSize = 100).getOrDefault(emptyList())
+            }
+
+            val finalFeed = baseList.toMutableList()
+            val currentIndex = finalFeed.indexOfFirst { it.id == currentArticleId }
+            val startIndex = if (currentIndex >= 0) currentIndex else {
+                _uiState.value.article?.let { cur ->
+                    finalFeed.add(0, ArticleListItem(
+                        id = cur.id,
+                        title = cur.title,
+                        sourceType = cur.sourceType,
+                        sourceUrl = cur.sourceUrl,
+                        fileName = cur.fileName,
+                        filePath = cur.filePath,
+                        mimeType = cur.mimeType,
+                        categoryId = cur.categoryId,
+                        categoryName = cur.categoryName,
+                        isFavorite = cur.isFavorite,
+                        readProgress = cur.readProgress,
+                        createdAt = cur.createdAt,
+                        updatedAt = cur.updatedAt
+                    ))
+                }
+                0
+            }
+
+            _uiState.value = _uiState.value.copy(
+                imageFeed = finalFeed,
+                currentImageIndex = startIndex
+            )
+
+            // Tải trước ảnh hiện tại và các ảnh lân cận
+            preloadImage(startIndex, finalFeed, context)
+            if (startIndex + 1 < finalFeed.size) preloadImage(startIndex + 1, finalFeed, context)
+            if (startIndex - 1 >= 0) preloadImage(startIndex - 1, finalFeed, context)
+        }
+    }
+
+    fun preloadImage(index: Int, feed: List<ArticleListItem>, context: Context) {
+        if (index !in feed.indices) return
+        getImageFile(context, feed[index]) { }
+    }
+
+    fun getImageFile(context: Context, item: ArticleListItem, onReady: (File) -> Unit) {
+        viewModelScope.launch {
+            try {
+                onReady(awaitImageFile(context, item))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    suspend fun awaitImageFile(context: Context, item: ArticleListItem): File {
+        _uiState.value.imageFilesCache[item.id]?.let { cached ->
+            if (cached.exists() && cached.length() > 0) return cached
+        }
+        val rawExt = (item.fileName ?: item.filePath ?: "").let { path ->
+            if (path.contains('.')) path.substringAfterLast('.', "").lowercase() else ""
+        }
+        val ext = if (rawExt.isNotBlank()) rawExt
+        else when {
+            item.mimeType == "image/png" -> "png"
+            item.mimeType == "image/svg+xml" -> "svg"
+            item.mimeType == "image/webp" -> "webp"
+            item.mimeType == "image/gif" -> "gif"
+            else -> "jpg"
+        }
+        val safeExt = ".$ext"
+        val fileName = item.fileName?.let { if (it.contains('.')) it else "$it$safeExt" }
+            ?: "image_${item.id}$safeExt"
+        val cacheFile = File(context.cacheDir, "podoc_doc_${item.id}_$fileName")
+        if (cacheFile.exists() && cacheFile.length() > 0) {
+            _uiState.value = _uiState.value.copy(
+                imageFilesCache = _uiState.value.imageFilesCache + (item.id to cacheFile)
+            )
+            return cacheFile
+        }
+        val file = withContext(Dispatchers.IO) {
+            articleRepository.downloadArticleFile(item.id, inline = true).getOrThrow().use { body ->
+                cacheFile.outputStream().use { output ->
+                    body.byteStream().use { input -> input.copyTo(output) }
+                }
+            }
+            cacheFile
+        }
+        _uiState.value = _uiState.value.copy(
+            imageFilesCache = _uiState.value.imageFilesCache + (item.id to file)
+        )
+        return file
+    }
+
+    fun openImageItemFile(context: Context, item: ArticleListItem) {
+        getImageFile(context, item) { file ->
+            openFileWithIntent(context, file, item.mimeType)
+        }
+    }
+
     fun deleteFeedItem(item: ArticleListItem, onDeleted: () -> Unit) {
         viewModelScope.launch {
             articleRepository.deleteArticle(item.id).fold(
                 onSuccess = {
-                    val updatedFeed = _uiState.value.videoFeed.filterNot { it.id == item.id }
-                    _uiState.value = _uiState.value.copy(videoFeed = updatedFeed)
+                    val updatedVideoFeed = _uiState.value.videoFeed.filterNot { it.id == item.id }
+                    val updatedImageFeed = _uiState.value.imageFeed.filterNot { it.id == item.id }
+                    _uiState.value = _uiState.value.copy(
+                        videoFeed = updatedVideoFeed,
+                        imageFeed = updatedImageFeed
+                    )
                     onDeleted()
                 },
                 onFailure = { /* Bỏ qua */ }
