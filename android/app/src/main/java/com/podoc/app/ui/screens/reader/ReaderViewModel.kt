@@ -60,6 +60,7 @@ class ReaderViewModel(
 
     private var progressSyncJob: Job? = null
     private val videoFileCache = VideoFileCache(viewModelScope)
+    private val imageFileCache = ImageFileCache(viewModelScope)
     private val metadataRequests = mutableSetOf<Int>()
 
     init {
@@ -87,7 +88,6 @@ class ReaderViewModel(
                         loadVideoFeed(detail.id, detail.categoryId, context)
                     } else if (isImage) {
                         loadImageFeed(detail.id, detail.categoryId, context)
-                        loadFileForInApp(context, detail)
                     } else if (detail.sourceType == "FILE" || !detail.fileName.isNullOrBlank()) {
                         loadFileForInApp(context, detail)
                     }
@@ -554,10 +554,11 @@ class ReaderViewModel(
         val rawExt = (item.fileName ?: item.filePath ?: "").let { path ->
             if (path.contains('.')) path.substringAfterLast('.', "").lowercase() else ""
         }
+        val isSvg = item.mimeType == "image/svg+xml" || rawExt == "svg"
         val ext = if (rawExt.isNotBlank()) rawExt
         else when {
             item.mimeType == "image/png" -> "png"
-            item.mimeType == "image/svg+xml" -> "svg"
+            isSvg -> "svg"
             item.mimeType == "image/webp" -> "webp"
             item.mimeType == "image/gif" -> "gif"
             else -> "jpg"
@@ -566,19 +567,12 @@ class ReaderViewModel(
         val fileName = item.fileName?.let { if (it.contains('.')) it else "$it$safeExt" }
             ?: "image_${item.id}$safeExt"
         val cacheFile = File(context.cacheDir, "podoc_doc_${item.id}_$fileName")
-        if (cacheFile.exists() && cacheFile.length() > 0) {
-            _uiState.value = _uiState.value.copy(
-                imageFilesCache = _uiState.value.imageFilesCache + (item.id to cacheFile)
-            )
-            return cacheFile
-        }
-        val file = withContext(Dispatchers.IO) {
+        val file = imageFileCache.get(cacheFile, isSvg) { partial ->
             articleRepository.downloadArticleFile(item.id, inline = true).getOrThrow().use { body ->
-                cacheFile.outputStream().use { output ->
+                partial.outputStream().use { output ->
                     body.byteStream().use { input -> input.copyTo(output) }
                 }
             }
-            cacheFile
         }
         _uiState.value = _uiState.value.copy(
             imageFilesCache = _uiState.value.imageFilesCache + (item.id to file)

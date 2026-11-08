@@ -908,7 +908,6 @@ private fun ImageGalleryViewer(
             val isCurrentPage = (pageIndex == pagerState.currentPage)
             ImageGalleryPage(
                 item = item,
-                initialFile = if (item.id == initialArticle.id) uiState.localFile else null,
                 isCurrentPage = isCurrentPage,
                 uiState = uiState,
                 viewModel = viewModel,
@@ -1174,7 +1173,6 @@ private fun ImageGalleryViewer(
 @Composable
 private fun ImageGalleryPage(
     item: ArticleListItem,
-    initialFile: File?,
     isCurrentPage: Boolean,
     uiState: ReaderUiState,
     viewModel: ReaderViewModel,
@@ -1194,27 +1192,27 @@ private fun ImageGalleryPage(
         }
     }
 
-    val cachedFile = uiState.imageFilesCache[item.id] ?: initialFile
-    var loadedFile by remember(item.id, cachedFile) { mutableStateOf(cachedFile) }
-    var isLoading by remember(item.id, cachedFile) { mutableStateOf(cachedFile == null || !cachedFile.exists()) }
+    val isSvg = remember(item.fileName, item.mimeType) {
+        item.mimeType == "image/svg+xml" || (item.fileName ?: "").endsWith(".svg", ignoreCase = true)
+    }
 
-    LaunchedEffect(item.id, cachedFile) {
+    val cachedFile = uiState.imageFilesCache[item.id]
+    var loadedFile by remember(item.id, cachedFile) { mutableStateOf(cachedFile) }
+    var isDownloading by remember(item.id, cachedFile) { mutableStateOf(cachedFile == null || !cachedFile.exists()) }
+
+    LaunchedEffect(item.id) {
         if (loadedFile == null || !loadedFile!!.exists()) {
-            isLoading = true
+            isDownloading = true
             try {
                 val f = viewModel.awaitImageFile(context, item)
                 loadedFile = f
             } catch (_: Exception) {
             } finally {
-                isLoading = false
+                isDownloading = false
             }
         } else {
-            isLoading = false
+            isDownloading = false
         }
-    }
-
-    val isSvg = remember(item.fileName, item.mimeType) {
-        item.mimeType == "image/svg+xml" || (item.fileName ?: "").endsWith(".svg", ignoreCase = true)
     }
 
     val imageLoader = remember(isSvg) {
@@ -1267,6 +1265,20 @@ private fun ImageGalleryPage(
             ),
         contentAlignment = Alignment.Center
     ) {
+        // 1. Hiển thị thumbnail dự phòng (nếu có) trong lúc file gốc đang được tải về
+        if (!item.imageUrl.isNullOrBlank() && (loadedFile == null || !loadedFile!!.exists())) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(item.imageUrl)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = item.title,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        // 2. Khi file gốc đã tải xong hoàn tất 100%, hiển thị ảnh gốc sắc nét
         if (loadedFile != null && loadedFile!!.exists()) {
             AsyncImage(
                 model = ImageRequest.Builder(context)
@@ -1276,6 +1288,16 @@ private fun ImageGalleryPage(
                 imageLoader = imageLoader,
                 contentDescription = item.title,
                 contentScale = ContentScale.Fit,
+                onError = {
+                    // Nếu giải mã thất bại do file lỗi trên máy, xoá file để tải lại sạch sẽ
+                    loadedFile?.delete()
+                    loadedFile = null
+                    isDownloading = true
+                    viewModel.getImageFile(context, item) { f ->
+                        loadedFile = f
+                        isDownloading = false
+                    }
+                },
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer(
@@ -1285,27 +1307,15 @@ private fun ImageGalleryPage(
                         translationY = offset.y
                     )
             )
-        } else if (isLoading) {
+        }
+
+        // 3. Vòng quay loading nhỏ gọn nếu chưa có cả thumbnail lẫn file gốc
+        if (isDownloading && loadedFile == null && item.imageUrl.isNullOrBlank()) {
             CircularProgressIndicator(
                 strokeWidth = 2.5.dp,
                 color = Color.White.copy(alpha = 0.8f),
                 modifier = Modifier.size(36.dp)
             )
-        } else {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    imageVector = Icons.Default.Image,
-                    contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.5f),
-                    modifier = Modifier.size(48.dp)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Không thể tải ảnh",
-                    color = Color.White.copy(alpha = 0.7f),
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
         }
     }
 }
