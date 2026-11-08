@@ -450,6 +450,15 @@ class ArticleRepository(
         }
     }
 
+    suspend fun getServerSystemStats(): Result<ServerSystemStats> = withContext(Dispatchers.IO) {
+        try {
+            val stats = getApi().getServerSystemStats()
+            Result.success(stats)
+        } catch (e: Exception) {
+            Result.failure(Exception(extractErrorMessage(e)))
+        }
+    }
+
     private fun queryFileName(uri: Uri): String? {
         var name: String? = null
         if (uri.scheme == "content") {

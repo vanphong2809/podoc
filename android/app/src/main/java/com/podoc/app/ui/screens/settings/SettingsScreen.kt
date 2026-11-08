@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -461,6 +462,155 @@ fun SettingsScreen(
                                 )
                             }
                         }
+
+                        // Phần hiển thị thông số phần cứng của Máy chủ (RAM, Dung lượng ổ đĩa, CPU)
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Thông số hệ thống máy chủ",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 15.sp
+                                ),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            if (uiState.isLoadingServerStats) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = brandPrimary
+                                )
+                            } else {
+                                IconButton(
+                                    onClick = { viewModel.loadServerStats() },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Tải lại thông số",
+                                        tint = brandPrimary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        if (uiState.serverStats != null) {
+                            val stats = uiState.serverStats!!
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                // 1. RAM
+                                ServerHardwareMetricItem(
+                                    title = "Bộ nhớ RAM",
+                                    value = "${stats.ram.percentUsed}%",
+                                    subtext = "${stats.ram.formattedUsed} / ${stats.ram.formattedTotal} (Còn trống: ${stats.ram.formattedFree})",
+                                    percent = stats.ram.percentUsed,
+                                    icon = Icons.Default.Memory,
+                                    color = Color(0xFF8B5CF6),
+                                    isDark = isDark
+                                )
+
+                                // 2. Dung lượng bộ nhớ (Disk)
+                                ServerHardwareMetricItem(
+                                    title = "Dung lượng ổ đĩa",
+                                    value = "${stats.disk.percentUsed}%",
+                                    subtext = "${stats.disk.formattedUsed} / ${stats.disk.formattedTotal} (Còn trống: ${stats.disk.formattedFree})",
+                                    percent = stats.disk.percentUsed,
+                                    icon = Icons.Default.Storage,
+                                    color = Color(0xFF0284C7),
+                                    isDark = isDark
+                                )
+
+                                // 3. CPU
+                                ServerHardwareMetricItem(
+                                    title = "Vi xử lý (CPU)",
+                                    value = "${stats.cpu.percentUsed}%",
+                                    subtext = "${stats.cpu.cores} nhân • ${stats.cpu.modelName.ifBlank { "Chuẩn" }}",
+                                    percent = stats.cpu.percentUsed,
+                                    icon = Icons.Default.Speed,
+                                    color = Color(0xFF10B981),
+                                    isDark = isDark
+                                )
+
+                                // HĐH & Thời gian hoạt động
+                                if (stats.osName.isNotBlank() || stats.uptimeSeconds > 0) {
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = "HĐH: ${stats.osName}",
+                                                style = MaterialTheme.typography.bodySmall.copy(
+                                                    fontSize = 11.5.sp
+                                                ),
+                                                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f, fill = false)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "Uptime: ${formatUptime(stats.uptimeSeconds)}",
+                                                style = MaterialTheme.typography.bodySmall.copy(
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.Medium
+                                                ),
+                                                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        } else if (uiState.serverStatsError != null) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isDark) Color(0xFF451A1A) else Color(0xFFFEF2F2),
+                                border = BorderStroke(1.dp, if (isDark) Color(0xFF7F1D1D) else Color(0xFFFECACA)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Warning,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = uiState.serverStatsError ?: "Không thể kết nối máy chủ",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
+                                        color = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    TextButton(
+                                        onClick = { viewModel.loadServerStats() },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text("Thử lại", fontSize = 12.5.sp)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -617,5 +767,112 @@ private fun ThemeSegmentItem(
             ),
             color = if (isSelected) selectedTextColor else Color(0xFF374151)
         )
+    }
+}
+
+/**
+ * Mục hiển thị thông số phần cứng máy chủ (RAM, Disk, CPU)
+ */
+@Composable
+private fun ServerHardwareMetricItem(
+    title: String,
+    value: String,
+    subtext: String? = null,
+    percent: Float,
+    icon: ImageVector,
+    color: Color,
+    isDark: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val bg = if (isDark) Color(0xFF1E293B) else Color(0xFFF8FAFC)
+    val border = if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0)
+
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = bg,
+        border = BorderStroke(1.dp, border),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(color.copy(alpha = if (isDark) 0.2f else 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = color,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (subtext != null) {
+                        Text(
+                            text = subtext,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 11.5.sp
+                            ),
+                            color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    ),
+                    color = color
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            LinearProgressIndicator(
+                progress = { (percent / 100f).coerceIn(0f, 1f) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                color = color,
+                trackColor = if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0)
+            )
+        }
+    }
+}
+
+private fun formatUptime(seconds: Long): String {
+    val days = seconds / 86400
+    val hours = (seconds % 86400) / 3600
+    val minutes = (seconds % 3600) / 60
+    return when {
+        days > 0 -> "${days}d ${hours}h ${minutes}m"
+        hours > 0 -> "${hours}h ${minutes}m"
+        else -> "${minutes}m"
     }
 }

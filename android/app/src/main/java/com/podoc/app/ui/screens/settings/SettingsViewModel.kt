@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.podoc.app.data.local.DataStoreManager
+import com.podoc.app.data.model.ServerSystemStats
 import com.podoc.app.data.repository.ArticleRepository
 import com.podoc.app.data.repository.AuthRepository
 import kotlinx.coroutines.flow.*
@@ -19,7 +20,10 @@ data class SettingsUiState(
     val defaultFontSize: Int = 16,
     val isExporting: Boolean = false,
     val exportSuccessMessage: String? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val serverStats: ServerSystemStats? = null,
+    val isLoadingServerStats: Boolean = false,
+    val serverStatsError: String? = null
 )
 
 class SettingsViewModel(
@@ -28,22 +32,68 @@ class SettingsViewModel(
     private val dataStoreManager: DataStoreManager
 ) : ViewModel() {
 
-    val uiState: StateFlow<SettingsUiState> = combine(
+    private val _serverStats = MutableStateFlow<ServerSystemStats?>(null)
+    private val _isLoadingServerStats = MutableStateFlow(false)
+    private val _serverStatsError = MutableStateFlow<String?>(null)
+
+    private data class BaseSettings(
+        val server: String,
+        val user: String,
+        val theme: String,
+        val dynamic: Boolean,
+        val accent: String,
+        val fontSize: Int
+    )
+
+    private val baseSettingsFlow = combine(
         authRepository.serverUrl,
         authRepository.username,
         dataStoreManager.themeModeFlow,
         dataStoreManager.dynamicColorFlow,
         combine(dataStoreManager.accentColorFlow, dataStoreManager.defaultFontSizeFlow) { a, f -> a to f }
     ) { server, user, theme, dynamic, (accent, fontSize) ->
+        BaseSettings(server, user, theme, dynamic, accent, fontSize)
+    }
+
+    val uiState: StateFlow<SettingsUiState> = combine(
+        baseSettingsFlow,
+        _serverStats,
+        _isLoadingServerStats,
+        _serverStatsError
+    ) { base, stats, isLoading, error ->
         SettingsUiState(
-            serverUrl = server,
-            username = user,
-            themeMode = theme,
-            dynamicColor = dynamic,
-            accentColor = accent,
-            defaultFontSize = fontSize
+            serverUrl = base.server,
+            username = base.user,
+            themeMode = base.theme,
+            dynamicColor = base.dynamic,
+            accentColor = base.accent,
+            defaultFontSize = base.fontSize,
+            serverStats = stats,
+            isLoadingServerStats = isLoading,
+            serverStatsError = error
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsUiState())
+
+    init {
+        loadServerStats()
+    }
+
+    fun loadServerStats() {
+        viewModelScope.launch {
+            _isLoadingServerStats.value = true
+            _serverStatsError.value = null
+            articleRepository.getServerSystemStats().fold(
+                onSuccess = { stats ->
+                    _serverStats.value = stats
+                    _isLoadingServerStats.value = false
+                },
+                onFailure = { err ->
+                    _serverStatsError.value = err.message ?: "Không thể kết nối máy chủ"
+                    _isLoadingServerStats.value = false
+                }
+            )
+        }
+    }
 
     fun setThemeMode(mode: String) {
         viewModelScope.launch { dataStoreManager.setThemeMode(mode) }
@@ -85,6 +135,7 @@ class SettingsViewModel(
     fun setServerUrl(url: String) {
         viewModelScope.launch {
             dataStoreManager.setServerUrl(url)
+            loadServerStats()
         }
     }
 

@@ -122,4 +122,8 @@ interface PoDocApiService {
     // Đọc toàn bộ văn bản từ ảnh bằng Gemini 3.8 Flash Vision (như trong chat)
     @POST("api/ocr/read-image")
     suspend fun readImageWithGemini(@Body request: ReadImageRequest): ReadImageResponse
+
+    // Thống kê thông số máy chủ (RAM, Disk, CPU)
+    @GET("api/system/stats")
+    suspend fun getServerSystemStats(): ServerSystemStats
 }
