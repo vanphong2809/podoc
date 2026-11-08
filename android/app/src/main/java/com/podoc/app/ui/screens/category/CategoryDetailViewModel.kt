@@ -189,14 +189,21 @@ class CategoryDetailViewModel(
             var successCount = 0
             var firstError: String? = null
 
-            for (uri in uris) {
-                val res = articleRepository.uploadFile(uri, categoryId = categoryId)
-                res.fold(
-                    onSuccess = { successCount++ },
-                    onFailure = { err ->
-                        if (firstError == null) firstError = err.message
-                    }
-                )
+            for ((index, uri) in uris.withIndex()) {
+                try {
+                    val res = articleRepository.uploadFile(uri, categoryId = categoryId)
+                    res.fold(
+                        onSuccess = { successCount++ },
+                        onFailure = { err ->
+                            if (firstError == null) firstError = err.message
+                        }
+                    )
+                } catch (e: Throwable) {
+                    if (firstError == null) firstError = e.message
+                }
+                if ((index + 1) % 5 == 0) {
+                    System.gc()
+                }
             }
 
             _uiState.value = _uiState.value.copy(

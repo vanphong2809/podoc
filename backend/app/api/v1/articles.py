@@ -346,11 +346,11 @@ async def upload_article_file(
     orig_name = file.filename or "uploaded_file"
     orig_ext = os.path.splitext(orig_name)[1].lower()
 
-    # 1. Đọc nội dung file
-    file_bytes = await file.read()
+    # 1. Đọc một phần đầu để nhận diện MIME type thực tế mà không tốn RAM
+    first_chunk = await file.read(8192)
 
     # Nhận diện MIME type thực tế và phần mở rộng chuẩn xác
-    real_mime = extractor_registry.detect_real_mime_type(file_bytes, orig_name)
+    real_mime = extractor_registry.detect_real_mime_type(first_chunk, orig_name)
     mime_type = real_mime or file.content_type or "application/octet-stream"
 
     is_image = mime_type.startswith("image/") or orig_ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg")
@@ -413,29 +413,38 @@ async def upload_article_file(
             db.add(cat)
             await db.flush()
 
-    # 4. Lưu nguyên vẹn file vật lý vào thư mục storage
+    # 4. Lưu nguyên vẹn file vật lý vào thư mục storage theo dạng stream chunk để tối ưu RAM
     os.makedirs(settings.FILES_STORAGE_DIR, exist_ok=True)
     stored_filename = f"{uuid.uuid4().hex}{orig_ext}"
     disk_path = os.path.join(settings.FILES_STORAGE_DIR, stored_filename)
 
+    total_size = len(first_chunk)
     with open(disk_path, "wb") as f_out:
-        f_out.write(file_bytes)
+        if first_chunk:
+            f_out.write(first_chunk)
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            f_out.write(chunk)
+            total_size += len(chunk)
 
     final_title = title.strip() if (title and title.strip()) else os.path.splitext(orig_name)[0].strip() or orig_name
 
-    # 5. Đối với văn bản text/markdown, đọc trước nội dung để hỗ trợ tìm kiếm toàn văn
+    # 5. Đối với văn bản text/markdown nhỏ, đọc nội dung để hỗ trợ tìm kiếm toàn văn
     content_text = ""
-    if orig_ext in (".txt", ".md", ".mdf"):
+    if orig_ext in (".txt", ".md", ".mdf") and total_size <= 5 * 1024 * 1024:
         try:
-            content_text = file_bytes.decode("utf-8", errors="replace")
+            with open(disk_path, "r", encoding="utf-8", errors="replace") as f_txt:
+                content_text = f_txt.read()
         except Exception:
             content_text = ""
     else:
-        file_size_mb = len(file_bytes) / (1024 * 1024)
+        file_size_mb = total_size / (1024 * 1024)
         if file_size_mb >= 1.0:
             size_str = f"{file_size_mb:.1f} MB"
         else:
-            size_str = f"{len(file_bytes) / 1024:.1f} KB"
+            size_str = f"{total_size / 1024:.1f} KB"
         if is_video:
             content_text = f"Tệp video đính kèm: {orig_name} ({size_str})"
         elif is_audio:

@@ -11,6 +11,7 @@
     <application
         android:name=".PoDocApplication"
         android:allowBackup="true"
+        android:largeHeap="true"
         android:icon="@android:drawable/ic_menu_agenda"
         android:label="@string/app_name"
         android:roundIcon="@android:drawable/ic_menu_agenda"

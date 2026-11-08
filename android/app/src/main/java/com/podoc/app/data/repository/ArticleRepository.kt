@@ -9,13 +9,36 @@ import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import com.podoc.app.data.api.PoDocApiService
 import com.podoc.app.data.model.*
+import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.ResponseBody
+import okio.BufferedSink
+import okio.source
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+class StreamingUriRequestBody(
+    private val contentResolver: android.content.ContentResolver,
+    private val uri: Uri,
+    private val mimeType: String?,
+    private val size: Long
+) : RequestBody() {
+    override fun contentType(): MediaType? = mimeType?.toMediaTypeOrNull()
+
+    override fun contentLength(): Long = if (size > 0) size else -1L
+
+    @Throws(IOException::class)
+    override fun writeTo(sink: BufferedSink) {
+        contentResolver.openInputStream(uri)?.use { input ->
+            sink.writeAll(input.source())
+        } ?: throw IOException("Không thể đọc tệp tin: $uri")
+    }
+}
 
 class ArticleRepository(
     private val apiServiceProvider: () -> PoDocApiService?,
@@ -130,7 +153,8 @@ class ArticleRepository(
     ): Result<ArticleDetail> {
         return try {
             val contentResolver = context.contentResolver
-            var fileName = queryFileName(uri) ?: "file_${System.currentTimeMillis()}"
+            val (queriedName, fileSize) = queryFileInfo(uri)
+            var fileName = queriedName ?: "file_${System.currentTimeMillis()}"
             val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
 
             // Đảm bảo tên file luôn có phần mở rộng nếu ContentResolver trả về tên không đuôi
@@ -162,9 +186,6 @@ class ArticleRepository(
                 }
             }
 
-            val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                ?: return Result.failure(IllegalStateException("Không thể đọc tệp tin"))
-
             val lowerName = fileName.lowercase()
             val isImage = mimeType.startsWith("image/") || lowerName.endsWith(".jpg") ||
                     lowerName.endsWith(".jpeg") || lowerName.endsWith(".png") ||
@@ -177,10 +198,13 @@ class ArticleRepository(
 
             var thumbnailPart: MultipartBody.Part? = null
             if (isVideo) {
+                var retriever: MediaMetadataRetriever? = null
+                var frame: Bitmap? = null
+                var scaledBitmap: Bitmap? = null
                 try {
-                    val retriever = MediaMetadataRetriever()
+                    retriever = MediaMetadataRetriever()
                     retriever.setDataSource(context, uri)
-                    val frame = retriever.getFrameAtTime(1000000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    frame = retriever.getFrameAtTime(1000000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                         ?: retriever.frameAtTime
                     if (frame != null) {
                         val maxDim = 480
@@ -189,7 +213,7 @@ class ArticleRepository(
                         val scale = if (width > maxDim || height > maxDim) {
                             maxDim.toFloat() / maxOf(width, height)
                         } else 1f
-                        val scaledBitmap = if (scale < 1f) {
+                        scaledBitmap = if (scale < 1f) {
                             Bitmap.createScaledBitmap(frame, (width * scale).toInt(), (height * scale).toInt(), true)
                         } else frame
                         val baos = ByteArrayOutputStream()
@@ -198,14 +222,25 @@ class ArticleRepository(
                         val thumbBody = thumbBytes.toRequestBody("image/jpeg".toMediaTypeOrNull())
                         thumbnailPart = MultipartBody.Part.createFormData("thumbnail", "thumb_${fileName}.jpg", thumbBody)
                     }
-                    retriever.release()
                 } catch (e: Exception) {
                     e.printStackTrace()
+                } finally {
+                    try {
+                        if (scaledBitmap != null && scaledBitmap !== frame) {
+                            scaledBitmap.recycle()
+                        }
+                        frame?.recycle()
+                        retriever?.release()
+                    } catch (_: Exception) {}
                 }
             } else if (isImage) {
+                var bitmap: Bitmap? = null
+                var scaledBitmap: Bitmap? = null
                 try {
                     val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, boundsOptions)
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        BitmapFactory.decodeStream(input, null, boundsOptions)
+                    }
                     val origW = boundsOptions.outWidth
                     val origH = boundsOptions.outHeight
                     val maxDim = 1280
@@ -214,12 +249,14 @@ class ArticleRepository(
                         sampleSize *= 2
                     }
                     val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOptions)
+                    bitmap = contentResolver.openInputStream(uri)?.use { input ->
+                        BitmapFactory.decodeStream(input, null, decodeOptions)
+                    }
                     if (bitmap != null) {
                         val scale = if (bitmap.width > maxDim || bitmap.height > maxDim) {
                             maxDim.toFloat() / maxOf(bitmap.width, bitmap.height)
                         } else 1f
-                        val scaledBitmap = if (scale < 1f) {
+                        scaledBitmap = if (scale < 1f) {
                             Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt(), (bitmap.height * scale).toInt(), true)
                         } else bitmap
                         val baos = ByteArrayOutputStream()
@@ -230,10 +267,17 @@ class ArticleRepository(
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
+                } finally {
+                    try {
+                        if (scaledBitmap != null && scaledBitmap !== bitmap) {
+                            scaledBitmap.recycle()
+                        }
+                        bitmap?.recycle()
+                    } catch (_: Exception) {}
                 }
             }
 
-            val requestFile = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
+            val requestFile = StreamingUriRequestBody(contentResolver, uri, mimeType, fileSize)
             val filePart = MultipartBody.Part.createFormData("file", fileName, requestFile)
 
             val catBody = categoryId?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
@@ -275,13 +319,19 @@ class ArticleRepository(
                 }
             }
 
-            // Lưu tệp ngay vào bộ nhớ cache của thiết bị để mở xem tức thì không cần tải lại qua mạng
-            try {
-                val targetFileName = article.fileName?.let { if (it.contains('.')) it else "$it.${mimeType.substringAfterLast('/', "bin")}" }
-                    ?: fileName
-                val cacheFile = java.io.File(context.cacheDir, "podoc_doc_${article.id}_$targetFileName")
-                cacheFile.outputStream().use { out -> out.write(bytes) }
-            } catch (_: Exception) {}
+            // Lưu tệp vào bộ nhớ cache của thiết bị chỉ với tệp nhỏ (không phải video, <= 20MB)
+            if (!isVideo && fileSize in 1..20_000_000L) {
+                try {
+                    val targetFileName = article.fileName?.let { if (it.contains('.')) it else "$it.${mimeType.substringAfterLast('/', "bin")}" }
+                        ?: fileName
+                    val cacheFile = java.io.File(context.cacheDir, "podoc_doc_${article.id}_$targetFileName")
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        cacheFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
 
             val lower = (article.fileName ?: article.filePath ?: "").lowercase()
             val isMedia = article.mimeType?.startsWith("image/") == true ||
@@ -492,15 +542,31 @@ class ArticleRepository(
         }
     }
 
-    private fun queryFileName(uri: Uri): String? {
+    private fun queryFileInfo(uri: Uri): Pair<String?, Long> {
         var name: String? = null
+        var size: Long = -1L
         if (uri.scheme == "content") {
-            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (nameIndex != -1 && cursor.moveToFirst()) {
-                    name = cursor.getString(nameIndex)
+            try {
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (cursor.moveToFirst()) {
+                        if (nameIndex != -1) {
+                            name = cursor.getString(nameIndex)
+                        }
+                        if (sizeIndex != -1 && !cursor.isNull(sizeIndex)) {
+                            size = cursor.getLong(sizeIndex)
+                        }
+                    }
                 }
-            }
+            } catch (_: Exception) {}
+        }
+        if (size <= 0) {
+            try {
+                context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                    size = pfd.statSize
+                }
+            } catch (_: Exception) {}
         }
         if (name == null) {
             name = uri.path?.let { path ->
@@ -508,6 +574,8 @@ class ArticleRepository(
                 if (cut != -1) path.substring(cut + 1) else path
             }
         }
-        return name
+        return Pair(name, size)
     }
+
+    private fun queryFileName(uri: Uri): String? = queryFileInfo(uri).first
 }

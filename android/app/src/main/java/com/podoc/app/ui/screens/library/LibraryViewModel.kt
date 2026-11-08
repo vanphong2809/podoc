@@ -329,12 +329,19 @@ class LibraryViewModel(
                         uploadProgressMessage = "Đang lưu tệp ${index + 1}/${uris.size}..."
                     )
                 }
-                articleRepository.uploadFile(uri, categoryId = _uiState.value.selectedCategoryId).fold(
-                    onSuccess = { successCount++ },
-                    onFailure = { error ->
-                        lastErrorMessage = error.message
-                    }
-                )
+                try {
+                    articleRepository.uploadFile(uri, categoryId = _uiState.value.selectedCategoryId).fold(
+                        onSuccess = { successCount++ },
+                        onFailure = { error ->
+                            lastErrorMessage = error.message
+                        }
+                    )
+                } catch (e: Throwable) {
+                    lastErrorMessage = e.message
+                }
+                if ((index + 1) % 5 == 0) {
+                    System.gc()
+                }
             }
             _uiState.value = _uiState.value.copy(
                 isUploading = false,
