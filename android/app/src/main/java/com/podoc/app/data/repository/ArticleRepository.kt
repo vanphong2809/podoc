@@ -28,7 +28,8 @@ class StreamingUriRequestBody(
     private val contentResolver: android.content.ContentResolver,
     private val uri: Uri,
     private val mimeType: String?,
-    private val size: Long
+    private val size: Long,
+    private val onProgress: ((bytesWritten: Long, totalBytes: Long) -> Unit)? = null
 ) : RequestBody() {
     override fun contentType(): MediaType? = mimeType?.toMediaTypeOrNull()
 
@@ -38,9 +39,24 @@ class StreamingUriRequestBody(
 
     @Throws(IOException::class)
     override fun writeTo(sink: BufferedSink) {
-        contentResolver.openInputStream(uri)?.use { input ->
-            sink.writeAll(input.source())
-        } ?: throw IOException("Không thể đọc tệp tin: $uri")
+        val inputStream = contentResolver.openInputStream(uri)
+            ?: throw IOException("Không thể đọc tệp tin: $uri")
+        inputStream.use { stream ->
+            val buffer = ByteArray(64 * 1024)
+            var bytesWritten = 0L
+            var read: Int
+            var lastUpdate = 0L
+            while (stream.read(buffer).also { read = it } != -1) {
+                sink.write(buffer, 0, read)
+                bytesWritten += read
+                val now = System.currentTimeMillis()
+                if (now - lastUpdate > 300) {
+                    lastUpdate = now
+                    onProgress?.invoke(bytesWritten, size)
+                }
+            }
+            onProgress?.invoke(bytesWritten, size)
+        }
     }
 }
 
@@ -153,7 +169,8 @@ class ArticleRepository(
     suspend fun uploadFile(
         uri: Uri,
         categoryId: Int? = null,
-        customTitle: String? = null
+        customTitle: String? = null,
+        onProgress: ((bytesWritten: Long, totalBytes: Long) -> Unit)? = null
     ): Result<ArticleDetail> {
         return try {
             val contentResolver = context.contentResolver
@@ -305,7 +322,7 @@ class ArticleRepository(
                 }
             }
 
-            val requestFile = StreamingUriRequestBody(contentResolver, uri, mimeType, fileSize)
+            val requestFile = StreamingUriRequestBody(contentResolver, uri, mimeType, fileSize, onProgress)
             val filePart = MultipartBody.Part.createFormData("file", safeHeaderFileName, requestFile)
 
             val catBody = categoryId?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
@@ -377,6 +394,16 @@ class ArticleRepository(
                 e is java.net.SocketTimeoutException -> "Hết thời gian chờ kết nối (Tệp quá lớn hoặc mạng quá chậm)"
                 e is java.net.UnknownHostException -> "Không thể kết nối máy chủ (Vui lòng kiểm tra mạng)"
                 e is java.net.ConnectException -> "Không thể kết nối máy chủ"
+                e is java.net.SocketException -> {
+                    val msg = e.message ?: ""
+                    if (msg.contains("Software caused connection abort", ignoreCase = true) ||
+                        msg.contains("Broken pipe", ignoreCase = true) ||
+                        msg.contains("Connection reset", ignoreCase = true)) {
+                        "Đường truyền bị ngắt giữa chừng do mạng 4G/Wi-Fi chập chờn hoặc màn hình bị tắt. Hãy bật Wi-Fi, giữ màn hình sáng và thử lại."
+                    } else {
+                        "Lỗi kết nối mạng: $msg"
+                    }
+                }
                 e is java.io.FileNotFoundException -> "Không thể đọc tệp trên thiết bị (Có thể tệp lưu trên Cloud chưa tải về máy)"
                 e is java.net.ProtocolException -> "Lỗi truyền luồng dữ liệu (${e.message})"
                 e is retrofit2.HttpException -> {

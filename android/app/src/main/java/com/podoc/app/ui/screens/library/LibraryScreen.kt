@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -75,6 +76,15 @@ fun LibraryScreen(
     var showDeleteMultipleConfirmDialog by remember { mutableStateOf(false) }
     var showMoveMultipleCategoryDialog by remember { mutableStateOf(false) }
     var articleToDelete by remember { mutableStateOf<ArticleListItem?>(null) }
+
+    // Giữ màn hình luôn sáng khi đang tải lên tệp tin lớn/video
+    val currentView = LocalView.current
+    DisposableEffect(uiState.isUploading) {
+        currentView.keepScreenOn = uiState.isUploading
+        onDispose {
+            currentView.keepScreenOn = false
+        }
+    }
 
     // Nút Back điện thoại khi đang ở chế độ chọn nhiều
     BackHandler(enabled = uiState.isSelectionMode) {

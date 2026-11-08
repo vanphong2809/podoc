@@ -339,11 +339,28 @@ class LibraryViewModel(
                         uploadProgressMessage = "Đang lưu tệp ${index + 1}/${uris.size}: $fileName$sizeText..."
                     )
                 }
+                val progressCallback: (Long, Long) -> Unit = { written, total ->
+                    val writtenMb = written.toDouble() / (1024 * 1024)
+                    val totalMb = if (total > 0) total.toDouble() / (1024 * 1024) else sizeMb
+                    val percent = if (totalMb > 0) ((writtenMb / totalMb) * 100).toInt().coerceIn(0, 100) else 0
+                    val filePrefix = if (uris.size > 1) "[${index + 1}/${uris.size}] " else ""
+                    val progressText = if (totalMb >= 1.0) {
+                        String.format("%sĐang tải lên %s: %.1f MB / %.1f MB (%d%%)", filePrefix, fileName, writtenMb, totalMb, percent)
+                    } else {
+                        String.format("%sĐang tải lên %s: %d%%", filePrefix, fileName, percent)
+                    }
+                    _uiState.value = _uiState.value.copy(uploadProgressMessage = progressText)
+                }
+
                 var uploaded = false
                 var lastErr = "Lỗi không xác định"
                 for (attempt in 1..2) {
                     try {
-                        val result = articleRepository.uploadFile(uri, categoryId = _uiState.value.selectedCategoryId)
+                        val result = articleRepository.uploadFile(
+                            uri = uri,
+                            categoryId = _uiState.value.selectedCategoryId,
+                            onProgress = progressCallback
+                        )
                         if (result.isSuccess) {
                             successCount++
                             uploaded = true

@@ -79,8 +79,10 @@ class AppContainer(private val context: Context) {
             level = HttpLoggingInterceptor.Level.BASIC
         })
         .connectTimeout(60, TimeUnit.SECONDS)
-        .readTimeout(300, TimeUnit.SECONDS)
-        .writeTimeout(300, TimeUnit.SECONDS)
+        .readTimeout(1800, TimeUnit.SECONDS) // 30 phút cho upload/download video dung lượng lớn (1GB+)
+        .writeTimeout(1800, TimeUnit.SECONDS) // 30 phút truyền tải dữ liệu
+        .pingInterval(15, TimeUnit.SECONDS) // Giữ kết nối TCP Socket liên tục, chống rớt mạng 4G/carrier NAT
+        .retryOnConnectionFailure(true)
         .build()
 
     fun getApiService(): PoDocApiService? {
