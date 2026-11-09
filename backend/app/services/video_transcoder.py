@@ -7,6 +7,7 @@ import json
 import logging
 from pathlib import Path
 import tempfile
+from time import monotonic
 
 from sqlalchemy import select, update
 
@@ -147,6 +148,9 @@ class VideoTranscoder:
             if article is None:
                 return False
             article_id, file_path = article.id, article.file_path
+            # Quote the original name so Unicode stays readable and newlines
+            # cannot forge extra server log entries.
+            log_file_name = json.dumps(article.file_name or Path(file_path or f"video_{article_id}").name, ensure_ascii=False)
             await db.execute(update(Article).where(Article.id == article_id).values(
                 video_status="processing", updated_at=Article.updated_at,
             ))
@@ -154,11 +158,14 @@ class VideoTranscoder:
 
         output = optimized_path(file_path) if file_path else None
         partial = output.with_suffix(".part.mp4") if output else None
+        started_at = monotonic()
         try:
             if not file_path:
                 raise FileNotFoundError("Original video path is missing")
             source = Path(settings.FILES_STORAGE_DIR) / file_path
+            original_bytes = source.stat().st_size
             await transcode_video(source, partial)
+            optimized_bytes = partial.stat().st_size
             # Re-check after encoding: a deleted article must not leave an orphan.
             async with self.session_factory() as db:
                 exists = await db.scalar(select(Article.id).where(
@@ -171,12 +178,17 @@ class VideoTranscoder:
                     video_status="ready", updated_at=Article.updated_at,
                 ))
                 await db.commit()
-            logger.info("Video %s optimized: %s -> %s bytes", article_id, source.stat().st_size, output.stat().st_size)
+            size_change = (optimized_bytes / original_bytes - 1) * 100 if original_bytes else 0
+            logger.info(
+                "NÉN XONG | file=%s | gốc=%.2f MB | bản nén=%.2f MB | thay đổi=%+.1f%% | thời gian=%.1fs | id=%s",
+                log_file_name, original_bytes / (1024 * 1024), optimized_bytes / (1024 * 1024),
+                size_change, monotonic() - started_at, article_id,
+            )
         except asyncio.CancelledError:
             # Leave processing durable; the next worker resets it to pending.
             raise
         except Exception:
-            logger.exception("Video optimization failed for article %s; original remains available", article_id)
+            logger.exception("NÉN LỖI | file=%s | id=%s | Giữ nguyên file gốc", log_file_name, article_id)
             async with self.session_factory() as db:
                 await db.execute(update(Article).where(Article.id == article_id).values(
                     video_status="failed", updated_at=Article.updated_at,

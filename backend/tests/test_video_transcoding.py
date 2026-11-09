@@ -1,6 +1,7 @@
 import asyncio
 import importlib.util
 import json
+import logging
 from pathlib import Path
 import shutil
 import sys
@@ -130,7 +131,34 @@ async def test_new_uploads_take_priority_over_historical_queue(client, monkeypat
     assert (await client.get(f"/api/articles/{old['id']}")).json()["video_status"] == "pending"
 
 
-async def test_failed_encoding_keeps_original_and_removes_partial(client, monkeypatch):
+async def test_completion_log_uses_real_filename_and_committed_result(client, monkeypatch, caplog):
+    name = 'Video kỳ nghỉ "mới"\n2026.mp4'
+    response = await client.post("/api/articles/upload", files={
+        "file": ("upload.mp4", b"\x00\x00\x00\x18ftypmp42" + bytes(1024), "video/mp4"),
+        "thumbnail": ("thumb.jpg", b"thumbnail", "image/jpeg"),
+    }, data={"file_name": name})
+    assert response.status_code == 201
+    article = response.json()
+    caplog.set_level(logging.INFO, logger=video.__name__)
+
+    async def encode(source, partial):
+        assert not any("NÉN XONG" in r.message for r in caplog.records)
+        partial.write_bytes(b"optimized")
+
+    monkeypatch.setattr(video, "transcode_video", encode)
+    monkeypatch.setattr(video, "monotonic", Mock(side_effect=[100.0, 102.5]))
+    await video.VideoTranscoder(TestingSessionLocal).process_next()
+    log = next(r.message for r in caplog.records if "NÉN XONG" in r.message)
+    assert f"file={json.dumps(name, ensure_ascii=False)}" in log
+    assert "\n" not in log
+    assert "gốc=" in log and "bản nén=" in log
+    assert "thay đổi=-99.1%" in log
+    assert "thời gian=2.5s" in log
+    assert f"id={article['id']}" in log
+    assert (await client.get(f"/api/articles/{article['id']}")).json()["video_status"] == "ready"
+
+
+async def test_failed_encoding_keeps_original_and_removes_partial(client, monkeypatch, caplog):
     article, original = await upload_video(client)
 
     async def fail(source, partial):
@@ -145,6 +173,8 @@ async def test_failed_encoding_keeps_original_and_removes_partial(client, monkey
     assert not list(Path(settings.FILES_STORAGE_DIR).glob("*.part.mp4"))
     assert (await client.get(f"/api/articles/{article['id']}/file?inline=true")).content == original
     assert not await worker.process_next()  # Do not endlessly retry corrupt files.
+    assert not any("NÉN XONG" in r.message for r in caplog.records)
+    assert any('NÉN LỖI | file="phone.mov"' in r.message for r in caplog.records)
 
 
 async def test_interrupted_encoding_recovers_after_restart(client, monkeypatch):

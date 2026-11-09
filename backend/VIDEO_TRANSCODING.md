@@ -1,4 +1,4 @@
-# Nén video nền (PoDoc 1.6.32)
+# Nén video nền (PoDoc 1.6.33)
 
 Video tải lên được giữ nguyên trong `FILES_STORAGE_DIR`; `file_path`, MIME và
 thông tin file luôn mô tả bản gốc. API trả 201 sau khi lưu file và metadata,
@@ -70,7 +70,7 @@ Các biến môi trường tùy chọn:
 | `VIDEO_TRANSCODING_ENABLED` | `true` |
 | `VIDEO_TRANSCODING_TIMEOUT_SECONDS` | `21600` (6 giờ/video) |
 | `VIDEO_TRANSCODING_POLL_SECONDS` | `5` |
-| `VIDEO_TRANSCODING_THREADS` | `1` (Blueprint đặt `2`) |
+| `VIDEO_TRANSCODING_THREADS` | `2` |
 | `FFMPEG_BINARY` | `ffmpeg` |
 | `FFPROBE_BINARY` | `ffprobe` |
 
@@ -81,3 +81,19 @@ và file nén tạm. Worker không công bố kết quả nếu video đã bị 
 Kiểm thử: `cd backend && python -m pytest tests/test_video_transcoding.py`.
 Các bài kiểm thử FFmpeg thực tế cần hai binary trong PATH; nếu không có,
 pytest chỉ bỏ qua các ca mã hóa thực tế, vẫn kiểm tra queue và API.
+
+## Log sau khi nén
+
+Sau khi công bố file và commit trạng thái `ready`, server ghi INFO `NÉN XONG`
+với tên file gốc, dung lượng trước/sau (MB), phần trăm thay đổi và thời gian
+xử lý; ID nội bộ nằm cuối dòng để tra cứu. Phần trăm âm nghĩa là nhỏ hơn,
+phần trăm dương nghĩa là bản mã hóa lớn hơn nguồn. Tên Unicode được giữ,
+ký tự điều khiển được escape để mỗi sự kiện chỉ chiếm một dòng log.
+Lỗi ghi `NÉN LỖI` kèm tên file và stack trace, không ghi hoàn tất giả.
+
+PoRender hiện dùng mọi giá trị environment làm mẫu che bí mật, kể cả số
+ngắn. Blueprint không khai báo hai giá trị thường `2`/`30` cho số luồng và
+số ngày token; backend dùng mặc định tương đương (2 luồng, 30 ngày), tránh
+che nhầm các chữ số trong log. Cơ chế che mật khẩu/JWT vẫn giữ nguyên.
+Log đã bị che và lưu trước thay đổi vẫn giữ `[REDACTED]`; kiểm tra log của
+instance mới sau triển khai. Log nguồn Docker chưa qua lớp che của PoRender.
