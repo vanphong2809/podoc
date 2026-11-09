@@ -10,9 +10,10 @@ from unittest.mock import Mock
 import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, inspect, text, update
 
 from app.core.config import settings
+from app.models.article import Article
 from app.services import video_transcoder as video
 from tests.conftest import TestingSessionLocal
 
@@ -129,6 +130,50 @@ async def test_new_uploads_take_priority_over_historical_queue(client, monkeypat
     await video.VideoTranscoder(TestingSessionLocal).process_next()
     assert (await client.get(f"/api/articles/{new['id']}")).json()["video_status"] == "ready"
     assert (await client.get(f"/api/articles/{old['id']}")).json()["video_status"] == "pending"
+
+
+@pytest.mark.parametrize("skip", [False, True])
+async def test_never_publishes_a_larger_derivative(client, monkeypatch, caplog, skip):
+    article, original = await upload_video(client)
+    output = video.optimized_path(article["file_path"])
+    output.write_bytes(original * 2)  # An oversized derivative from a previous version.
+
+    async def encode(source, partial):
+        if skip:
+            return False
+        partial.write_bytes(original * 3)
+        return True
+
+    monkeypatch.setattr(video, "transcode_video", encode)
+    caplog.set_level(logging.INFO, logger=video.__name__)
+    await video.VideoTranscoder(TestingSessionLocal).process_next()
+    assert not output.exists()
+    assert not output.with_suffix(".part.mp4").exists()
+    detail = (await client.get(f"/api/articles/{article['id']}/file-info")).json()
+    assert detail["video_status"] == "kept_original"
+    assert detail["video_versions"][1]["status"] == "kept_original"
+    assert detail["video_versions"][1]["download_url"] is None
+    assert (await client.get(f"/api/articles/{article['id']}/file?inline=true")).content == original
+    assert (await client.get(f"/api/articles/{article['id']}/file?variant=optimized")).status_code == 404
+    assert not any("NÉN XONG" in record.message for record in caplog.records)
+    assert any("GIỮ BẢN GỐC" in record.message for record in caplog.records)
+
+
+async def test_historical_oversized_video_is_not_served_and_is_requeued(client, monkeypatch):
+    article, original = await upload_video(client)
+    output = video.optimized_path(article["file_path"])
+    output.write_bytes(original * 2)
+    async with TestingSessionLocal() as db:
+        await db.execute(update(Article).where(Article.id == article["id"]).values(video_status="ready"))
+        await db.commit()
+    response = await client.get(f"/api/articles/{article['id']}/file?inline=true")
+    assert response.content == original
+    assert response.headers["x-podoc-video-variant"] == "original"
+    assert (await client.get(f"/api/articles/{article['id']}/file?variant=optimized")).status_code == 404
+    worker = video.VideoTranscoder(TestingSessionLocal)
+    assert await worker.requeue_oversized() == 1
+    assert (await client.get(f"/api/articles/{article['id']}")).json()["video_status"] == "pending"
+    assert (Path(settings.FILES_STORAGE_DIR) / article["file_path"]).read_bytes() == original
 
 
 async def test_completion_log_uses_real_filename_and_committed_result(client, monkeypatch, caplog):
@@ -299,8 +344,9 @@ async def test_real_ffmpeg_output(tmp_path, size, fps, audio, monkeypatch):
     assert bool(sound) == audio
     if sound:
         assert sound["codec_name"] == "aac"
-        assert sound["sample_rate"] == "48000"
-        assert sound["channels"] == 2
+        # Low bitrate AAC is copied without unnecessary resampling/upmixing.
+        assert sound["sample_rate"] == "44100"
+        assert sound["channels"] == 1
     data = output.read_bytes()
     assert data.index(b"moov") < data.index(b"mdat")
     assert output.stat().st_size < source.stat().st_size
@@ -331,3 +377,19 @@ async def test_real_rotation_and_hdr(tmp_path, hdr):
     assert (stream["width"], stream["height"]) == (180, 320)
     if hdr:
         assert stream["color_transfer"] == "bt709"
+
+
+async def test_real_compact_mp4_keeps_original_without_reencoding(tmp_path):
+    if not shutil.which(settings.FFMPEG_BINARY) or not shutil.which(settings.FFPROBE_BINARY):
+        pytest.skip("FFmpeg and ffprobe required")
+    source = tmp_path / "compact.mp4"
+    partial = tmp_path / "candidate.part.mp4"
+    await video.run_command(
+        settings.FFMPEG_BINARY, "-v", "error", "-y", "-f", "lavfi", "-i",
+        "color=c=blue:s=640x360:r=20", "-t", "6", "-threads", "1",
+        "-c:v", "libx264", "-crf", "30", str(source), timeout=30,
+    )
+    before = source.read_bytes()
+    assert await video.transcode_video(source, partial) is False
+    assert not partial.exists()
+    assert source.read_bytes() == before

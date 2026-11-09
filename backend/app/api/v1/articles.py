@@ -35,7 +35,7 @@ from app.services.extractors.base import generate_excerpt
 from app.services.extractors.registry import extractor_registry
 from app.services.thumbnail import ensure_thumbnail
 from app.services.url_utils import normalize_url
-from app.services.video_transcoder import is_video_file, optimized_path, remove_video_derivatives
+from app.services.video_transcoder import is_video_file, optimized_path, remove_video_derivatives, smaller_optimized_path
 
 logger = logging.getLogger(__name__)
 
@@ -857,8 +857,8 @@ async def download_article_file(
         raise HTTPException(status_code=400, detail="Không thể yêu cầu cả bản gốc và bản nhẹ trong cùng một lượt tải")
     chosen_variant = "original"
     if variant == "optimized" or (variant is None and inline and not original and art.video_status == "ready"):
-        optimized = optimized_path(art.file_path)
-        if art.video_status == "ready" and optimized.is_file() and optimized.stat().st_size > 0:
+        optimized = smaller_optimized_path(art.file_path)
+        if art.video_status == "ready" and optimized is not None:
             disk_path = str(optimized)
             download_name = f"{os.path.splitext(download_name)[0]}_optimized.mp4"
             media_type = "video/mp4"
@@ -867,7 +867,10 @@ async def download_article_file(
             waiting = art.video_status in ("pending", "processing")
             raise HTTPException(
                 status_code=409 if waiting else 404,
-                detail="Bản nhẹ đang chờ nén hoặc đang xử lý. Vui lòng thử lại sau." if waiting else "Bản nhẹ chưa có hoặc nén không thành công.",
+                detail="Bản nhẹ đang chờ nén hoặc đang xử lý. Vui lòng thử lại sau." if waiting else (
+                    "File gốc đã gọn; hệ thống giữ bản gốc thay vì tạo thêm file lớn hơn. Hãy tải bản gốc."
+                    if art.video_status == "kept_original" else "Không có bản nhẹ nhỏ hơn file gốc. Hãy tải bản gốc."
+                ),
                 headers={"Retry-After": "5", "Cache-Control": "no-store"},
             )
 
@@ -1012,8 +1015,8 @@ async def get_article_file_info(
             file_size_formatted=file_size_formatted,
             download_url=original_url if file_size_bytes else None,
         ))
-        optimized = optimized_path(art.file_path)
-        ready = art.video_status == "ready" and optimized.is_file() and optimized.stat().st_size > 0
+        optimized = smaller_optimized_path(art.file_path)
+        ready = art.video_status == "ready" and optimized is not None
         optimized_bytes = optimized.stat().st_size if ready else None
         versions.append(VideoVersionResponse(
             kind="optimized", label="Bản nhẹ", status="ready" if ready else ("missing" if art.video_status == "ready" else art.video_status or "missing"),

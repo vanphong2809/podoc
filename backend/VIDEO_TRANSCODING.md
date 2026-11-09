@@ -1,4 +1,4 @@
-# Nén video nền (PoDoc 1.6.33)
+# Nén video nền (PoDoc 1.6.34)
 
 Video tải lên được giữ nguyên trong `FILES_STORAGE_DIR`; `file_path`, MIME và
 thông tin file luôn mô tả bản gốc. API trả 201 sau khi lưu file và metadata,
@@ -29,14 +29,25 @@ Trường `video_status` trong API danh sách/chi tiết nhận `pending`, `proc
 `inline=true` khi stream nên tự nhận bản tối ưu cho các lượt phát mới. App
 không dùng cache bản gốc để thay thế lượt stream video này.
 
+`kept_original` nghĩa là nguồn đã gọn hoặc bản mã hóa mới không nhỏ hơn
+nguồn. Khi đó app phát bản gốc, giao diện ghi rõ giữ nguyên nguồn, không
+hiển thị nút tải một "bản nhẹ" lớn hơn nguồn. API lựa chọn `optimized` trả
+404 cùng giải thích. File gốc luôn được giữ nguyên.
+
 ## Cấu hình mã hóa
 
-- H.264 (`libx264`, preset `fast`, CRF 24), yuv420p, VBR giới hạn
-  `maxrate=3500k`, `bufsize=7000k`, GOP 60.
+- H.264 (`libx264`, preset `fast`, CRF 24), yuv420p, VBR tối đa 3500kbps,
+  buffer gấp đôi maxrate, GOP 60. Bitrate được giới hạn thêm theo 85% ngân
+  sách file nguồn, có trừ audio và overhead; không tăng bitrate tùy tiện.
 - Video dọc nằm trong 1080×1920; ngang trong 1920×1080, giữ tỷ lệ,
   không phóng lớn video nhỏ, kích thước chẵn và tự xoay theo metadata.
 - Tối đa 30fps, giữ fps thấp hơn của nguồn.
-- AAC 128kbps, 48kHz, stereo; hỗ trợ video không có âm thanh.
+- Giữ nguyên AAC đã gọn (tối đa 128kbps), kể cả 8kHz mono. Audio cần mã hóa
+  được giới hạn tối đa 128kbps và giữ mono nếu nguồn mono; hỗ trợ video im lặng.
+- Nguồn MP4 H.264/HEVC với AAC hoặc không audio, dài ít nhất 5 giây và tổng
+  bitrate tối đa 1,2Mbps được giữ nguyên để tránh mã hóa lại mất chất lượng.
+- Video cần mã hóa với ngân sách bitrate thấp dùng tối đa 720p; nguồn lớn
+  dùng tối đa 1080p. Chỉ công bố bản mới nếu số byte nhỏ hơn nguồn.
 - Nguồn HDR PQ/HLG được tone-map sang SDR BT.709 qua `zscale`/`tonemap`.
 - Decoder/encoder dùng số luồng cấu hình, filter một luồng; giảm lookahead
   và reference frames. Blueprint cấp 2 CPU và 2 luồng, vẫn giữ RAM 1 GiB.
@@ -58,6 +69,9 @@ Dockerfile đã cài `ffmpeg`/`ffprobe`. Khởi động hiện có tự chạy
 hàng đợi. Các video mới được ưu tiên theo thời điểm tải lên mới nhất, xử lý
 trước các video cũ đang chờ backfill. Worker lưu trạng thái trong DB;
 khi nhận khóa volume sau restart, đổi `processing` về `pending` rồi nén lại.
+Worker cũng kiểm tra các bản cũ `ready` lớn hơn nguồn và đưa vào hàng đợi
+sửa. API ngay lập tức từ chối chọn các bản cũ đó để phát; sau xử lý lại,
+bản phát sinh không có lợi được dọn khỏi disk, giữ nguyên file gốc.
 Shutdown hủy và thu hồi subprocess, xóa file tạm. Lỗi mã hóa ghi log theo ID,
 đánh dấu `failed` và tiếp tục video kế tiếp; không thử lại vô hạn file hỏng.
 Để thử lại sau khi khắc phục lỗi, quản trị viên có thể đặt `video_status` của
@@ -86,8 +100,9 @@ pytest chỉ bỏ qua các ca mã hóa thực tế, vẫn kiểm tra queue và A
 
 Sau khi công bố file và commit trạng thái `ready`, server ghi INFO `NÉN XONG`
 với tên file gốc, dung lượng trước/sau (MB), phần trăm thay đổi và thời gian
-xử lý; ID nội bộ nằm cuối dòng để tra cứu. Phần trăm âm nghĩa là nhỏ hơn,
-phần trăm dương nghĩa là bản mã hóa lớn hơn nguồn. Tên Unicode được giữ,
+xử lý; ID nội bộ nằm cuối dòng để tra cứu. `NÉN XONG` chỉ dành cho kết quả
+nhỏ hơn nguồn. `GIỮ BẢN GỐC` ghi rõ lý do bỏ mã hóa hoặc bỏ kết quả lớn hơn.
+Tên Unicode được giữ,
 ký tự điều khiển được escape để mỗi sự kiện chỉ chiếm một dòng log.
 Lỗi ghi `NÉN LỖI` kèm tên file và stack trace, không ghi hoàn tất giả.
 
