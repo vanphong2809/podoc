@@ -20,6 +20,7 @@ from app.models.user import User
 from app.schemas.article import (
     ArticleCreate,
     ArticleDetailResponse,
+    ArticleFileInfoResponse,
     ArticleListResponse,
     ArticleUpdate,
     BatchDeleteRequest,
@@ -846,6 +847,152 @@ async def download_article_file(
         content_disposition_type="inline" if inline else "attachment",
         headers={"Accept-Ranges": "bytes"},
     )
+
+
+@router.get("/{id}/file-info", response_model=ArticleFileInfoResponse)
+async def get_article_file_info(
+    id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Xem thông tin chi tiết của file / tài nguyên:
+    - Ngày giờ thêm file (created_at)
+    - Tên file (file_name)
+    - Độ phân giải (Resolution)
+    - Dung lượng (File size)
+    - FPS (Tốc độ khung hình, nếu là video)
+    - Số giây / Thời lượng (nếu là video hoặc audio)
+    - Thư mục lưu trữ (Storage directory / path)
+    - Album (Tên danh mục chứa tài nguyên)
+    """
+    stmt = select(Article).options(selectinload(Article.category)).where(Article.id == id)
+    result = await db.execute(stmt)
+    art = result.scalar_one_or_none()
+
+    if not art:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết hoặc tệp tin")
+
+    file_name = art.file_name or art.title
+    file_path = art.file_path
+    storage_dir = settings.FILES_STORAGE_DIR
+    disk_path = os.path.join(storage_dir, art.file_path) if art.file_path else None
+
+    file_size_bytes: Optional[int] = None
+    file_size_formatted: Optional[str] = None
+    if disk_path and os.path.isfile(disk_path):
+        try:
+            file_size_bytes = os.path.getsize(disk_path)
+            file_size_formatted = format_byte_size(file_size_bytes)
+        except Exception:
+            pass
+
+    lower_name = (art.file_name or art.title or "").lower()
+    lower_path = (art.file_path or "").lower()
+    lower_mime = (art.mime_type or "").lower()
+
+    content_type = "file"
+    if lower_mime.startswith("image/") or any(lower_name.endswith(ext) or lower_path.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp")):
+        content_type = "image"
+    elif lower_mime.startswith("video/") or any(lower_name.endswith(ext) or lower_path.endswith(ext) for ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".flv", ".3gp", ".ts")):
+        content_type = "video"
+    elif lower_mime.startswith("audio/") or any(lower_name.endswith(ext) or lower_path.endswith(ext) for ext in (".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".wma", ".opus")):
+        content_type = "audio"
+    elif art.source_type == "URL" and not art.file_path:
+        content_type = "web"
+
+    album = art.category.name if art.category else "Chưa phân loại"
+
+    width: Optional[int] = None
+    height: Optional[int] = None
+    resolution: Optional[str] = None
+    fps: Optional[float] = None
+    duration_seconds: Optional[float] = None
+    duration_formatted: Optional[str] = None
+
+    if disk_path and os.path.isfile(disk_path):
+        if content_type == "image":
+            try:
+                from PIL import Image
+                with Image.open(disk_path) as img:
+                    w, h = img.size
+                    width = int(w)
+                    height = int(h)
+                    resolution = f"{width} × {height}"
+            except Exception:
+                pass
+        elif content_type in ("video", "audio"):
+            try:
+                import json
+                import subprocess
+                probe_cmd = [
+                    "ffprobe",
+                    "-v", "quiet",
+                    "-print_format", "json",
+                    "-show_format",
+                    "-show_streams",
+                    disk_path,
+                ]
+                proc = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=4)
+                if proc.returncode == 0:
+                    probe_data = json.loads(proc.stdout)
+                    v_stream = next((s for s in probe_data.get("streams", []) if s.get("codec_type") == "video"), None)
+                    if v_stream:
+                        w = v_stream.get("width")
+                        h = v_stream.get("height")
+                        if w and h:
+                            width = int(w)
+                            height = int(h)
+                            resolution = f"{width} × {height}"
+
+                        r_fps = v_stream.get("r_frame_rate") or v_stream.get("avg_frame_rate")
+                        if r_fps and "/" in r_fps:
+                            num, den = r_fps.split("/")
+                            if float(den) > 0:
+                                val = round(float(num) / float(den), 1)
+                                if val > 0:
+                                    fps = val
+                        elif r_fps:
+                            try:
+                                fps = round(float(r_fps), 1)
+                            except Exception:
+                                pass
+
+                    dur_str = probe_data.get("format", {}).get("duration")
+                    if dur_str:
+                        dur_sec = float(dur_str)
+                        duration_seconds = round(dur_sec, 1)
+                        total_secs = int(dur_sec)
+                        m = total_secs // 60
+                        s = total_secs % 60
+                        duration_formatted = f"{m:02d}:{s:02d}"
+            except Exception:
+                pass
+
+    return ArticleFileInfoResponse(
+        id=art.id,
+        title=art.title,
+        file_name=file_name,
+        file_path=file_path,
+        storage_dir=storage_dir,
+        storage_path=os.path.join(storage_dir, file_path) if file_path else None,
+        file_size_bytes=file_size_bytes,
+        file_size_formatted=file_size_formatted,
+        mime_type=art.mime_type,
+        content_type=content_type,
+        category_id=art.category_id,
+        category_name=album,
+        album=album,
+        created_at=art.created_at,
+        updated_at=art.updated_at,
+        width=width,
+        height=height,
+        resolution=resolution,
+        fps=fps,
+        duration_seconds=duration_seconds,
+        duration_formatted=duration_formatted,
+    )
+
 
 
 @router.get("/{id}/preview-html")

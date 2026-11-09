@@ -43,7 +43,7 @@ data class LibraryUiState(
 )
 
 class LibraryViewModel(
-    private val articleRepository: ArticleRepository,
+    val articleRepository: ArticleRepository,
     private val categoryRepository: CategoryRepository
 ) : ViewModel() {
 

@@ -35,6 +35,7 @@ import com.podoc.app.service.MediaPlaybackManager
 import com.podoc.app.ui.components.AddOptionBottomSheet
 import com.podoc.app.ui.components.ArticleCard
 import com.podoc.app.ui.components.EmptyStateView
+import com.podoc.app.ui.components.FileInfoBottomSheet
 import com.podoc.app.ui.components.UploadFailureDialog
 import com.podoc.app.ui.theme.parseHexColor
 
@@ -65,6 +66,7 @@ fun CategoryDetailScreen(
     var changingCategoryArticle by remember { mutableStateOf<ArticleListItem?>(null) }
     var newTitleInput by remember { mutableStateOf("") }
     var articleToDelete by remember { mutableStateOf<ArticleListItem?>(null) }
+    var fileInfoArticle by remember { mutableStateOf<ArticleListItem?>(null) }
 
     // Launcher chọn File từ máy
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -339,7 +341,8 @@ fun CategoryDetailScreen(
                                     onEditTitle = {
                                         editingArticle = article
                                         newTitleInput = article.title
-                                    }
+                                    },
+                                    onShowFileInfo = { fileInfoArticle = article }
                                 )
                             }
                         }
@@ -533,6 +536,19 @@ fun CategoryDetailScreen(
             data = failureData,
             onRetry = { viewModel.retryFailedUploads() },
             onDismiss = { viewModel.dismissUploadFailureDialog() }
+        )
+    }
+
+    // BottomSheet: Thông tin tệp tin
+    if (fileInfoArticle != null) {
+        FileInfoBottomSheet(
+            articleId = fileInfoArticle!!.id,
+            repository = viewModel.articleRepository,
+            onDismiss = { fileInfoArticle = null },
+            fallbackTitle = fileInfoArticle!!.title,
+            fallbackFileName = fileInfoArticle!!.fileName,
+            fallbackCategory = fileInfoArticle!!.categoryName,
+            fallbackCreatedAt = fileInfoArticle!!.createdAt
         )
     }
 }

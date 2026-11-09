@@ -48,6 +48,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.podoc.app.R
 import com.podoc.app.data.model.ArticleListItem
+import com.podoc.app.ui.components.FileInfoBottomSheet
 import com.podoc.app.service.MediaPlaybackManager
 import com.podoc.app.ui.components.UploadFailureDialog
 import com.podoc.app.ui.components.ArticleCard
@@ -76,6 +77,7 @@ fun LibraryScreen(
     var showDeleteMultipleConfirmDialog by remember { mutableStateOf(false) }
     var showMoveMultipleCategoryDialog by remember { mutableStateOf(false) }
     var articleToDelete by remember { mutableStateOf<ArticleListItem?>(null) }
+    var fileInfoArticle by remember { mutableStateOf<ArticleListItem?>(null) }
 
     // Giữ màn hình luôn sáng khi đang tải lên tệp tin lớn/video
     val currentView = LocalView.current
@@ -330,7 +332,8 @@ fun LibraryScreen(
                                             onEditTitle = {
                                                 editingArticle = article
                                                 newTitleInput = article.title
-                                            }
+                                            },
+                                            onShowFileInfo = { fileInfoArticle = article }
                                         )
                                 }
 
@@ -603,6 +606,19 @@ fun LibraryScreen(
             data = failureData,
             onRetry = { viewModel.retryFailedUploads() },
             onDismiss = { viewModel.dismissUploadFailureDialog() }
+        )
+    }
+
+    // ── BOTTOM SHEET: Thông tin tệp tin ───────────────────────────────────
+    if (fileInfoArticle != null) {
+        FileInfoBottomSheet(
+            articleId = fileInfoArticle!!.id,
+            repository = viewModel.articleRepository,
+            onDismiss = { fileInfoArticle = null },
+            fallbackTitle = fileInfoArticle!!.title,
+            fallbackFileName = fileInfoArticle!!.fileName,
+            fallbackCategory = fileInfoArticle!!.categoryName,
+            fallbackCreatedAt = fileInfoArticle!!.createdAt
         )
     }
 }

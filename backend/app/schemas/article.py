@@ -118,3 +118,30 @@ class StorageStatsResponse(BaseModel):
     by_category: list[CategoryStorageStat] = []
 
 
+class ArticleFileInfoResponse(BaseModel):
+    id: int
+    title: str
+    file_name: Optional[str] = None
+    file_path: Optional[str] = None
+    storage_dir: Optional[str] = None
+    storage_path: Optional[str] = None
+    file_size_bytes: Optional[int] = None
+    file_size_formatted: Optional[str] = None
+    mime_type: Optional[str] = None
+    content_type: str = "file"  # "image", "video", "audio", "file", "web"
+    category_id: int
+    category_name: Optional[str] = None
+    album: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    width: Optional[int] = None
+    height: Optional[int] = None
+    resolution: Optional[str] = None
+    fps: Optional[float] = None
+    duration_seconds: Optional[float] = None
+    duration_formatted: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+

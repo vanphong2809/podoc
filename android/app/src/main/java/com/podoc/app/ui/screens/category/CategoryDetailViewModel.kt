@@ -37,7 +37,7 @@ class CategoryDetailViewModel(
     private val categoryId: Int,
     categoryName: String,
     categoryColor: String,
-    private val articleRepository: ArticleRepository,
+    val articleRepository: ArticleRepository,
     private val categoryRepository: CategoryRepository
 ) : ViewModel() {
 

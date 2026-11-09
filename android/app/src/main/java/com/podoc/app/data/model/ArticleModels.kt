@@ -160,4 +160,30 @@ data class StorageStats(
         get() = items.find { it.contentType == "file" } ?: StorageItemStat(contentType = "file", label = "Tệp tin")
 }
 
+@Serializable
+data class ArticleFileInfo(
+    @SerialName("id") val id: Int,
+    @SerialName("title") val title: String,
+    @SerialName("file_name") val fileName: String? = null,
+    @SerialName("file_path") val filePath: String? = null,
+    @SerialName("storage_dir") val storageDir: String? = null,
+    @SerialName("storage_path") val storagePath: String? = null,
+    @SerialName("file_size_bytes") val fileSizeBytes: Long? = null,
+    @SerialName("file_size_formatted") val fileSizeFormatted: String? = null,
+    @SerialName("mime_type") val mimeType: String? = null,
+    @SerialName("content_type") val contentType: String = "file",
+    @SerialName("category_id") val categoryId: Int,
+    @SerialName("category_name") val categoryName: String? = null,
+    @SerialName("album") val album: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
+    @SerialName("width") val width: Int? = null,
+    @SerialName("height") val height: Int? = null,
+    @SerialName("resolution") val resolution: String? = null,
+    @SerialName("fps") val fps: Float? = null,
+    @SerialName("duration_seconds") val durationSeconds: Float? = null,
+    @SerialName("duration_formatted") val durationFormatted: String? = null
+)
+
+
 

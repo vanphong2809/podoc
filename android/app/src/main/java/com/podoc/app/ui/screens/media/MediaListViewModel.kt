@@ -35,7 +35,7 @@ data class MediaListUiState(
 class MediaListViewModel(
     val contentType: String,
     val title: String,
-    private val articleRepository: ArticleRepository,
+    val articleRepository: ArticleRepository,
     private val categoryRepository: CategoryRepository
 ) : ViewModel() {
 

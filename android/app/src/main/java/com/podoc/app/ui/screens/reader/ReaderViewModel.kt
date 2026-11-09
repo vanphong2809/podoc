@@ -52,7 +52,7 @@ data class ReaderUiState(
 )
 
 class ReaderViewModel(
-    private val articleRepository: ArticleRepository,
+    val articleRepository: ArticleRepository,
     private val dataStoreManager: DataStoreManager
 ) : ViewModel() {
 

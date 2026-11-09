@@ -40,6 +40,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -57,6 +58,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import com.podoc.app.ui.components.formatArticleDate
+import com.podoc.app.ui.components.FileInfoBottomSheet
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -99,6 +101,8 @@ fun ReaderScreen(
 
     var showFontMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var fileInfoArticleId by remember { mutableStateOf<Int?>(null) }
+    var fileInfoFallbackItem by remember { mutableStateOf<ArticleListItem?>(null) }
 
     LaunchedEffect(articleId) {
         viewModel.loadArticle(articleId, context)
@@ -267,7 +271,8 @@ fun ReaderScreen(
                     },
                     onDelete = { showDeleteDialog = true },
                     onBackClick = onNavigateBack,
-                    currentProgress = currentProgress
+                    currentProgress = currentProgress,
+                    onShowFileInfo = { fileInfoArticleId = uiState.article?.id }
                 )
             }
         }
@@ -328,7 +333,11 @@ fun ReaderScreen(
                                 }
                             },
                             onNavigateBack = onNavigateBack,
-                            onDeleteClick = { showDeleteDialog = true }
+                            onDeleteClick = { showDeleteDialog = true },
+                            onShowFileInfo = { item ->
+                                fileInfoArticleId = item?.id ?: uiState.article?.id
+                                fileInfoFallbackItem = item
+                            }
                         )
                     } else {
                         // CHẾ ĐỘ ĐỌC BÀI VIẾT WEB (MARKDOWN 120 FPS)
@@ -432,6 +441,30 @@ fun ReaderScreen(
             }
         )
     }
+
+    // BottomSheet: Xem thông tin chi tiết file
+    if (fileInfoArticleId != null) {
+        val currentVideoSize by MediaPlaybackManager.videoSize.collectAsState()
+        val currentDuration by MediaPlaybackManager.duration.collectAsState()
+        val currentPlayingId by MediaPlaybackManager.currentArticleId.collectAsState()
+        val isThisVideo = currentPlayingId == fileInfoArticleId
+
+        FileInfoBottomSheet(
+            articleId = fileInfoArticleId!!,
+            repository = viewModel.articleRepository,
+            onDismiss = {
+                fileInfoArticleId = null
+                fileInfoFallbackItem = null
+            },
+            fallbackTitle = fileInfoFallbackItem?.title ?: uiState.article?.title,
+            fallbackFileName = fileInfoFallbackItem?.fileName ?: uiState.article?.fileName,
+            fallbackCategory = fileInfoFallbackItem?.categoryName ?: uiState.article?.categoryName,
+            fallbackCreatedAt = fileInfoFallbackItem?.createdAt ?: uiState.article?.createdAt,
+            localWidth = if (isThisVideo) currentVideoSize.first else null,
+            localHeight = if (isThisVideo) currentVideoSize.second else null,
+            localDurationMs = if (isThisVideo) currentDuration else null
+        )
+    }
 }
 
 /**
@@ -452,7 +485,8 @@ private fun InAppFileContent(
     onOpenExternal: () -> Unit,
     onConvertToPdf: () -> Unit = {},
     onNavigateBack: () -> Unit = {},
-    onDeleteClick: () -> Unit = {}
+    onDeleteClick: () -> Unit = {},
+    onShowFileInfo: (ArticleListItem?) -> Unit = {}
 ) {
     val isVideo = fileExt in listOf("mp4", "mkv", "mov", "webm", "avi", "3gp", "ts") || article.mimeType?.startsWith("video/") == true
     val isAudio = fileExt in listOf("mp3", "wav", "m4a", "aac", "flac", "ogg", "wma", "opus") || article.mimeType?.startsWith("audio/") == true
@@ -503,7 +537,8 @@ private fun InAppFileContent(
                 uiState = uiState,
                 viewModel = viewModel,
                 onNavigateBack = onNavigateBack,
-                onDeleteClick = onDeleteClick
+                onDeleteClick = onDeleteClick,
+                onShowFileInfo = { item -> onShowFileInfo(item) }
             )
         }
 
@@ -515,7 +550,8 @@ private fun InAppFileContent(
                     file = file,
                     article = article,
                     onOpenExternal = onOpenExternal,
-                    onDeleteClick = onDeleteClick
+                    onDeleteClick = onDeleteClick,
+                    onShowFileInfo = { onShowFileInfo(null) }
                 )
             } else {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -544,7 +580,8 @@ private fun InAppFileContent(
                 viewModel = viewModel,
                 onOpenExternal = onOpenExternal,
                 onNavigateBack = onNavigateBack,
-                onDeleteClick = onDeleteClick
+                onDeleteClick = onDeleteClick,
+                onShowFileInfo = { item -> onShowFileInfo(item) }
             )
         }
 
@@ -795,7 +832,8 @@ private fun ImageGalleryViewer(
     viewModel: ReaderViewModel,
     onOpenExternal: () -> Unit,
     onNavigateBack: () -> Unit,
-    onDeleteClick: () -> Unit
+    onDeleteClick: () -> Unit,
+    onShowFileInfo: (ArticleListItem) -> Unit
 ) {
     val context = LocalContext.current
     var showControls by remember { mutableStateOf(true) }
@@ -978,6 +1016,23 @@ private fun ImageGalleryViewer(
                                 color = Color.White.copy(alpha = 0.7f)
                             )
                         }
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    // Nút Thông tin ảnh
+                    IconButton(
+                        onClick = { onShowFileInfo(currentItem) },
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Info,
+                            contentDescription = "Thông tin ảnh",
+                            tint = Color.White,
+                            modifier = Modifier.size(19.dp)
+                        )
                     }
 
                     Spacer(modifier = Modifier.width(6.dp))
@@ -1363,7 +1418,8 @@ private fun CompactReaderTopBar(
     onShare: () -> Unit,
     onDelete: () -> Unit,
     onBackClick: () -> Unit,
-    currentProgress: Float
+    currentProgress: Float,
+    onShowFileInfo: (() -> Unit)? = null
 ) {
     Column(
         modifier = Modifier
@@ -1485,6 +1541,21 @@ private fun CompactReaderTopBar(
                             modifier = Modifier.size(20.dp)
                         )
                     }
+                }
+            }
+
+            // Thông tin file
+            if (onShowFileInfo != null) {
+                IconButton(
+                    onClick = onShowFileInfo,
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Info,
+                        contentDescription = "Thông tin tệp tin",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
 
@@ -1847,7 +1918,8 @@ internal fun TikTokVideoFeedViewer(
     uiState: ReaderUiState,
     viewModel: ReaderViewModel,
     onNavigateBack: () -> Unit,
-    onDeleteClick: () -> Unit
+    onDeleteClick: () -> Unit,
+    onShowFileInfo: (ArticleListItem) -> Unit
 ) {
     val context = LocalContext.current
     val isPlaying by MediaPlaybackManager.isPlaying.collectAsState()
@@ -2164,6 +2236,13 @@ internal fun TikTokVideoFeedViewer(
                         onClick = { viewModel.openItemFile(context, item) }
                     )
 
+                    // Chi tiết file
+                    TikTokActionButton(
+                        icon = Icons.Outlined.Info,
+                        label = "Chi tiết",
+                        onClick = { onShowFileInfo(item) }
+                    )
+
                     // Chia sẻ
                     TikTokActionButton(
                         icon = Icons.Default.Share,
@@ -2450,7 +2529,8 @@ private fun InAppAudioViewer(
     file: File,
     article: ArticleDetail,
     onOpenExternal: () -> Unit,
-    onDeleteClick: () -> Unit
+    onDeleteClick: () -> Unit,
+    onShowFileInfo: () -> Unit
 ) {
     val context = LocalContext.current
     val isPlaying by MediaPlaybackManager.isPlaying.collectAsState()
@@ -2722,7 +2802,16 @@ private fun InAppAudioViewer(
             ) {
                 Icon(imageVector = Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Mở app ngoài", maxLines = 1)
+                Text("Mở app", maxLines = 1)
+            }
+
+            OutlinedButton(
+                onClick = onShowFileInfo,
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Icon(imageVector = Icons.Outlined.Info, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Chi tiết")
             }
 
             OutlinedButton(

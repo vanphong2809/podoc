@@ -47,6 +47,7 @@ import com.podoc.app.data.model.ArticleListItem
 import com.podoc.app.service.MediaPlaybackManager
 import com.podoc.app.ui.components.ArticleCard
 import com.podoc.app.ui.components.EmptyStateView
+import com.podoc.app.ui.components.FileInfoBottomSheet
 import com.podoc.app.ui.theme.parseHexColor
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,6 +70,7 @@ fun MediaListScreen(
     var showMoveMultipleDialog by remember { mutableStateOf(false) }
     var showDeleteMultipleDialog by remember { mutableStateOf(false) }
     var articleToDelete by remember { mutableStateOf<ArticleListItem?>(null) }
+    var fileInfoArticle by remember { mutableStateOf<ArticleListItem?>(null) }
 
     val isMediaFormat = uiState.contentType in listOf("image", "video")
 
@@ -318,7 +320,8 @@ fun MediaListScreen(
                                     onEditTitle = {
                                         editingArticle = article
                                         newTitleInput = article.title
-                                    }
+                                    },
+                                    onShowFileInfo = { fileInfoArticle = article }
                                 )
                             }
                         }
@@ -553,6 +556,19 @@ fun MediaListScreen(
                     Text(stringResource(R.string.btn_cancel))
                 }
             }
+        )
+    }
+
+    // ── BOTTOM SHEET: Thông tin tệp tin ───────────────────────────────────
+    if (fileInfoArticle != null) {
+        FileInfoBottomSheet(
+            articleId = fileInfoArticle!!.id,
+            repository = viewModel.articleRepository,
+            onDismiss = { fileInfoArticle = null },
+            fallbackTitle = fileInfoArticle!!.title,
+            fallbackFileName = fileInfoArticle!!.fileName,
+            fallbackCategory = fileInfoArticle!!.categoryName,
+            fallbackCreatedAt = fileInfoArticle!!.createdAt
         )
     }
 }

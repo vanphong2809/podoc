@@ -132,6 +132,15 @@ class ArticleRepository(
         }
     }
 
+    suspend fun getArticleFileInfo(id: Int): Result<ArticleFileInfo> = withContext(Dispatchers.IO) {
+        try {
+            val info = getApi().getArticleFileInfo(id)
+            Result.success(info)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun extractUrl(url: String): Result<ArticleDraft> {
         return try {
             val draft = getApi().extractUrl(ExtractUrlRequest(url.trim()))

@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -220,7 +221,8 @@ fun ArticleCard(
     onOpenSource: () -> Unit,
     onShare: () -> Unit,
     onChangeCategory: () -> Unit,
-    onEditTitle: () -> Unit
+    onEditTitle: () -> Unit,
+    onShowFileInfo: (() -> Unit)? = null
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -303,7 +305,8 @@ fun ArticleCard(
                     onChangeCategory = onChangeCategory,
                     onOpenSource = onOpenSource,
                     onShare = onShare,
-                    onDelete = onDelete
+                    onDelete = onDelete,
+                    onShowFileInfo = onShowFileInfo
                 )
             } else {
                 StandardCardContent(
@@ -323,7 +326,8 @@ fun ArticleCard(
                     onChangeCategory = onChangeCategory,
                     onOpenSource = onOpenSource,
                     onShare = onShare,
-                    onDelete = onDelete
+                    onDelete = onDelete,
+                    onShowFileInfo = onShowFileInfo
                 )
             }
         }
@@ -352,7 +356,8 @@ private fun HeroBannerContent(
     onChangeCategory: () -> Unit,
     onOpenSource: () -> Unit,
     onShare: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onShowFileInfo: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -466,7 +471,8 @@ private fun HeroBannerContent(
                             onChangeCategory = onChangeCategory,
                             onOpenSource = onOpenSource,
                             onShare = onShare,
-                            onDelete = onDelete
+                            onDelete = onDelete,
+                            onShowFileInfo = onShowFileInfo
                         )
                     }
                 }
@@ -530,7 +536,8 @@ private fun StandardCardContent(
     onChangeCategory: () -> Unit,
     onOpenSource: () -> Unit,
     onShare: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onShowFileInfo: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     Column(modifier = Modifier.padding(16.dp)) {
@@ -612,7 +619,8 @@ private fun StandardCardContent(
                         onChangeCategory = onChangeCategory,
                         onOpenSource = onOpenSource,
                         onShare = onShare,
-                        onDelete = onDelete
+                        onDelete = onDelete,
+                        onShowFileInfo = onShowFileInfo
                     )
                 }
             }
@@ -821,13 +829,21 @@ private fun ArticleActionDropdownMenu(
     onChangeCategory: () -> Unit,
     onOpenSource: () -> Unit,
     onShare: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onShowFileInfo: (() -> Unit)? = null
 ) {
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(14.dp)
     ) {
+        if (onShowFileInfo != null) {
+            DropdownMenuItem(
+                text = { Text("Thông tin file") },
+                leadingIcon = { Icon(Icons.Outlined.Info, contentDescription = null) },
+                onClick = { onDismiss(); onShowFileInfo() }
+            )
+        }
         DropdownMenuItem(
             text = { Text(stringResource(R.string.action_edit_title)) },
             leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },

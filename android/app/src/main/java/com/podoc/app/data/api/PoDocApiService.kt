@@ -56,6 +56,9 @@ interface PoDocApiService {
     @GET("api/articles/{id}")
     suspend fun getArticleDetail(@Path("id") id: Int): ArticleDetail
 
+    @GET("api/articles/{id}/file-info")
+    suspend fun getArticleFileInfo(@Path("id") id: Int): ArticleFileInfo
+
     @POST("api/articles")
     suspend fun createArticle(@Body request: CreateArticleRequest): ArticleDetail
 
