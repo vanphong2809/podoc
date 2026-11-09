@@ -42,6 +42,8 @@ class Article(Base):
     file_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     file_path: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     mime_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    # Durable transcoding queue; file_path always refers to the untouched original.
+    video_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, index=True)
     content_markdown: Mapped[str] = mapped_column(Text, nullable=False, default="")
     excerpt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     author: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

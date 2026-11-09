@@ -4,6 +4,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.database import Base, get_db
+from app.core.config import settings
 from app.core.security import hash_password
 from app.main import app, seed_initial_data
 from app.models.user import User
@@ -48,6 +49,12 @@ TestingSessionLocal = async_sessionmaker(
 )
 
 
+@pytest.fixture(autouse=True)
+def isolated_file_storage(tmp_path, monkeypatch):
+    """Never write uploads or derivatives to the real server's storage in tests."""
+    monkeypatch.setattr(settings, "FILES_STORAGE_DIR", str(tmp_path))
+
+
 @pytest_asyncio.fixture(scope="function")
 async def db_session():
     """Khởi tạo session DB test sạch cho mỗi test case."""
@@ -70,12 +77,14 @@ async def db_session():
 
 
 @pytest_asyncio.fixture(scope="function")
-async def client(db_session: AsyncSession):
+async def client(db_session: AsyncSession, monkeypatch):
     """Cung cấp AsyncClient HTTP cho app FastAPI kèm override database dependency."""
     async def override_get_db():
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+    # /health opens its own session rather than using the get_db dependency.
+    monkeypatch.setattr("app.main.AsyncSessionLocal", TestingSessionLocal)
 
     async with AsyncClient(
         transport=ASGITransport(app=app),

@@ -20,6 +20,7 @@ from app.core.rate_limit import limiter
 from app.core.security import hash_password
 from app.models.category import Category
 from app.models.user import User
+from app.services.video_transcoder import VideoTranscoder
 
 logging.basicConfig(
     level=logging.INFO,
@@ -83,9 +84,14 @@ async def lifespan(app: FastAPI):
         await seed_initial_data()
     except Exception as e:
         logger.warning(f"Chưa thể kết nối DB để seed lúc start (có thể DB đang chờ migrate): {e}")
-    yield
-    logger.info("PoDoc Backend đang tắt kết nối...")
-    await engine.dispose()
+    video_transcoder = VideoTranscoder()
+    video_transcoder.start()
+    try:
+        yield
+    finally:
+        await video_transcoder.stop()
+        logger.info("PoDoc Backend đang tắt kết nối...")
+        await engine.dispose()
 
 
 app = FastAPI(

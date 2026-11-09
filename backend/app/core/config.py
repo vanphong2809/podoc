@@ -1,10 +1,10 @@
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "PoDoc API"
-    VERSION: str = "1.6.29"
+    VERSION: str = "1.6.30"
     DOMAIN: str = "localhost"
 
     # Database
@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     FILES_STORAGE_DIR: str = "/data/files"
     MAX_UPLOAD_SIZE_MB: int = 10240
     MAX_DOWNLOAD_SIZE_MB: int = 10240
+
+    # One background encoder per storage volume; no upload waits for encoding.
+    VIDEO_TRANSCODING_ENABLED: bool = True
+    VIDEO_TRANSCODING_TIMEOUT_SECONDS: int = Field(default=21600, ge=1)
+    VIDEO_TRANSCODING_POLL_SECONDS: float = Field(default=5.0, gt=0)
+    FFMPEG_BINARY: str = "ffmpeg"
+    FFPROBE_BINARY: str = "ffprobe"
 
     # Google Gemini AI / LLM OCR Service
     GEMINI_API_KEY: str = ""

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import shutil
@@ -33,6 +34,7 @@ from app.services.extractors.base import generate_excerpt
 from app.services.extractors.registry import extractor_registry
 from app.services.thumbnail import ensure_thumbnail
 from app.services.url_utils import normalize_url
+from app.services.video_transcoder import is_video_file, optimized_path, remove_video_derivatives
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +188,7 @@ async def list_articles(
                 file_name=art.file_name,
                 file_path=art.file_path,
                 mime_type=art.mime_type,
+                video_status=art.video_status,
                 excerpt=art.excerpt,
                 author=art.author,
                 site_name=art.site_name,
@@ -259,6 +262,9 @@ async def get_storage_stats(
             if os.path.isfile(disk_path):
                 art_size = os.path.getsize(disk_path)
                 has_file = True
+                optimized = optimized_path(art.file_path)
+                if optimized.is_file():
+                    art_size += optimized.stat().st_size
 
         if not has_file and art.source_type != "FILE":
             # Bỏ qua bài viết web không có file đính kèm
@@ -361,7 +367,7 @@ async def upload_article_file(
     mime_type = real_mime or file.content_type or "application/octet-stream"
 
     is_image = mime_type.startswith("image/") or orig_ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg")
-    is_video = mime_type.startswith("video/") or orig_ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts")
+    is_video = is_video_file(orig_name, mime_type, orig_name)
     is_audio = mime_type.startswith("audio/") or orig_ext in (".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".wma", ".opus")
 
     mime_to_ext = {
@@ -486,6 +492,7 @@ async def upload_article_file(
         file_name=orig_name,
         file_path=stored_filename,
         mime_type=mime_type,
+        video_status="pending" if is_video else None,
         content_markdown=content_text,
         excerpt=excerpt,
         category_id=cat.id,
@@ -511,7 +518,7 @@ async def upload_article_file(
                 saved_thumb = False
         if not saved_thumb:
             try:
-                ensure_thumbnail(stored_filename, settings.FILES_STORAGE_DIR, mime_type, orig_name)
+                await asyncio.to_thread(ensure_thumbnail, stored_filename, settings.FILES_STORAGE_DIR, mime_type, orig_name)
             except Exception as e:
                 logger.warning(f"Could not generate thumbnail for {stored_filename}: {e}")
 
@@ -567,6 +574,7 @@ async def get_article(
         file_name=art.file_name,
         file_path=art.file_path,
         mime_type=art.mime_type,
+        video_status=art.video_status,
         content_markdown=art.content_markdown,
         excerpt=art.excerpt,
         author=art.author,
@@ -607,6 +615,7 @@ async def create_article(
         file_name=data.file_name,
         file_path=data.file_path,
         mime_type=data.mime_type,
+        video_status="pending" if is_video_file(data.file_path, data.mime_type, data.file_name) else None,
         content_markdown=data.content_markdown or "",
         excerpt=excerpt,
         author=data.author,
@@ -677,6 +686,7 @@ async def delete_article(
 
     # Xoá file gốc và thumbnail nếu có
     if art.file_path:
+        remove_video_derivatives(art.file_path)
         disk_path = os.path.join(settings.FILES_STORAGE_DIR, art.file_path)
         if os.path.exists(disk_path):
             try:
@@ -711,6 +721,7 @@ async def batch_delete_articles(
 
     for art in articles:
         if art.file_path:
+            remove_video_derivatives(art.file_path)
             disk_path = os.path.join(settings.FILES_STORAGE_DIR, art.file_path)
             if os.path.exists(disk_path):
                 try:
@@ -821,8 +832,9 @@ async def download_article_file(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     inline: bool = Query(False, description="Hiển thị trực tiếp (inline) hay tải về (attachment)"),
+    original: bool = Query(False, description="Luôn lấy file gốc kể cả khi xem inline"),
 ):
-    """Tải lại file gốc hoặc xem trực tiếp trên app."""
+    """Download the original; inline playback prefers the complete optimized MP4."""
     stmt = select(Article).where(Article.id == id)
     result = await db.execute(stmt)
     art = result.scalar_one_or_none()
@@ -839,13 +851,20 @@ async def download_article_file(
 
     download_name = art.file_name or f"document_{art.id}"
     media_type = art.mime_type or "application/octet-stream"
+    if inline and not original and art.video_status == "ready":
+        optimized = optimized_path(art.file_path)
+        if optimized.is_file() and optimized.stat().st_size > 0:
+            disk_path = str(optimized)
+            download_name = f"{os.path.splitext(download_name)[0]}_optimized.mp4"
+            media_type = "video/mp4"
 
     return FileResponse(
         path=disk_path,
         filename=download_name,
         media_type=media_type,
         content_disposition_type="inline" if inline else "attachment",
-        headers={"Accept-Ranges": "bytes"},
+        # Revalidate the same playback URL when pending switches to ready.
+        headers={"Accept-Ranges": "bytes", "Cache-Control": "private, no-cache"},
     )
 
 
