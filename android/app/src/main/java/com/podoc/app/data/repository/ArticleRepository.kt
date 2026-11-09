@@ -348,7 +348,7 @@ class ArticleRepository(
                             org.json.JSONObject(body).optString("detail", "")
                         } else ""
                     } catch (_: Exception) { "" }
-                    val msg = if (errDetail.isNotBlank()) errDetail else "Dung lượng tệp vượt quá giới hạn cho phép."
+                    val msg = if (errDetail.isNotBlank()) errDetail else "Cổng máy chủ từ chối dung lượng tệp (413). Tệp chưa được lưu; cần tăng giới hạn upload trên máy chủ."
                     throw IllegalArgumentException(msg)
                 } else if (e.code() == 405 || e.code() == 404) {
                     // Fallback cho backend chưa cập nhật route /api/articles/upload
@@ -417,7 +417,7 @@ class ArticleRepository(
                 e is java.net.ProtocolException -> "Lỗi truyền luồng dữ liệu (${e.message})"
                 e is retrofit2.HttpException -> {
                     when (e.code()) {
-                        504 -> "Máy chủ hết thời gian xử lý (Proxy 100s timeout do tệp quá nặng)"
+                        408, 504 -> "Hết thời gian tải lên hoặc chờ máy chủ. Hãy kiểm tra thư viện trước khi tải lại."
                         502 -> "Máy chủ đang khởi động lại hoặc ngắt kết nối (502)"
                         413 -> "Dung lượng tệp vượt quá giới hạn máy chủ"
                         507 -> "Ổ cứng máy chủ đã đầy (Hết dung lượng lưu trữ)"

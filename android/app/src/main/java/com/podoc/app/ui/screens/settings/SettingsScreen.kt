@@ -565,9 +565,10 @@ fun SettingsScreen(
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 // 1. RAM
                                 ServerHardwareMetricItem(
-                                    title = "Bộ nhớ RAM",
+                                    title = if (stats.ram.scope == "container") "RAM PoDoc" else "RAM toàn máy chủ",
                                     value = "${stats.ram.percentUsed}%",
-                                    subtext = "${stats.ram.formattedUsed} / ${stats.ram.formattedTotal} (Còn trống: ${stats.ram.formattedFree})",
+                                    subtext = "${stats.ram.formattedUsed} / ${stats.ram.formattedTotal} (Khả dụng: ${stats.ram.formattedFree})" +
+                                        if (stats.ram.scope == "container") "\nBộ đệm có thể thu hồi: ${stats.ram.formattedCache}" else "",
                                     percent = stats.ram.percentUsed,
                                     icon = Icons.Default.Memory,
                                     color = Color(0xFF8B5CF6),

@@ -84,10 +84,11 @@ async def transcode_video(source: Path, partial: Path) -> None:
     # FFmpeg autorotates before filtering. Fit both orientations without cropping
     # or upscaling, keep SAR/aspect ratio, and ensure even dimensions for yuv420p.
     filters = [
+        # Drop surplus frames before scaling/tone mapping 4K sources.
+        f"fps={fps.numerator}/{fps.denominator}",
         "scale=w='min(iw,if(gte(iw,ih),1920,1080))':"
         "h='min(ih,if(gte(iw,ih),1080,1920))':"
         "force_original_aspect_ratio=decrease:force_divisible_by=2",
-        f"fps={fps.numerator}/{fps.denominator}",
     ]
     # Phone HDR needs tone mapping before conversion to 8-bit SDR H.264.
     if stream.get("color_transfer") in ("smpte2084", "arib-std-b67"):

@@ -2,6 +2,7 @@ import os
 import platform
 import shutil
 import time
+from pathlib import Path
 from fastapi import APIRouter
 from app.core.config import settings
 from app.schemas.system import ServerSystemStatsResponse, MemoryStat, DiskStat, CpuStat
@@ -9,6 +10,21 @@ from app.schemas.system import ServerSystemStatsResponse, MemoryStat, DiskStat, 
 router = APIRouter(prefix="/system", tags=["System"])
 
 SERVER_START_TIME = time.time()
+CGROUP_ROOT = Path("/sys/fs/cgroup")
+
+
+def get_container_memory() -> tuple[int, int, int] | None:
+    """Return limit, working set, and reclaimable cache for Docker/cgroup v2."""
+    try:
+        limit = int((CGROUP_ROOT / "memory.max").read_text().strip())
+        current = int((CGROUP_ROOT / "memory.current").read_text().strip())
+        stat = dict(line.split() for line in (CGROUP_ROOT / "memory.stat").read_text().splitlines())
+        cache = min(current, max(0, int(stat.get("inactive_file", "0"))))
+        if limit <= 0 or current < 0:
+            return None
+        return limit, min(limit, max(0, current - cache)), cache
+    except (OSError, ValueError):
+        return None
 
 
 def format_byte_size(size_bytes: int) -> str:
@@ -23,6 +39,16 @@ def format_byte_size(size_bytes: int) -> str:
 
 
 def get_memory_stats() -> MemoryStat:
+    container = get_container_memory()
+    if container:
+        total, used, cache = container
+        free = max(0, total - used)
+        return MemoryStat(
+            scope="container", total_bytes=total, used_bytes=used, free_bytes=free,
+            percent_used=round(used / total * 100, 1), cache_bytes=cache,
+            formatted_total=format_byte_size(total), formatted_used=format_byte_size(used),
+            formatted_free=format_byte_size(free), formatted_cache=format_byte_size(cache),
+        )
     total, used, free, percent = 0, 0, 0, 0.0
     try:
         import psutil

@@ -2,6 +2,9 @@ from pydantic import BaseModel, Field
 
 
 class MemoryStat(BaseModel):
+    scope: str = "host"
+    cache_bytes: int = 0
+    formatted_cache: str = "0 B"
     total_bytes: int = Field(0, description="Tổng dung lượng RAM (byte)")
     used_bytes: int = Field(0, description="Dung lượng RAM đang dùng (byte)")
     free_bytes: int = Field(0, description="Dung lượng RAM còn trống (byte)")

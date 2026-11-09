@@ -5,6 +5,8 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class MemoryStat(
+    @SerialName("scope") val scope: String = "host",
+    @SerialName("formatted_cache") val formattedCache: String = "0 B",
     @SerialName("total_bytes") val totalBytes: Long = 0L,
     @SerialName("used_bytes") val usedBytes: Long = 0L,
     @SerialName("free_bytes") val freeBytes: Long = 0L,

@@ -74,7 +74,8 @@ với Host cố định `f814e00e-9993-46fc-bb71-a7d36675d38e.localhost`. Route 
 service ID nên vẫn dùng được khi PoRender thay container. Nếu tạo lại service
 với ID khác, phải cập nhật gateway config.
 
-Gateway truyền upload theo luồng, giới hạn request mặc định 64 MiB (khuyến nghị nâng lên 2 GiB hoặc 5 GiB để upload video lớn), không chuyển cookie
+Gateway truyền upload theo luồng, giới hạn request 5 GiB và thời gian nhận
+upload tối đa 60 phút, không chuyển cookie
 dashboard sang API. HTTPS 443 và SSH 22 giữ nguyên, không bật Funnel. Đã kiểm
 chứng `/health`, upload/download file thử 1.210.000 byte qua TLS có xác minh
 chứng chỉ, và xóa riêng tài liệu thử. Không cần cập nhật APK cho thay đổi URL.
@@ -86,6 +87,19 @@ chứng chỉ, và xóa riêng tài liệu thử. Không cần cập nhật APK 
   URL dashboard `/web/<service-id>` không phải API của PoDoc.
 - Trong app Android, nhập URL API tại màn hình đăng nhập hoặc phần cài đặt máy
   chủ. Kiểm tra URL đó trả `/health` trước khi đổi máy chủ trên điện thoại.
+
+Mã nguồn gateway được quản lý tại `deploy/podoc-gateway.mjs`, kiểm thử bằng
+`node --test deploy/podoc-gateway.test.mjs` (bao gồm stream 1,2 GiB). Khi cập
+nhật gateway, sao lưu source/config đang dùng rồi chép module này tới
+`/home/vanphong/porender/shared/vpn/podoc-gateway.mjs`, đặt riêng các khóa
+`maxBodyBytes: 5368709120`, `requestTimeoutMs: 3600000`,
+`upstreamTimeoutMs: 1800000` trong config hiện có và restart user unit
+`podoc-vpn-gateway.service`. Push/backend deploy không tự cập nhật gateway.
+Không ghi đè các khóa định tuyến hoặc cấu hình Tailscale.
+
+API `/api/system/stats` ưu tiên RAM container nếu có cgroup v2: dùng
+`memory.current - inactive_file` để biểu diễn working set, hiển thị riêng bộ
+đệm có thể thu hồi. Khi chạy ngoài container, trả RAM toàn máy chủ.
 
 ## Phạm vi truy cập dữ liệu
 
