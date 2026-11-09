@@ -10,6 +10,7 @@ import com.podoc.app.data.local.DataStoreManager
 import com.podoc.app.data.model.ArticleDetail
 import com.podoc.app.data.model.ArticleListItem
 import com.podoc.app.data.repository.ArticleRepository
+import com.podoc.app.service.MediaPlaybackManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -63,10 +64,24 @@ class ReaderViewModel(
     private val imageFileCache = ImageFileCache(viewModelScope)
     private val metadataRequests = mutableSetOf<Int>()
 
+    private var currentServerUrl: String = ""
+    private var currentAuthToken: String = ""
+
     init {
         viewModelScope.launch {
             dataStoreManager.defaultFontSizeFlow.collect { size ->
                 _uiState.value = _uiState.value.copy(fontSizeSp = size)
+            }
+        }
+        viewModelScope.launch {
+            dataStoreManager.serverUrlFlow.collect { url ->
+                currentServerUrl = url.trimEnd('/')
+            }
+        }
+        viewModelScope.launch {
+            dataStoreManager.authTokenFlow.collect { token ->
+                currentAuthToken = token
+                MediaPlaybackManager.setAuthToken(token.takeIf { it.isNotBlank() })
             }
         }
     }
@@ -394,14 +409,32 @@ class ReaderViewModel(
                 currentVideoIndex = startIndex
             )
 
-            // Fetch the selected file first; adjacent files are requested by the pager.
-            preloadVideo(startIndex, finalFeed, context)
+            // Preload video kế tiếp qua HTTP URL stream mà không tải toàn bộ file
+            preloadVideo(startIndex + 1, finalFeed, context)
         }
+    }
+
+    fun getMediaPlaybackSource(context: Context, item: ArticleListItem): String {
+        // 1. Nếu đã có tệp cache hoàn chỉnh trên máy, ưu tiên phát từ tệp nội bộ
+        val rawExt = (item.fileName ?: item.filePath ?: "").substringAfterLast('.', "mp4").lowercase()
+        val safeExt = ".${rawExt.ifBlank { "mp4" }}"
+        val fileName = item.fileName?.let { if (it.contains('.')) it else "$it$safeExt" }
+            ?: "video_${item.id}$safeExt"
+        val cacheFile = File(context.cacheDir, "podoc_doc_${item.id}_$fileName")
+        if (cacheFile.isFile && cacheFile.length() > 0) {
+            return cacheFile.absolutePath
+        }
+
+        // 2. Chưa có tệp trên máy: phát trực tiếp (Stream) qua HTTP Range từ máy chủ (KHÔNG cần chờ tải toàn bộ 1GB+)
+        val base = currentServerUrl.ifBlank { "http://localhost:8000" }
+        val tokenParam = if (currentAuthToken.isNotBlank()) "&token=$currentAuthToken" else ""
+        return "$base/api/articles/${item.id}/file?inline=true$tokenParam"
     }
 
     fun preloadVideo(index: Int, feed: List<ArticleListItem>, context: Context) {
         if (index !in feed.indices) return
-        getVideoFile(context, feed[index]) { }
+        val source = getMediaPlaybackSource(context, feed[index])
+        MediaPlaybackManager.preloadNext(source)
     }
 
     fun getVideoFile(context: Context, item: ArticleListItem, onReady: (File) -> Unit) {

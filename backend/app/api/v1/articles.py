@@ -844,6 +844,7 @@ async def download_article_file(
         filename=download_name,
         media_type=media_type,
         content_disposition_type="inline" if inline else "attachment",
+        headers={"Accept-Ranges": "bytes"},
     )
 
 

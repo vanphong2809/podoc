@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
@@ -71,6 +72,16 @@ object MediaPlaybackManager {
     val renderedArticleId: StateFlow<Int?> = _renderedArticleId.asStateFlow()
     internal val _failedArticleId = MutableStateFlow<Int?>(null)
     val failedArticleId: StateFlow<Int?> = _failedArticleId.asStateFlow()
+
+    internal val _isBuffering = MutableStateFlow(false)
+    val isBuffering: StateFlow<Boolean> = _isBuffering.asStateFlow()
+
+    internal val _authToken = MutableStateFlow<String?>(null)
+    val authToken: StateFlow<String?> = _authToken.asStateFlow()
+
+    fun setAuthToken(token: String?) {
+        _authToken.value = token
+    }
 
     internal data class VideoSurface(val articleId: Int, val surface: Surface)
     @Volatile internal var videoSurface: VideoSurface? = null
@@ -411,6 +422,7 @@ class MediaPlaybackService : Service() {
         MediaPlaybackManager._videoSize.value = 0 to 0
         MediaPlaybackManager._renderedArticleId.value = null
         MediaPlaybackManager._failedArticleId.value = null
+        MediaPlaybackManager._isBuffering.value = true
         activePrepared = false
         playWhenReady = true
         activeFilePath = filePath
@@ -446,11 +458,22 @@ class MediaPlaybackService : Service() {
                     .setUsage(AudioAttributes.USAGE_MEDIA)
                     .build()
             )
-            player.setDataSource(filePath)
+            if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
+                val uri = Uri.parse(filePath)
+                val headers = mutableMapOf<String, String>()
+                val token = MediaPlaybackManager._authToken.value
+                if (!token.isNullOrBlank()) {
+                    headers["Authorization"] = "Bearer $token"
+                }
+                player.setDataSource(applicationContext, uri, headers)
+            } else {
+                player.setDataSource(filePath)
+            }
             player.setOnPreparedListener { prepared ->
                 when (prepared) {
                     mediaPlayer -> {
                         activePrepared = true
+                        MediaPlaybackManager._isBuffering.value = false
                         try {
                             startPreparedPlayer()
                         } catch (e: Exception) {
@@ -464,8 +487,19 @@ class MediaPlaybackService : Service() {
                 if (source === mediaPlayer) MediaPlaybackManager._videoSize.value = width to height
             }
             player.setOnInfoListener { source, what, _ ->
-                if (source === mediaPlayer && what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
-                    MediaPlaybackManager._renderedArticleId.value = MediaPlaybackManager._currentArticleId.value
+                if (source === mediaPlayer) {
+                    when (what) {
+                        MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START -> {
+                            MediaPlaybackManager._renderedArticleId.value = MediaPlaybackManager._currentArticleId.value
+                            MediaPlaybackManager._isBuffering.value = false
+                        }
+                        MediaPlayer.MEDIA_INFO_BUFFERING_START -> {
+                            MediaPlaybackManager._isBuffering.value = true
+                        }
+                        MediaPlayer.MEDIA_INFO_BUFFERING_END -> {
+                            MediaPlaybackManager._isBuffering.value = false
+                        }
+                    }
                 }
                 false
             }
@@ -480,6 +514,7 @@ class MediaPlaybackService : Service() {
             }
             player.setOnErrorListener { source, what, extra ->
                 Log.e(TAG, "MediaPlayer error: what=$what, extra=$extra")
+                MediaPlaybackManager._isBuffering.value = false
                 if (source === mediaPlayer) {
                     reportPlaybackError(IllegalStateException("MediaPlayer error $what/$extra"))
                 } else if (source === preloadedPlayer) {

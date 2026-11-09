@@ -1856,6 +1856,7 @@ internal fun TikTokVideoFeedViewer(
     val currentPlayingArticleId by MediaPlaybackManager.currentArticleId.collectAsState()
     val renderedArticleId by MediaPlaybackManager.renderedArticleId.collectAsState()
     val failedArticleId by MediaPlaybackManager.failedArticleId.collectAsState()
+    val isBuffering by MediaPlaybackManager.isBuffering.collectAsState()
 
     var itemToDelete by remember { mutableStateOf<ArticleListItem?>(null) }
     var showHint by remember { mutableStateOf(true) }
@@ -1958,32 +1959,28 @@ internal fun TikTokVideoFeedViewer(
                 }
                 MediaPlaybackManager.pauseDirect()
                 try {
-                    val file = viewModel.awaitVideoFile(context, item)
-                    MediaPlaybackManager.startPlay(context, file.absolutePath, item.title, item.id, true)
+                    val mediaSource = viewModel.getMediaPlaybackSource(context, item)
+                    MediaPlaybackManager.startPlay(context, mediaSource, item.title, item.id, true)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
-                } catch (_: Exception) {
-                    videoLoadError = "Không thể tải video. Chạm để thử lại."
+                } catch (e: Exception) {
+                    videoLoadError = "Không thể tải video: ${e.message ?: "Lỗi kết nối"}. Chạm để thử lại."
                 }
             }
     }
 
-    // Disk prefetch and decoder prefetch are separate. Only the predicted destination
-    // (or the next page while idle) may occupy the single warm decoder slot.
+    // Decoder prefetch: chỉ chuẩn bị video kế tiếp trong nền qua HTTP/Stream mà không tải tệp thô
     LaunchedEffect(pagerState, feedList, isFeedReady, currentPlayingArticleId) {
         if (!isFeedReady) return@LaunchedEffect
         snapshotFlow { Triple(pagerState.settledPage, pagerState.targetPage, pagerState.isScrollInProgress) }
             .collectLatest { (settled, target, scrolling) ->
                 val predicted = if (scrolling && target != settled) target else settled + 1
-                val neighbours = listOf(predicted, settled - 1, settled + 1, settled + 2).distinct()
-                neighbours.filter { it in feedList.indices }.forEach {
-                    viewModel.preloadVideo(it, feedList, context)
-                }
                 val canPrepare = scrolling || currentPlayingArticleId == feedList.getOrNull(settled)?.id
                 if (canPrepare && predicted in feedList.indices) {
                     try {
-                        val file = viewModel.awaitVideoFile(context, feedList[predicted])
-                        MediaPlaybackManager.preloadNext(file.absolutePath)
+                        val nextItem = feedList[predicted]
+                        val nextSource = viewModel.getMediaPlaybackSource(context, nextItem)
+                        MediaPlaybackManager.preloadNext(nextSource)
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {
@@ -2091,6 +2088,20 @@ internal fun TikTokVideoFeedViewer(
                             .clickable { retryCount++ }
                             .padding(16.dp)
                     )
+                } else if (isCurrentPage && isThisVideoActive && isBuffering && renderedArticleId != item.id) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                            .align(Alignment.Center),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(32.dp),
+                            color = Color.White,
+                            strokeWidth = 3.dp
+                        )
+                    }
                 }
 
                 // 2. Icon Play to tròn ở trung tâm màn hình CHỈ KHI người dùng chủ động chạm tạm dừng (chuẩn TikTok)
