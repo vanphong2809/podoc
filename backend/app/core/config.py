@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "PoDoc API"
-    VERSION: str = "1.6.31"
+    VERSION: str = "1.6.32"
     DOMAIN: str = "localhost"
 
     # Database
@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     VIDEO_TRANSCODING_ENABLED: bool = True
     VIDEO_TRANSCODING_TIMEOUT_SECONDS: int = Field(default=21600, ge=1)
     VIDEO_TRANSCODING_POLL_SECONDS: float = Field(default=5.0, gt=0)
+    VIDEO_TRANSCODING_THREADS: int = Field(default=1, ge=1, le=4)
     FFMPEG_BINARY: str = "ffmpeg"
     FFPROBE_BINARY: str = "ffprobe"
 

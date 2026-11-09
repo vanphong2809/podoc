@@ -4,6 +4,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -16,6 +18,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,6 +32,11 @@ import androidx.compose.ui.unit.sp
 import com.podoc.app.data.model.ArticleFileInfo
 import com.podoc.app.data.repository.ArticleRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
@@ -52,21 +60,58 @@ fun FileInfoBottomSheet(
     var fileInfo by remember { mutableStateOf<ArticleFileInfo?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var selectedVersion by rememberSaveable(articleId) { mutableStateOf<String?>(null) }
+    var downloadingVersion by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val saveVideo = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/*")) { uri ->
+        val kind = selectedVersion
+        selectedVersion = null
+        if (uri != null && kind != null) {
+            scope.launch {
+                downloadingVersion = kind
+                try {
+                    withContext(Dispatchers.IO) {
+                        repository.downloadArticleFile(articleId, variant = kind).getOrThrow().use { body ->
+                            val output = context.contentResolver.openOutputStream(uri, "w")
+                                ?: error("Không thể ghi vào vị trí đã chọn")
+                            output.use { destination ->
+                                body.byteStream().use { input ->
+                                    val buffer = ByteArray(64 * 1024)
+                                    while (true) {
+                                        currentCoroutineContext().ensureActive()
+                                        val count = input.read(buffer)
+                                        if (count < 0) break
+                                        destination.write(buffer, 0, count)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Toast.makeText(context, if (kind == "optimized") "Đã lưu bản nhẹ" else "Đã lưu bản gốc", Toast.LENGTH_LONG).show()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    Toast.makeText(context, "Tải thất bại: ${error.message}", Toast.LENGTH_LONG).show()
+                } finally {
+                    downloadingVersion = null
+                }
+            }
+        }
+    }
 
     LaunchedEffect(articleId) {
         isLoading = true
         errorMessage = null
-        val result = repository.getArticleFileInfo(articleId)
-        result.fold(
-            onSuccess = { info ->
-                fileInfo = info
-                isLoading = false
-            },
-            onFailure = { err ->
-                errorMessage = err.message ?: "Không thể lấy thông tin chi tiết từ máy chủ"
-                isLoading = false
-            }
-        )
+        do {
+            val result = repository.getArticleFileInfo(articleId)
+            result.fold(
+                onSuccess = { info -> fileInfo = info; errorMessage = null },
+                onFailure = { err -> errorMessage = err.message ?: "Không thể lấy thông tin chi tiết từ máy chủ" }
+            )
+            isLoading = false
+            val waiting = fileInfo?.videoStatus in listOf("pending", "processing")
+            if (waiting) delay(5000)
+        } while (waiting)
     }
 
     ModalBottomSheet(
@@ -223,9 +268,46 @@ fun FileInfoBottomSheet(
                 if (!sizeStr.isNullOrBlank()) {
                     FileInfoRow(
                         icon = Icons.Outlined.SdCard,
-                        label = "Dung lượng",
+                        label = if (info?.contentType == "video") "Dung lượng bản gốc" else "Dung lượng",
                         value = sizeStr
                     )
+                }
+
+                if (!info?.videoVersions.isNullOrEmpty()) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                    Text("Hai phiên bản video", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Khi xem, PoDoc tự chọn bản nhẹ khi đã sẵn sàng. Bản gốc luôn được giữ nguyên.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                    info?.videoVersions?.forEach { version ->
+                        val statusText = when (version.status) {
+                            "ready" -> version.fileSizeFormatted ?: "Sẵn sàng"
+                            "processing" -> "Đang nén trên máy chủ…"
+                            "pending" -> "Đang chờ nén • vị trí ${info?.videoQueuePosition ?: "—"}"
+                            "failed" -> "Nén chưa thành công"
+                            else -> "Chưa có bản nhẹ"
+                        }
+                        FileInfoRow(
+                            icon = if (version.kind == "optimized") Icons.Outlined.Compress else Icons.Outlined.VideoFile,
+                            label = version.label,
+                            value = statusText
+                        )
+                        if (version.status == "ready" && version.downloadUrl != null) {
+                            OutlinedButton(
+                                onClick = { selectedVersion = version.kind; saveVideo.launch(version.fileName) },
+                                enabled = downloadingVersion == null,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(if (downloadingVersion == version.kind) "Đang tải…" else "Tải ${version.label.lowercase()} (${version.fileSizeFormatted ?: ""})")
+                            }
+                        }
+                    }
+                    info?.videoSavedPercent?.takeIf { it > 0 }?.let { saved ->
+                        Text("Bản nhẹ giảm $saved% dung lượng", color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+                    }
                 }
 
                 // 5. Độ phân giải (nếu là ảnh hoặc video)
@@ -285,7 +367,7 @@ fun FileInfoBottomSheet(
                     .height(48.dp),
                 shape = RoundedCornerShape(14.dp)
             ) {
-                Text("Đóng", fontWeight = FontWeight.SemiBold)
+                Text(if (downloadingVersion != null) "Hủy tải và đóng" else "Đóng", fontWeight = FontWeight.SemiBold)
             }
         }
     }

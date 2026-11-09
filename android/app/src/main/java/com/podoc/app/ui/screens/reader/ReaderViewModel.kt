@@ -415,17 +415,8 @@ class ReaderViewModel(
     }
 
     fun getMediaPlaybackSource(context: Context, item: ArticleListItem): String {
-        // 1. Nếu đã có tệp cache hoàn chỉnh trên máy, ưu tiên phát từ tệp nội bộ
-        val rawExt = (item.fileName ?: item.filePath ?: "").substringAfterLast('.', "mp4").lowercase()
-        val safeExt = ".${rawExt.ifBlank { "mp4" }}"
-        val fileName = item.fileName?.let { if (it.contains('.')) it else "$it$safeExt" }
-            ?: "video_${item.id}$safeExt"
-        val cacheFile = File(context.cacheDir, "podoc_doc_${item.id}_$fileName")
-        if (cacheFile.isFile && cacheFile.length() > 0) {
-            return cacheFile.absolutePath
-        }
-
-        // 2. Chưa có tệp trên máy: phát trực tiếp (Stream) qua HTTP Range từ máy chủ (KHÔNG cần chờ tải toàn bộ 1GB+)
+        // Let the server choose the optimized video. A cached original must not
+        // keep overriding the new lightweight version after encoding finishes.
         val base = currentServerUrl.ifBlank { "http://localhost:8000" }
         val tokenParam = if (currentAuthToken.isNotBlank()) "&token=$currentAuthToken" else ""
         return "$base/api/articles/${item.id}/file?inline=true$tokenParam"

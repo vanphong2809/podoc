@@ -535,9 +535,9 @@ class ArticleRepository(
         }
     }
 
-    suspend fun downloadArticleFile(id: Int, inline: Boolean = false): Result<ResponseBody> {
+    suspend fun downloadArticleFile(id: Int, inline: Boolean = false, variant: String? = null): Result<ResponseBody> {
         return try {
-            val body = getApi().downloadArticleFile(id, inline)
+            val body = getApi().downloadArticleFile(id, inline, variant)
             Result.success(body)
         } catch (e: Exception) {
             Result.failure(e)

@@ -99,11 +99,11 @@ async def transcode_video(source: Path, partial: Path) -> None:
         ])
     await run_command(
         settings.FFMPEG_BINARY, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-        "-threads", "1", "-filter_threads", "1", "-protocol_whitelist", "file,pipe",
+        "-threads", str(settings.VIDEO_TRANSCODING_THREADS), "-filter_threads", "1", "-protocol_whitelist", "file,pipe",
         "-i", str(source), "-map", "0:v:0", "-map", "0:a:0?",
         "-vf", ",".join(filters), "-c:v", "libx264", "-preset", "fast",
         "-crf", "24", "-maxrate", "3500k", "-bufsize", "7000k",
-        "-threads", "1", "-x264-params", "rc-lookahead=10:ref=2",
+        "-threads", str(settings.VIDEO_TRANSCODING_THREADS), "-x264-params", "rc-lookahead=10:ref=2",
         "-pix_fmt", "yuv420p", "-tag:v", "avc1", "-g", "60",
         "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
         "-map_metadata", "-1", "-movflags", "+faststart", str(partial),
@@ -141,7 +141,8 @@ class VideoTranscoder:
         async with self.session_factory() as db:
             result = await db.execute(select(Article).where(
                 Article.video_status == "pending",
-            ).order_by(Article.id).limit(1))
+            # Newly uploaded videos take precedence over the historical backfill.
+            ).order_by(Article.created_at.desc(), Article.id.desc()).limit(1))
             article = result.scalar_one_or_none()
             if article is None:
                 return False

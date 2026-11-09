@@ -119,6 +119,16 @@ class StorageStatsResponse(BaseModel):
     by_category: list[CategoryStorageStat] = []
 
 
+class VideoVersionResponse(BaseModel):
+    kind: str
+    label: str
+    status: str
+    file_name: str
+    file_size_bytes: Optional[int] = None
+    file_size_formatted: Optional[str] = None
+    download_url: Optional[str] = None
+
+
 class ArticleFileInfoResponse(BaseModel):
     id: int
     title: str
@@ -128,6 +138,10 @@ class ArticleFileInfoResponse(BaseModel):
     storage_path: Optional[str] = None
     file_size_bytes: Optional[int] = None
     file_size_formatted: Optional[str] = None
+    video_status: Optional[str] = None
+    video_queue_position: Optional[int] = None
+    video_versions: list[VideoVersionResponse] = Field(default_factory=list)
+    video_saved_percent: Optional[float] = None
     mime_type: Optional[str] = None
     content_type: str = "file"  # "image", "video", "audio", "file", "web"
     category_id: int

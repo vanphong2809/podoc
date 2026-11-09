@@ -56,6 +56,14 @@ async def test_queue_playback_ranges_and_original_download(client, monkeypatch):
     article, original = await upload_video(client)
     url = f"/api/articles/{article['id']}/file"
     assert (await client.get(url + "?inline=true")).content == original
+    unavailable = await client.get(url + "?variant=optimized")
+    assert unavailable.status_code == 409
+    assert unavailable.headers["retry-after"] == "5"
+    info = (await client.get(f"/api/articles/{article['id']}/file-info")).json()
+    assert info["video_queue_position"] == 1
+    assert [v["kind"] for v in info["video_versions"]] == ["original", "optimized"]
+    assert [v["status"] for v in info["video_versions"]] == ["ready", "pending"]
+    assert info["video_versions"][1]["download_url"] is None
     optimized = b"complete optimized mp4" * 10
 
     async def encode(source, partial):
@@ -72,6 +80,7 @@ async def test_queue_playback_ranges_and_original_download(client, monkeypatch):
     response = await client.get(url + "?inline=true")
     assert response.content == optimized
     assert response.headers["content-type"] == "video/mp4"
+    assert response.headers["x-podoc-video-variant"] == "optimized"
     assert "optimized.mp4" in response.headers["content-disposition"]
     assert "no-cache" in response.headers["cache-control"]
     ranged = await client.get(url + "?inline=true", headers={"Range": "bytes=5-14"})
@@ -81,13 +90,44 @@ async def test_queue_playback_ranges_and_original_download(client, monkeypatch):
     unsatisfiable = await client.get(url + "?inline=true", headers={"Range": "bytes=9999-"})
     assert unsatisfiable.status_code == 416
     assert (await client.get(url)).content == original
+    assert (await client.get(url + "?variant=original&inline=true")).content == original
+    assert (await client.get(url + "?variant=optimized")).content == optimized
     assert (await client.get(url + "?inline=true&original=true")).content == original
+    assert (await client.get(url + "?original=true&variant=optimized")).status_code == 400
+    info = (await client.get(f"/api/articles/{article['id']}/file-info")).json()
+    versions = info["video_versions"]
+    assert [v["status"] for v in versions] == ["ready", "ready"]
+    assert [v["file_size_bytes"] for v in versions] == [len(original), len(optimized)]
+    assert (await client.get(versions[0]["download_url"])).content == original
+    assert (await client.get(versions[1]["download_url"])).content == optimized
+    assert info["video_saved_percent"] == round((1 - len(optimized) / len(original)) * 100, 1)
     assert (await client.get(f"/api/articles/{article['id']}")).json()["video_status"] == "ready"
     stats = (await client.get("/api/articles/storage-stats")).json()
     assert stats["total_bytes"] == len(original) + len(optimized)
     # Missing derivative falls back to the intact source.
     video.optimized_path(article["file_path"]).unlink()
     assert (await client.get(url + "?inline=true")).content == original
+    assert (await client.get(url + "?variant=optimized")).status_code == 404
+    info = (await client.get(f"/api/articles/{article['id']}/file-info")).json()
+    assert info["video_versions"][1]["status"] == "missing"
+    assert info["video_versions"][1]["download_url"] is None
+
+
+async def test_new_uploads_take_priority_over_historical_queue(client, monkeypatch):
+    old, _ = await upload_video(client)
+    new, _ = await upload_video(client)
+    old_info = (await client.get(f"/api/articles/{old['id']}/file-info")).json()
+    new_info = (await client.get(f"/api/articles/{new['id']}/file-info")).json()
+    assert old_info["video_queue_position"] == 2
+    assert new_info["video_queue_position"] == 1
+
+    async def encode(source, partial):
+        partial.write_bytes(b"optimized")
+
+    monkeypatch.setattr(video, "transcode_video", encode)
+    await video.VideoTranscoder(TestingSessionLocal).process_next()
+    assert (await client.get(f"/api/articles/{new['id']}")).json()["video_status"] == "ready"
+    assert (await client.get(f"/api/articles/{old['id']}")).json()["video_status"] == "pending"
 
 
 async def test_failed_encoding_keeps_original_and_removes_partial(client, monkeypatch):
@@ -200,7 +240,8 @@ async def test_subprocess_timeout_and_cancellation():
 @pytest.mark.parametrize("size,fps,audio", [
     ("2160x3840", 60, True), ("3840x2160", 30, False), ("320x180", 24, True),
 ])
-async def test_real_ffmpeg_output(tmp_path, size, fps, audio):
+async def test_real_ffmpeg_output(tmp_path, size, fps, audio, monkeypatch):
+    monkeypatch.setattr(settings, "VIDEO_TRANSCODING_THREADS", 2)
     if not shutil.which(settings.FFMPEG_BINARY) or not shutil.which(settings.FFPROBE_BINARY):
         pytest.skip("FFmpeg and ffprobe required for real encoding verification")
     source = tmp_path / "source.mp4"

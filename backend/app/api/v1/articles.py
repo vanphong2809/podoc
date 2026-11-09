@@ -5,7 +5,7 @@ import shutil
 import tempfile
 import urllib.parse
 import uuid
-from typing import Annotated, List, Optional
+from typing import Annotated, List, Literal, Optional
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, File, status
 from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select, text, not_, update
@@ -29,6 +29,7 @@ from app.schemas.article import (
     CategoryStorageStat,
     StorageItemStat,
     StorageStatsResponse,
+    VideoVersionResponse,
 )
 from app.services.extractors.base import generate_excerpt
 from app.services.extractors.registry import extractor_registry
@@ -833,6 +834,7 @@ async def download_article_file(
     db: Annotated[AsyncSession, Depends(get_db)],
     inline: bool = Query(False, description="Hiển thị trực tiếp (inline) hay tải về (attachment)"),
     original: bool = Query(False, description="Luôn lấy file gốc kể cả khi xem inline"),
+    variant: Optional[Literal["original", "optimized"]] = Query(None, description="Chọn chính xác bản gốc hoặc bản nhẹ"),
 ):
     """Download the original; inline playback prefers the complete optimized MP4."""
     stmt = select(Article).where(Article.id == id)
@@ -851,12 +853,23 @@ async def download_article_file(
 
     download_name = art.file_name or f"document_{art.id}"
     media_type = art.mime_type or "application/octet-stream"
-    if inline and not original and art.video_status == "ready":
+    if original and variant == "optimized":
+        raise HTTPException(status_code=400, detail="Không thể yêu cầu cả bản gốc và bản nhẹ trong cùng một lượt tải")
+    chosen_variant = "original"
+    if variant == "optimized" or (variant is None and inline and not original and art.video_status == "ready"):
         optimized = optimized_path(art.file_path)
-        if optimized.is_file() and optimized.stat().st_size > 0:
+        if art.video_status == "ready" and optimized.is_file() and optimized.stat().st_size > 0:
             disk_path = str(optimized)
             download_name = f"{os.path.splitext(download_name)[0]}_optimized.mp4"
             media_type = "video/mp4"
+            chosen_variant = "optimized"
+        elif variant == "optimized":
+            waiting = art.video_status in ("pending", "processing")
+            raise HTTPException(
+                status_code=409 if waiting else 404,
+                detail="Bản nhẹ đang chờ nén hoặc đang xử lý. Vui lòng thử lại sau." if waiting else "Bản nhẹ chưa có hoặc nén không thành công.",
+                headers={"Retry-After": "5", "Cache-Control": "no-store"},
+            )
 
     return FileResponse(
         path=disk_path,
@@ -864,7 +877,7 @@ async def download_article_file(
         media_type=media_type,
         content_disposition_type="inline" if inline else "attachment",
         # Revalidate the same playback URL when pending switches to ready.
-        headers={"Accept-Ranges": "bytes", "Cache-Control": "private, no-cache"},
+        headers={"Accept-Ranges": "bytes", "Cache-Control": "private, no-cache", "X-PoDoc-Video-Variant": chosen_variant},
     )
 
 
@@ -952,7 +965,7 @@ async def get_article_file_info(
                     "-show_streams",
                     disk_path,
                 ]
-                proc = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=4)
+                proc = await asyncio.to_thread(subprocess.run, probe_cmd, capture_output=True, text=True, timeout=4)
                 if proc.returncode == 0:
                     probe_data = json.loads(proc.stdout)
                     v_stream = next((s for s in probe_data.get("streams", []) if s.get("codec_type") == "video"), None)
@@ -988,6 +1001,37 @@ async def get_article_file_info(
             except Exception:
                 pass
 
+    versions = []
+    queue_position = None
+    saved_percent = None
+    if content_type == "video" and art.file_path:
+        original_url = f"/api/articles/{art.id}/file?variant=original"
+        versions.append(VideoVersionResponse(
+            kind="original", label="Bản gốc", status="ready" if file_size_bytes else "missing",
+            file_name=file_name, file_size_bytes=file_size_bytes,
+            file_size_formatted=file_size_formatted,
+            download_url=original_url if file_size_bytes else None,
+        ))
+        optimized = optimized_path(art.file_path)
+        ready = art.video_status == "ready" and optimized.is_file() and optimized.stat().st_size > 0
+        optimized_bytes = optimized.stat().st_size if ready else None
+        versions.append(VideoVersionResponse(
+            kind="optimized", label="Bản nhẹ", status="ready" if ready else ("missing" if art.video_status == "ready" else art.video_status or "missing"),
+            file_name=f"{os.path.splitext(file_name)[0]}_optimized.mp4",
+            file_size_bytes=optimized_bytes,
+            file_size_formatted=format_byte_size(optimized_bytes) if optimized_bytes else None,
+            download_url=f"/api/articles/{art.id}/file?variant=optimized" if ready else None,
+        ))
+        if ready and file_size_bytes:
+            saved_percent = round((1 - optimized_bytes / file_size_bytes) * 100, 1)
+        if art.video_status == "pending":
+            ahead = await db.scalar(select(func.count()).select_from(Article).where(
+                Article.video_status == "pending",
+                or_(Article.created_at > art.created_at,
+                    (Article.created_at == art.created_at) & (Article.id > art.id)),
+            ))
+            queue_position = int(ahead or 0) + 1
+
     return ArticleFileInfoResponse(
         id=art.id,
         title=art.title,
@@ -997,6 +1041,10 @@ async def get_article_file_info(
         storage_path=os.path.join(storage_dir, file_path) if file_path else None,
         file_size_bytes=file_size_bytes,
         file_size_formatted=file_size_formatted,
+        video_status=art.video_status,
+        video_queue_position=queue_position,
+        video_versions=versions,
+        video_saved_percent=saved_percent,
         mime_type=art.mime_type,
         content_type=content_type,
         category_id=art.category_id,

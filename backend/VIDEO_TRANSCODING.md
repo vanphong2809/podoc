@@ -1,4 +1,4 @@
-# Nén video nền (PoDoc 1.6.30)
+# Nén video nền (PoDoc 1.6.32)
 
 Video tải lên được giữ nguyên trong `FILES_STORAGE_DIR`; `file_path`, MIME và
 thông tin file luôn mô tả bản gốc. API trả 201 sau khi lưu file và metadata,
@@ -11,13 +11,23 @@ một encoder nhờ khóa file. Không cần Redis hay dịch vụ ngoài.
   `ready`, tự dùng bản gốc nếu đang chờ, nén lỗi hoặc mất bản tối ưu.
 - `GET /api/articles/{id}/file`: luôn tải bản gốc, tên và nội dung nguyên vẹn.
 - `GET /api/articles/{id}/file?inline=true&original=true`: xem trực tiếp bản gốc.
+- `GET /api/articles/{id}/file?variant=original`: tải chính xác bản gốc.
+- `GET /api/articles/{id}/file?variant=optimized`: tải chính xác bản nhẹ; trả
+  409 kèm `Retry-After` khi đang chờ/xử lý, 404 khi không có bản nhẹ.
+
+`GET /api/articles/{id}/file-info` trả `video_versions`: hai mục Bản gốc/Bản
+nhẹ cùng trạng thái, số byte, dung lượng định dạng và URL tải riêng;
+`video_saved_percent` là phần trăm dung lượng giảm. `video_queue_position`
+cho biết vị trí chờ. App hiển thị các mục trong Thông tin tệp tin, tự cập
+nhật mỗi 5 giây khi đang chờ và cho lưu từng bản qua trình chọn tệp Android.
+Lựa chọn Bản nhẹ không âm thầm tải bản gốc khi nén chưa hoàn tất.
 
 Cả hai bản hỗ trợ HTTP Range (206/416) để tua video. MP4 tối ưu có `moov`
 ở đầu (`+faststart`); chỉ công bố sau khi FFmpeg hoàn tất và ffprobe xác minh.
 Trường `video_status` trong API danh sách/chi tiết nhận `pending`, `processing`,
 `ready`, `failed`, hoặc `null` với tài liệu khác. App hiện tại đã dùng
-`inline=true` khi stream nên tự nhận bản tối ưu cho các lượt phát mới; file
-đã cache trên thiết bị vẫn được app ưu tiên cho đến khi cache bị xóa.
+`inline=true` khi stream nên tự nhận bản tối ưu cho các lượt phát mới. App
+không dùng cache bản gốc để thay thế lượt stream video này.
 
 ## Cấu hình mã hóa
 
@@ -28,7 +38,8 @@ Trường `video_status` trong API danh sách/chi tiết nhận `pending`, `proc
 - Tối đa 30fps, giữ fps thấp hơn của nguồn.
 - AAC 128kbps, 48kHz, stereo; hỗ trợ video không có âm thanh.
 - Nguồn HDR PQ/HLG được tone-map sang SDR BT.709 qua `zscale`/`tonemap`.
-- Decoder/encoder/filter một luồng, giảm lookahead và reference frames.
+- Decoder/encoder dùng số luồng cấu hình, filter một luồng; giảm lookahead
+  và reference frames. Blueprint cấp 2 CPU và 2 luồng, vẫn giữ RAM 1 GiB.
 
 Dung lượng phụ thuộc thời lượng và độ phức tạp; CRF/VBR không đảm bảo mọi
 file giảm 85–95% hoặc đạt 15–35 MB. Tại 3,5Mbps video + 128kbps audio,
@@ -44,7 +55,8 @@ service tạo thủ công cần áp dụng giới hạn tương ứng trong cấ
 
 Dockerfile đã cài `ffmpeg`/`ffprobe`. Khởi động hiện có tự chạy
 `alembic upgrade head`; migration `0003_video_transcoding` đưa video cũ vào
-hàng đợi. Các video mới cũng vào hàng đợi. Worker lưu trạng thái trong DB;
+hàng đợi. Các video mới được ưu tiên theo thời điểm tải lên mới nhất, xử lý
+trước các video cũ đang chờ backfill. Worker lưu trạng thái trong DB;
 khi nhận khóa volume sau restart, đổi `processing` về `pending` rồi nén lại.
 Shutdown hủy và thu hồi subprocess, xóa file tạm. Lỗi mã hóa ghi log theo ID,
 đánh dấu `failed` và tiếp tục video kế tiếp; không thử lại vô hạn file hỏng.
@@ -58,6 +70,7 @@ Các biến môi trường tùy chọn:
 | `VIDEO_TRANSCODING_ENABLED` | `true` |
 | `VIDEO_TRANSCODING_TIMEOUT_SECONDS` | `21600` (6 giờ/video) |
 | `VIDEO_TRANSCODING_POLL_SECONDS` | `5` |
+| `VIDEO_TRANSCODING_THREADS` | `1` (Blueprint đặt `2`) |
 | `FFMPEG_BINARY` | `ffmpeg` |
 | `FFPROBE_BINARY` | `ffprobe` |
 

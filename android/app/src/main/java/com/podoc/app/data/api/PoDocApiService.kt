@@ -97,7 +97,8 @@ interface PoDocApiService {
     @GET("api/articles/{id}/file")
     suspend fun downloadArticleFile(
         @Path("id") id: Int,
-        @Query("inline") inline: Boolean = false
+        @Query("inline") inline: Boolean = false,
+        @Query("variant") variant: String? = null
     ): ResponseBody
 
     // Preview HTML (for DOCX, HTML, TXT, MD)

@@ -161,6 +161,17 @@ data class StorageStats(
 }
 
 @Serializable
+data class VideoVersionInfo(
+    @SerialName("kind") val kind: String,
+    @SerialName("label") val label: String,
+    @SerialName("status") val status: String,
+    @SerialName("file_name") val fileName: String,
+    @SerialName("file_size_bytes") val fileSizeBytes: Long? = null,
+    @SerialName("file_size_formatted") val fileSizeFormatted: String? = null,
+    @SerialName("download_url") val downloadUrl: String? = null
+)
+
+@Serializable
 data class ArticleFileInfo(
     @SerialName("id") val id: Int,
     @SerialName("title") val title: String,
@@ -170,6 +181,10 @@ data class ArticleFileInfo(
     @SerialName("storage_path") val storagePath: String? = null,
     @SerialName("file_size_bytes") val fileSizeBytes: Long? = null,
     @SerialName("file_size_formatted") val fileSizeFormatted: String? = null,
+    @SerialName("video_status") val videoStatus: String? = null,
+    @SerialName("video_queue_position") val videoQueuePosition: Int? = null,
+    @SerialName("video_versions") val videoVersions: List<VideoVersionInfo> = emptyList(),
+    @SerialName("video_saved_percent") val videoSavedPercent: Float? = null,
     @SerialName("mime_type") val mimeType: String? = null,
     @SerialName("content_type") val contentType: String = "file",
     @SerialName("category_id") val categoryId: Int,

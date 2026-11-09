@@ -21,10 +21,12 @@ services:
       port: 10000
       # Decoding 4K/HEVC plus the API needs headroom beyond a 256 MiB container.
       memoryMiB: 1024
-      cpu: 0.5
+      cpu: 2
       healthTimeoutSeconds: 60
 
     envVars:
+      - key: VIDEO_TRANSCODING_THREADS
+        value: "2"
       - key: DATABASE_URL
         fromDatabase:
           name: podoc-db
