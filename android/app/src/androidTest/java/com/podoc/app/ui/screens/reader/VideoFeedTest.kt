@@ -2,6 +2,7 @@ package com.podoc.app.ui.screens.reader
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -12,6 +13,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelStore
@@ -23,6 +26,8 @@ import com.podoc.app.data.model.ArticleListItem
 import com.podoc.app.data.repository.ArticleRepository
 import com.podoc.app.service.MediaPlaybackManager
 import com.podoc.app.service.MediaPlaybackService
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -45,6 +50,9 @@ class VideoFeedTest {
     private val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
     private val store = ViewModelStore()
     private lateinit var viewModel: ReaderViewModel
+    private lateinit var fixtureServer: VideoFixtureServer
+    private lateinit var dataStore: DataStoreManager
+    private lateinit var originalSettings: Triple<String, String, String>
     private val feed = (0..2).map { index ->
         ArticleListItem(
             id = 9_000_001 + index, title = "QA video $index", sourceType = "FILE",
@@ -57,14 +65,21 @@ class VideoFeedTest {
         context.stopService(Intent(context, MediaPlaybackService::class.java))
         compose.waitUntil(5000) { MediaPlaybackManager.currentArticleId.value == null }
         val testContext = InstrumentationRegistry.getInstrumentation().context
-        feed.forEachIndexed { index, item ->
-            val asset = if (index == 1) "landscape.mp4" else "portrait.mp4"
+        val clips = feed.mapIndexed { index, item ->
+            val asset = if (index == 1) "landscape-hd.mp4" else "portrait-hd.mp4"
             testContext.assets.open("video/$asset").use { input ->
-                cachedFile(item).outputStream().use { input.copyTo(it) }
+                item.id to input.readBytes()
             }
+        }.toMap()
+        fixtureServer = VideoFixtureServer(clips)
+        dataStore = DataStoreManager(context)
+        runBlocking {
+            originalSettings = Triple(dataStore.serverUrlFlow.first(), dataStore.authTokenFlow.first(), dataStore.usernameFlow.first())
+            dataStore.saveAuthData(fixtureServer.url, "", "")
         }
-        viewModel = ReaderViewModel(ArticleRepository({ null }, context), DataStoreManager(context))
+        viewModel = ReaderViewModel(ArticleRepository({ null }, context), dataStore)
         store.put("reader", viewModel)
+        compose.waitUntil(5000) { viewModel.getMediaPlaybackSource(context, feed[0]).startsWith(fixtureServer.url) }
         MediaPlaybackManager._isRepeatMode.value = true
     }
 
@@ -78,8 +93,32 @@ class VideoFeedTest {
         context.stopService(Intent(context, MediaPlaybackService::class.java))
         compose.waitUntil(5000) { MediaPlaybackManager.currentArticleId.value == null }
         MediaPlaybackManager._isRepeatMode.value = false
-        feed.forEach { cachedFile(it).delete() }
+        fixtureServer.close()
+        runBlocking { dataStore.saveAuthData(originalSettings.first, originalSettings.second, originalSettings.third) }
         File(context.cacheDir, "feed_qa_audio.wav").delete()
+    }
+
+    @Test fun loadingShowsBlackAndSpinnerUntilRealTextureFrame() {
+        val item = feed.first()
+        fixtureServer.hold(item.id)
+        val thumbnail = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.MAGENTA) }
+        compose.setContent {
+            val state by viewModel.uiState.collectAsState()
+            TikTokVideoFeedViewer(detail(item), state.copy(videoFeed = feed, videoThumbnails = mapOf(item.id to thumbnail)), viewModel, {}, {}, {})
+        }
+        compose.waitUntil(5000) { item.id in fixtureServer.requested }
+        compose.onNodeWithTag("video_loading_${item.id}").assertIsDisplayed()
+        compose.onNodeWithTag("video_shutter_${item.id}", useUnmergedTree = true).assertIsDisplayed()
+        val image = compose.onRoot().captureToImage()
+        val pixel = image.toPixelMap()[image.width / 4, image.height * 45 / 100]
+        assertTrue("Loading must cover the thumbnail with black", pixel.red < 0.03f && pixel.green < 0.03f && pixel.blue < 0.03f)
+        saveProof("video-loading", image.asAndroidBitmap())
+        fixtureServer.release(item.id)
+        waitForVideo(item)
+        assertQuadrants(portrait = true)
+        compose.onNodeWithTag("video_shutter_${item.id}", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithTag("video_loading_${item.id}").assertDoesNotExist()
+        saveProof("video-portrait", compose.onRoot().captureToImage().asAndroidBitmap())
     }
 
     @Test fun swipeBothDirectionsAndCancelledDragKeepPlaybackCorrect() {
@@ -87,6 +126,8 @@ class VideoFeedTest {
         waitForVideo(feed[0])
         compose.onRoot().performTouchInput { swipeUp(durationMillis = 180) }
         waitForVideo(feed[1])
+        assertQuadrants(portrait = false)
+        saveProof("video-landscape", compose.onRoot().captureToImage().asAndroidBitmap())
         compose.onNodeWithText("2 / 3").assertIsDisplayed()
         compose.onRoot().performTouchInput { swipeUp(durationMillis = 180) }
         waitForVideo(feed[2])
@@ -115,13 +156,36 @@ class VideoFeedTest {
         }
     }
 
+    @Test fun reselectingVideoUsesFreshSurfaceAndIgnoresStaleCallbacks() {
+        showFeed(feed.first(), feed)
+        waitForVideo(feed[0])
+        val firstSurface = MediaPlaybackManager.videoSurface!!
+        compose.onRoot().performTouchInput { swipeUp(durationMillis = 100) }
+        waitForVideo(feed[1])
+        val secondSurface = MediaPlaybackManager.videoSurface!!
+        compose.runOnIdle {
+            assertNotSame(firstSurface.surface, secondSurface.surface)
+            MediaPlaybackManager.attachSurface(firstSurface.surface, firstSurface.articleId, firstSurface.generation)
+            MediaPlaybackManager.onSurfaceFrameAvailable(firstSurface.surface, firstSurface.articleId)
+            assertSame(secondSurface, MediaPlaybackManager.videoSurface)
+        }
+        assertQuadrants(portrait = false)
+        compose.onRoot().performTouchInput { swipeDown(durationMillis = 100) }
+        waitForVideo(feed[0])
+        compose.runOnIdle {
+            assertNotSame(firstSurface.surface, MediaPlaybackManager.videoSurface!!.surface)
+            assertEquals(MediaPlaybackManager.playbackGeneration.value, MediaPlaybackManager.videoSurface!!.generation)
+        }
+        assertQuadrants(portrait = true)
+    }
+
     @Test fun lateFeedPreservesOpenedVideoAndNeighbourDisposalKeepsSurface() {
         val loadedFeed = mutableStateOf(emptyList<ArticleListItem>())
         val item = feed[1]
         val initial = detail(item)
         compose.setContent {
             val state by viewModel.uiState.collectAsState()
-            TikTokVideoFeedViewer(initial, state.copy(videoFeed = loadedFeed.value), viewModel, {}, {})
+            TikTokVideoFeedViewer(initial, state.copy(videoFeed = loadedFeed.value), viewModel, {}, {}, {})
         }
         waitForVideo(item)
         compose.runOnIdle { loadedFeed.value = feed }
@@ -169,7 +233,7 @@ class VideoFeedTest {
         val initial = detail(item)
         compose.setContent {
             val state by viewModel.uiState.collectAsState()
-            TikTokVideoFeedViewer(initial, state.copy(videoFeed = items), viewModel, {}, {})
+            TikTokVideoFeedViewer(initial, state.copy(videoFeed = items), viewModel, {}, {}, {})
         }
     }
 
@@ -181,7 +245,33 @@ class VideoFeedTest {
         }
     }
 
-    private fun cachedFile(item: ArticleListItem) = File(context.cacheDir, "podoc_doc_${item.id}_${item.fileName}")
+    private fun saveProof(name: String, bitmap: Bitmap) {
+        val output = InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")
+        val directory = (output?.let { File(it) } ?: File(context.getExternalFilesDir(null), "video-qa")).apply { mkdirs() }
+        File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    private fun assertQuadrants(portrait: Boolean) {
+        val image = compose.onRoot().captureToImage()
+        val pixels = image.toPixelMap()
+        val ratio = if (portrait) 1080f / 1920 else 1920f / 1080
+        val width = minOf(image.width.toFloat(), image.height * ratio)
+        val height = width / ratio
+        val left = (image.width - width) / 2
+        val top = (image.height - height) / 2
+        val expected = listOf(
+            Triple(0.25f, 0.25f, floatArrayOf(0.88f, 0.125f, 0.125f)),
+            Triple(0.75f, 0.25f, floatArrayOf(0.125f, 0.69f, 0.31f)),
+            Triple(0.25f, 0.75f, floatArrayOf(0.125f, 0.31f, 0.82f)),
+            Triple(0.75f, 0.75f, floatArrayOf(0.88f, 0.75f, 0.125f))
+        )
+        expected.forEach { (x, y, rgb) ->
+            val pixel = pixels[(left + x * width).toInt(), (top + y * height).toInt()]
+            assertEquals("red at $x,$y", rgb[0], pixel.red, 0.12f)
+            assertEquals("green at $x,$y", rgb[1], pixel.green, 0.12f)
+            assertEquals("blue at $x,$y", rgb[2], pixel.blue, 0.12f)
+        }
+    }
     private fun detail(item: ArticleListItem) = ArticleDetail(
         id = item.id, title = item.title, categoryId = item.categoryId,
         sourceType = item.sourceType, fileName = item.fileName, mimeType = item.mimeType

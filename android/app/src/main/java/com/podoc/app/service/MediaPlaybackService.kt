@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.SurfaceTexture
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.net.Uri
@@ -70,6 +71,10 @@ object MediaPlaybackManager {
 
     internal val _renderedArticleId = MutableStateFlow<Int?>(null)
     val renderedArticleId: StateFlow<Int?> = _renderedArticleId.asStateFlow()
+    internal val _renderedVideoSurface = MutableStateFlow<VideoSurface?>(null)
+    internal val renderedVideoSurface: StateFlow<VideoSurface?> = _renderedVideoSurface.asStateFlow()
+    internal val _playbackGeneration = MutableStateFlow(0L)
+    val playbackGeneration: StateFlow<Long> = _playbackGeneration.asStateFlow()
     internal val _failedArticleId = MutableStateFlow<Int?>(null)
     val failedArticleId: StateFlow<Int?> = _failedArticleId.asStateFlow()
 
@@ -83,7 +88,7 @@ object MediaPlaybackManager {
         _authToken.value = token
     }
 
-    internal data class VideoSurface(val articleId: Int, val surface: Surface)
+    internal data class VideoSurface(val articleId: Int, val surface: Surface, val generation: Long)
     @Volatile internal var videoSurface: VideoSurface? = null
     @Volatile internal var serviceInstance: MediaPlaybackService? = null
     @Volatile internal var selectedVideoArticleId: Int? = null
@@ -109,22 +114,36 @@ object MediaPlaybackManager {
     }
 
     /** Each page owns its surface; disposing a neighbour must not detach the active page. */
-    fun attachSurface(surface: Surface, articleId: Int) {
+    fun attachSurface(surface: Surface, articleId: Int, generation: Long) {
+        if (articleId != _currentArticleId.value || generation != _playbackGeneration.value) return
         if (videoSurface?.surface === surface && videoSurface?.articleId == articleId) return
-        videoSurface = VideoSurface(articleId, surface)
+        _renderedArticleId.value = null
+        _renderedVideoSurface.value = null
+        videoSurface = VideoSurface(articleId, surface, generation)
         serviceInstance?.refreshSurface()
     }
 
     fun detachSurface(surface: Surface) {
         if (videoSurface?.surface !== surface) return
         videoSurface = null
+        _renderedArticleId.value = null
+        _renderedVideoSurface.value = null
         serviceInstance?.refreshSurface()
     }
 
-    fun releaseSurface(surface: Surface) {
+    fun releaseSurface(surface: Surface, texture: SurfaceTexture? = null) {
         detachSurface(surface)
         val service = serviceInstance
-        if (service != null) service.releaseSurface(surface) else surface.release()
+        if (service != null) service.releaseSurface(surface, texture) else {
+            surface.release()
+            texture?.release()
+        }
+    }
+
+    fun onSurfaceFrameAvailable(surface: Surface, articleId: Int) {
+        if (_renderedVideoSurface.value?.surface !== surface) {
+            serviceInstance?.onSurfaceFrameAvailable(surface, articleId)
+        }
     }
 
     fun selectVideo(articleId: Int) {
@@ -245,6 +264,7 @@ class MediaPlaybackService : Service() {
     private var playWhenReady = true
     private var activeFilePath: String? = null
     private var boundSurface: Surface? = null
+    private var videoRenderingStarted = false
     // MediaPlayer creation, callbacks and every access stay on this Looper.
     private val playerThread = HandlerThread("PoDocPlayback").apply { start() }
     private val playerHandler = Handler(playerThread.looper)
@@ -421,13 +441,22 @@ class MediaPlaybackService : Service() {
         MediaPlaybackManager._duration.value = 0
         MediaPlaybackManager._videoSize.value = 0 to 0
         MediaPlaybackManager._renderedArticleId.value = null
+        MediaPlaybackManager._renderedVideoSurface.value = null
+        MediaPlaybackManager._playbackGeneration.value += 1
         MediaPlaybackManager._failedArticleId.value = null
         MediaPlaybackManager._isBuffering.value = true
         activePrepared = false
         playWhenReady = true
         activeFilePath = filePath
+        videoRenderingStarted = false
         try {
-            mediaPlayer?.release()
+            val previous = mediaPlayer
+            mediaPlayer = null
+            try {
+                previous?.setSurface(null)
+            } finally {
+                previous?.release()
+            }
             boundSurface = null
             if (preloadedFilePath == filePath && preloadedPlayer != null) {
                 mediaPlayer = preloadedPlayer
@@ -490,8 +519,7 @@ class MediaPlaybackService : Service() {
                 if (source === mediaPlayer) {
                     when (what) {
                         MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START -> {
-                            MediaPlaybackManager._renderedArticleId.value = MediaPlaybackManager._currentArticleId.value
-                            MediaPlaybackManager._isBuffering.value = false
+                            videoRenderingStarted = true
                         }
                         MediaPlayer.MEDIA_INFO_BUFFERING_START -> {
                             MediaPlaybackManager._isBuffering.value = true
@@ -535,11 +563,12 @@ class MediaPlaybackService : Service() {
         MediaPlaybackManager._videoSize.value = player.videoWidth to player.videoHeight
         MediaPlaybackManager._duration.value = player.duration
         refreshSurfaceOnPlayerThread()
-        if (playWhenReady) player.start()
-        MediaPlaybackManager._isPlaying.value = playWhenReady
+        val canStart = playWhenReady && (!MediaPlaybackManager._isVideoMode.value || boundSurface != null)
+        if (canStart) player.start()
+        MediaPlaybackManager._isPlaying.value = canStart
         updateMetadata(MediaPlaybackManager._currentTitle.value, player.duration.toLong())
-        updatePlaybackState(player.currentPosition, playWhenReady)
-        updateNotification(MediaPlaybackManager._currentTitle.value, playWhenReady)
+        updatePlaybackState(player.currentPosition, canStart)
+        updateNotification(MediaPlaybackManager._currentTitle.value, canStart)
         startProgressTracker()
     }
 
@@ -550,6 +579,7 @@ class MediaPlaybackService : Service() {
         playWhenReady = false
         MediaPlaybackManager._isPlaying.value = false
         MediaPlaybackManager._renderedArticleId.value = null
+        MediaPlaybackManager._renderedVideoSurface.value = null
         MediaPlaybackManager._failedArticleId.value = MediaPlaybackManager._currentArticleId.value
         updatePlaybackState(0, false)
         updateNotification(MediaPlaybackManager._currentTitle.value, false)
@@ -580,12 +610,36 @@ class MediaPlaybackService : Service() {
     }
 
     fun refreshSurface() {
-        playerHandler.post { refreshSurfaceOnPlayerThread() }
+        playerHandler.post {
+            refreshSurfaceOnPlayerThread()
+            // Start a new video only after its own output exists. Audio-only
+            // playback and audio continuing in the background remain independent.
+            if (activePrepared && playWhenReady && boundSurface != null && mediaPlayer?.isPlaying == false) {
+                startPreparedPlayer()
+            }
+        }
+    }
+
+    fun onSurfaceFrameAvailable(surface: Surface, articleId: Int) {
+        playerHandler.post {
+            val size = MediaPlaybackManager._videoSize.value
+            val target = MediaPlaybackManager.videoSurface
+            if (videoRenderingStarted && activePrepared && surface === boundSurface &&
+                target != null && target.surface === surface &&
+                target.generation == MediaPlaybackManager._playbackGeneration.value &&
+                MediaPlaybackManager._currentArticleId.value == articleId &&
+                MediaPlaybackManager.selectedVideoArticleId == articleId &&
+                size.first > 0 && size.second > 0) {
+                MediaPlaybackManager._renderedVideoSurface.value = target
+                MediaPlaybackManager._renderedArticleId.value = articleId
+            }
+        }
     }
 
     private fun refreshSurfaceOnPlayerThread() {
         val target = MediaPlaybackManager.videoSurface?.takeIf {
-            it.articleId == MediaPlaybackManager._currentArticleId.value && it.surface.isValid
+            it.articleId == MediaPlaybackManager._currentArticleId.value &&
+                it.generation == MediaPlaybackManager._playbackGeneration.value && it.surface.isValid
         }?.surface
         if (target === boundSurface) return
         try {
@@ -596,7 +650,7 @@ class MediaPlaybackService : Service() {
         }
     }
 
-    fun releaseSurface(surface: Surface) {
+    fun releaseSurface(surface: Surface, texture: SurfaceTexture? = null) {
         playerHandler.post {
             try {
                 if (boundSurface === surface) {
@@ -607,6 +661,7 @@ class MediaPlaybackService : Service() {
                 Log.w(TAG, "Lỗi gỡ surface: ${e.message}")
             } finally {
                 surface.release()
+                texture?.release()
             }
         }
     }
@@ -687,6 +742,7 @@ class MediaPlaybackService : Service() {
             MediaPlaybackManager._currentArticleId.value = null
             MediaPlaybackManager._currentFilePath.value = null
             MediaPlaybackManager._renderedArticleId.value = null
+            MediaPlaybackManager._renderedVideoSurface.value = null
             MediaPlaybackManager._failedArticleId.value = null
             MediaPlaybackManager._currentPosition.value = 0
             MediaPlaybackManager._duration.value = 0

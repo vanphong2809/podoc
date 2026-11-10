@@ -46,6 +46,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -55,6 +56,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import com.podoc.app.ui.components.formatArticleDate
@@ -1924,9 +1926,9 @@ internal fun TikTokVideoFeedViewer(
     val context = LocalContext.current
     val isPlaying by MediaPlaybackManager.isPlaying.collectAsState()
     val isRepeatMode by MediaPlaybackManager.isRepeatMode.collectAsState()
-    val videoSize by MediaPlaybackManager.videoSize.collectAsState()
+    val playbackGeneration by MediaPlaybackManager.playbackGeneration.collectAsState()
     val currentPlayingArticleId by MediaPlaybackManager.currentArticleId.collectAsState()
-    val renderedArticleId by MediaPlaybackManager.renderedArticleId.collectAsState()
+    val renderedVideoSurface by MediaPlaybackManager.renderedVideoSurface.collectAsState()
     val failedArticleId by MediaPlaybackManager.failedArticleId.collectAsState()
     val isBuffering by MediaPlaybackManager.isBuffering.collectAsState()
 
@@ -2081,6 +2083,9 @@ internal fun TikTokVideoFeedViewer(
             val item = feedList[pageIndex]
             val isCurrentPage = (pageIndex == pagerState.currentPage)
             val isThisVideoActive = (currentPlayingArticleId == item.id)
+            val hasVideoFrame = isThisVideoActive && renderedVideoSurface?.articleId == item.id &&
+                renderedVideoSurface?.generation == playbackGeneration &&
+                renderedVideoSurface?.surface === MediaPlaybackManager.videoSurface?.surface
             val pageError = if (failedArticleId == item.id) "Không thể phát video. Chạm để thử lại." else videoLoadError
             Box(
                 modifier = Modifier
@@ -2098,56 +2103,19 @@ internal fun TikTokVideoFeedViewer(
                     },
                 contentAlignment = Alignment.Center
             ) {
-                // Tỉ lệ khung hình chuẩn được lấy trực tiếp từ cache ViewModel (zero disk I/O)
-                val nativeVideoRatio = uiState.videoAspectRatios[item.id]
-                    ?: if (isThisVideoActive && videoSize.first > 0 && videoSize.second > 0) {
-                        videoSize.first.toFloat() / videoSize.second.toFloat()
-                    } else {
-                        16f / 9f
-                    }
-
-                BoxWithConstraints(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    val containerWidth = maxWidth.value
-                    val containerHeight = maxHeight.value
-                    val containerRatio = if (containerHeight > 0f) containerWidth / containerHeight else 1f
-
-                    val surfaceModifier = if (nativeVideoRatio > containerRatio) {
-                        Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(nativeVideoRatio)
-                    } else {
-                        Modifier
-                            .fillMaxHeight()
-                            .aspectRatio(nativeVideoRatio)
-                    }
-
+                Box(Modifier.fillMaxSize().clipToBounds()) {
+                    // Keep the output viewport stable while the next decoder
+                    // discovers its dimensions. TextureView fits the content.
                     FeedVideoSurface(
                         articleId = item.id,
                         isActive = isThisVideoActive,
-                        modifier = surfaceModifier
+                        playbackGeneration = playbackGeneration,
+                        modifier = Modifier.fillMaxSize()
                     )
 
-                    // Keep the cover ABOVE the texture until this player renders its first frame.
-                    if (!isThisVideoActive || renderedArticleId != item.id) {
-                        val thumbnail = uiState.videoThumbnails[item.id]
-                        if (thumbnail != null) {
-                            Image(
-                                bitmap = thumbnail.asImageBitmap(),
-                                contentDescription = null,
-                                contentScale = ContentScale.Fit,
-                                modifier = surfaceModifier
-                            )
-                        } else {
-                            AsyncImage(
-                                model = item.imageUrl,
-                                contentDescription = null,
-                                contentScale = ContentScale.Fit,
-                                modifier = surfaceModifier
-                            )
-                        }
+                    // No thumbnail: cover stale/unpresented buffers with black.
+                    if (!hasVideoFrame) {
+                        Box(Modifier.fillMaxSize().background(Color.Black).testTag("video_shutter_${item.id}"))
                     }
                 }
 
@@ -2160,7 +2128,7 @@ internal fun TikTokVideoFeedViewer(
                             .clickable { retryCount++ }
                             .padding(16.dp)
                     )
-                } else if (isCurrentPage && isThisVideoActive && isBuffering && renderedArticleId != item.id) {
+                } else if (isCurrentPage && (!hasVideoFrame || isBuffering)) {
                     Box(
                         modifier = Modifier
                             .size(56.dp)
@@ -2169,7 +2137,7 @@ internal fun TikTokVideoFeedViewer(
                         contentAlignment = Alignment.Center
                     ) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(32.dp),
+                            modifier = Modifier.size(32.dp).testTag("video_loading_${item.id}"),
                             color = Color.White,
                             strokeWidth = 3.dp
                         )
