@@ -7,6 +7,8 @@ import android.view.Surface
 import android.view.TextureView
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.podoc.app.service.MediaPlaybackManager
@@ -14,11 +16,13 @@ import com.podoc.app.service.MediaPlaybackManager
 /** A texture participates in the pager's normal composition, clipping and movement. */
 @Composable
 internal fun FeedVideoSurface(articleId: Int, isActive: Boolean, playbackGeneration: Long, modifier: Modifier = Modifier) {
-    // A newly selected player must never inherit a previously queued texture.
-    key(articleId, isActive, if (isActive) playbackGeneration else 0L) {
+    val sizes by MediaPlaybackManager.surfaceVideoSizes.collectAsState()
+    // A surface belongs to one article. Keep its decoded first frame across
+    // activation; buffers are never transferred to a different article.
+    key(articleId) {
         AndroidView(
             factory = { FeedTextureView(it) },
-            update = { it.bind(if (isActive) articleId else null, playbackGeneration) },
+            update = { it.bind(articleId, isActive, playbackGeneration, sizes[articleId] ?: (0 to 0)) },
             onRelease = { it.dispose() },
             modifier = modifier
         )
@@ -29,6 +33,8 @@ private class FeedTextureView(context: Context) : TextureView(context), TextureV
     private var output: Surface? = null
     private var articleId: Int? = null
     private var generation = 0L
+    private var active = false
+    private var videoSize = 0 to 0
     private var retiredTexture: SurfaceTexture? = null
     private val videoTransform = Matrix()
     private var fittedSize = listOf(0, 0, 0, 0)
@@ -38,20 +44,21 @@ private class FeedTextureView(context: Context) : TextureView(context), TextureV
         surfaceTextureListener = this
     }
 
-    fun bind(id: Int?, playbackGeneration: Long) {
+    fun bind(id: Int?, isActive: Boolean, playbackGeneration: Long, size: Pair<Int, Int>) {
         articleId = id
+        active = isActive
         generation = playbackGeneration
-        keepScreenOn = id != null
+        videoSize = size
+        keepScreenOn = isActive
         output?.let { surface ->
-            if (id != null) MediaPlaybackManager.attachSurface(surface, id, generation)
-            else MediaPlaybackManager.detachSurface(surface)
+            if (id != null) MediaPlaybackManager.registerSurface(surface, id, isActive, generation)
         }
         fitVideo()
     }
 
     override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) {
         output = Surface(texture)
-        bind(articleId, generation)
+        bind(articleId, active, generation, videoSize)
     }
 
     override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, width: Int, height: Int) {
@@ -67,9 +74,7 @@ private class FeedTextureView(context: Context) : TextureView(context), TextureV
     }
 
     private fun fitVideo() {
-        if (articleId != MediaPlaybackManager.currentArticleId.value ||
-            generation != MediaPlaybackManager.playbackGeneration.value) return
-        val (videoWidth, videoHeight) = MediaPlaybackManager.videoSize.value
+        val (videoWidth, videoHeight) = videoSize
         if (width <= 0 || height <= 0 || videoWidth <= 0 || videoHeight <= 0) return
         val size = listOf(width, height, videoWidth, videoHeight)
         if (size == fittedSize) return

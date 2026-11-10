@@ -4,6 +4,25 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
+data class VideoPlaybackRequest(val ids: List<Int>)
+
+@Serializable
+data class VideoPlaybackSource(
+    val id: Int,
+    val variant: String,
+    val revision: String,
+    val url: String,
+    @SerialName("file_size_bytes") val fileSizeBytes: Long,
+    @SerialName("mime_type") val mimeType: String
+)
+
+@Serializable
+data class VideoPlaybackResponse(
+    val items: List<VideoPlaybackSource>,
+    @SerialName("unavailable_ids") val unavailableIds: List<Int> = emptyList()
+)
+
+@Serializable
 data class ExtractUrlRequest(
     @SerialName("url") val url: String
 )

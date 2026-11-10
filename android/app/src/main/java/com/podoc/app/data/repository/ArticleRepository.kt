@@ -68,6 +68,16 @@ class ArticleRepository(
     private fun getApi(): PoDocApiService =
         apiServiceProvider() ?: throw IllegalStateException("Chưa kết nối tới máy chủ API")
 
+    suspend fun getVideoPlaybackSources(ids: List<Int>): VideoPlaybackResponse = withContext(Dispatchers.IO) {
+        try {
+            kotlinx.coroutines.withTimeout(15_000) {
+                getApi().getVideoPlaybackSources(VideoPlaybackRequest(ids.distinct().take(11)))
+            }
+        } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+            throw IOException("Không thể lấy nguồn video. Kiểm tra kết nối và thử lại.")
+        }
+    }
+
     private fun resolveImageUrl(url: String?): String? {
         if (url.isNullOrBlank()) return null
         if (url.startsWith("http://") || url.startsWith("https://")) return url

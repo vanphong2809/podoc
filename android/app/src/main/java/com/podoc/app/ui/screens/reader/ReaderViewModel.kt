@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package com.podoc.app.ui.screens.reader
 
 import android.content.Context
@@ -9,8 +11,12 @@ import androidx.lifecycle.viewModelScope
 import com.podoc.app.data.local.DataStoreManager
 import com.podoc.app.data.model.ArticleDetail
 import com.podoc.app.data.model.ArticleListItem
+import com.podoc.app.data.model.VideoPlaybackSource
 import com.podoc.app.data.repository.ArticleRepository
 import com.podoc.app.service.MediaPlaybackManager
+import com.podoc.app.service.VideoCacheStore
+import com.podoc.app.service.VideoFeedPreloader
+import com.podoc.app.service.VideoPreloadPolicy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -42,6 +48,10 @@ data class ReaderUiState(
     // TikTok Video Feed states
     val videoFeed: List<ArticleListItem> = emptyList(),
     val currentVideoIndex: Int = 0,
+    val isVideoFeedLoading: Boolean = false,
+    val isPreparingVideoWindow: Boolean = false,
+    val videoPreparationReady: Int = 0,
+    val videoPreparationTotal: Int = 0,
     val videoFilesCache: Map<Int, File> = emptyMap(),
     val videoAspectRatios: Map<Int, Float> = emptyMap(),
     val videoThumbnails: Map<Int, android.graphics.Bitmap> = emptyMap(),
@@ -66,6 +76,13 @@ class ReaderViewModel(
 
     private var currentServerUrl: String = ""
     private var currentAuthToken: String = ""
+    private var feedPreloader: VideoFeedPreloader? = null
+    private var feedCacheScope = ""
+    private val videoSources = mutableMapOf<Int, VideoPlaybackSource>()
+    private val videoSourcesCheckedAt = mutableMapOf<Int, Long>()
+    private var windowUpdateJob: Job? = null
+    private var windowSerial = 0
+    private var lastVideoRetry = 0
 
     init {
         viewModelScope.launch {
@@ -82,6 +99,7 @@ class ReaderViewModel(
             dataStoreManager.authTokenFlow.collect { token ->
                 currentAuthToken = token
                 MediaPlaybackManager.setAuthToken(token.takeIf { it.isNotBlank() })
+                feedPreloader?.takeUnless { it.isClosed }?.updateAuth(token)
             }
         }
     }
@@ -368,6 +386,7 @@ class ReaderViewModel(
      * Tải danh sách video feed cho chế độ lướt TikTok
      */
     fun loadVideoFeed(currentArticleId: Int, categoryId: Int?, context: Context) {
+        _uiState.value = _uiState.value.copy(isVideoFeedLoading = true)
         viewModelScope.launch {
             // Tải video từ danh mục hiện tại nếu có
             val categoryVideos = if (categoryId != null && categoryId > 0) {
@@ -406,11 +425,9 @@ class ReaderViewModel(
 
             _uiState.value = _uiState.value.copy(
                 videoFeed = finalFeed,
-                currentVideoIndex = startIndex
+                currentVideoIndex = startIndex,
+                isVideoFeedLoading = false
             )
-
-            // Preload video kế tiếp qua HTTP URL stream mà không tải toàn bộ file
-            preloadVideo(startIndex + 1, finalFeed, context)
         }
     }
 
@@ -422,10 +439,83 @@ class ReaderViewModel(
         return "$base/api/articles/${item.id}/file?inline=true$tokenParam"
     }
 
-    fun preloadVideo(index: Int, feed: List<ArticleListItem>, context: Context) {
-        if (index !in feed.indices) return
-        val source = getMediaPlaybackSource(context, feed[index])
-        MediaPlaybackManager.preloadNext(source)
+    suspend fun prepareVideoWindow(
+        context: Context, feed: List<ArticleListItem>, index: Int, waitForStartup: Boolean, retry: Int
+    ): String = withContext(Dispatchers.Main.immediate) {
+        val indices = VideoPreloadPolicy.window(feed.size, index)
+        require(!indices.isEmpty())
+        val ids = indices.map { feed[it].id }
+        if (waitForStartup) _uiState.value = _uiState.value.copy(
+            isPreparingVideoWindow = true, videoPreparationReady = 0, videoPreparationTotal = ids.size)
+        try {
+            val server = dataStoreManager.serverUrlFlow.first().trimEnd('/')
+            val username = dataStoreManager.usernameFlow.first()
+            val token = dataStoreManager.authTokenFlow.first()
+            MediaPlaybackManager.setAuthToken(token.takeIf { it.isNotBlank() })
+            val account = VideoCacheStore.namespace(server, username)
+            if (account != feedCacheScope || retry != lastVideoRetry || feedPreloader?.isClosed == true) {
+                feedPreloader?.close()
+                feedPreloader = null
+                videoSources.clear()
+                videoSourcesCheckedAt.clear()
+                feedCacheScope = account
+            }
+            lastVideoRetry = retry
+            val controller = feedPreloader ?: VideoFeedPreloader(context.applicationContext, server, username,
+                token, VideoCacheStore.get(context)) { progress ->
+                if (_uiState.value.isPreparingVideoWindow) _uiState.value = _uiState.value.copy(
+                    videoPreparationReady = progress.ready, videoPreparationTotal = progress.total)
+            }.also { feedPreloader = it }
+            controller.updateAuth(token)
+            MediaPlaybackManager.videoFeedPreloader = controller
+            if (waitForStartup) controller.beginStartup()
+            val serial = ++windowSerial
+            windowUpdateJob?.cancel()
+            val now = android.os.SystemClock.elapsedRealtime()
+            val unknown = ids.filter { it !in videoSources || now - (videoSourcesCheckedAt[it] ?: 0L) > 30_000 }
+            fun publish() {
+                controller.updateWindow(indices.mapNotNull { position ->
+                    videoSources[feed[position].id]?.let { position to it }
+                }, index)
+            }
+            if (waitForStartup || feed[index].id !in videoSources) {
+                if (unknown.isNotEmpty()) {
+                    val response = articleRepository.getVideoPlaybackSources(unknown)
+                    response.items.forEach { videoSources[it.id] = it; videoSourcesCheckedAt[it.id] = now }
+                }
+                check(feed[index].id in videoSources) { "Video không còn khả dụng. Vui lòng tải lại danh sách." }
+                publish()
+            } else {
+                // A newly exposed far neighbour never delays switching to an already cached video.
+                publish()
+                if (unknown.isNotEmpty()) windowUpdateJob = viewModelScope.launch {
+                    try {
+                        val response = articleRepository.getVideoPlaybackSources(unknown)
+                        response.items.forEach { videoSources[it.id] = it; videoSourcesCheckedAt[it.id] = now }
+                        if (windowSerial == serial && !controller.isClosed) publish()
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { /* Retry the missing neighbour on the next move. */ }
+                }
+            }
+            if (waitForStartup) controller.awaitStartup()
+            controller.url(feed[index].id) ?: error("Không tìm thấy nguồn phát video")
+        } catch (e: Exception) {
+            if (waitForStartup && e !is CancellationException) {
+                feedPreloader?.close()
+                if (MediaPlaybackManager.videoFeedPreloader === feedPreloader) MediaPlaybackManager.videoFeedPreloader = null
+            }
+            throw e
+        } finally {
+            if (waitForStartup) _uiState.value = _uiState.value.copy(isPreparingVideoWindow = false)
+        }
+    }
+
+    fun predictVideo(index: Int) { feedPreloader?.takeUnless { it.isClosed }?.predict(index) }
+
+    override fun onCleared() {
+        if (MediaPlaybackManager.videoFeedPreloader === feedPreloader) MediaPlaybackManager.videoFeedPreloader = null
+        feedPreloader?.close()
+        super.onCleared()
     }
 
     fun getVideoFile(context: Context, item: ArticleListItem, onReady: (File) -> Unit) {

@@ -1938,6 +1938,7 @@ internal fun TikTokVideoFeedViewer(
     var videoLoadError by remember { mutableStateOf<String?>(null) }
     var retryCount by remember { mutableIntStateOf(0) }
     var autoPausedArticleId by remember { mutableStateOf<Int?>(null) }
+    var initialWindowPrepared by remember(initialArticle.id) { mutableStateOf(false) }
 
     // Tự động tắt gợi ý vuốt sau 3 giây
     LaunchedEffect(Unit) {
@@ -1999,7 +2000,7 @@ internal fun TikTokVideoFeedViewer(
             feedInitialized = true
         }
     }
-    val isFeedReady = uiState.videoFeed.isEmpty() || feedInitialized
+    val isFeedReady = !uiState.isVideoFeedLoading && (uiState.videoFeed.isEmpty() || feedInitialized)
     val flingBehavior = PagerDefaults.flingBehavior(
         state = pagerState,
         snapAnimationSpec = spring(
@@ -2020,6 +2021,11 @@ internal fun TikTokVideoFeedViewer(
                 MediaPlaybackManager.selectVideo(item.id)
                 if (MediaPlaybackManager.currentArticleId.value == item.id &&
                     MediaPlaybackManager.failedArticleId.value != item.id) {
+                    try {
+                        viewModel.prepareVideoWindow(context, feedList, pageIndex, !initialWindowPrepared, retryCount)
+                        initialWindowPrepared = true
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (e: Exception) { videoLoadError = "Không thể chuẩn bị video. Chạm để thử lại."; return@collectLatest }
                     if (autoPausedArticleId == item.id) {
                         MediaPlaybackManager.resume(context)
                         autoPausedArticleId = null
@@ -2032,7 +2038,8 @@ internal fun TikTokVideoFeedViewer(
                 }
                 MediaPlaybackManager.pauseDirect()
                 try {
-                    val mediaSource = viewModel.getMediaPlaybackSource(context, item)
+                    val mediaSource = viewModel.prepareVideoWindow(context, feedList, pageIndex, !initialWindowPrepared, retryCount)
+                    initialWindowPrepared = true
                     MediaPlaybackManager.startPlay(context, mediaSource, item.title, item.id, true)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -2042,24 +2049,13 @@ internal fun TikTokVideoFeedViewer(
             }
     }
 
-    // Decoder prefetch: chỉ chuẩn bị video kế tiếp trong nền qua HTTP/Stream mà không tải tệp thô
+    // Prioritize the predicted target during the drag; the window is replenished on every settled page.
     LaunchedEffect(pagerState, feedList, isFeedReady, currentPlayingArticleId) {
         if (!isFeedReady) return@LaunchedEffect
         snapshotFlow { Triple(pagerState.settledPage, pagerState.targetPage, pagerState.isScrollInProgress) }
             .collectLatest { (settled, target, scrolling) ->
-                val predicted = if (scrolling && target != settled) target else settled + 1
-                val canPrepare = scrolling || currentPlayingArticleId == feedList.getOrNull(settled)?.id
-                if (canPrepare && predicted in feedList.indices) {
-                    try {
-                        val nextItem = feedList[predicted]
-                        val nextSource = viewModel.getMediaPlaybackSource(context, nextItem)
-                        MediaPlaybackManager.preloadNext(nextSource)
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        // Playback reports a retry if the selected file cannot be loaded.
-                    }
-                }
+                val predicted = if (scrolling && target != settled) target else settled
+                if (predicted in feedList.indices) viewModel.predictVideo(predicted)
             }
     }
 
@@ -2075,6 +2071,7 @@ internal fun TikTokVideoFeedViewer(
         VerticalPager(
             state = pagerState,
             beyondViewportPageCount = 1,
+            userScrollEnabled = initialWindowPrepared,
             flingBehavior = flingBehavior,
             key = { index -> if (index in feedList.indices) feedList[index].id else index },
             modifier = Modifier.fillMaxSize()
@@ -2082,7 +2079,7 @@ internal fun TikTokVideoFeedViewer(
             val item = feedList[pageIndex]
             val isCurrentPage = (pageIndex == pagerState.currentPage)
             val isThisVideoActive = (currentPlayingArticleId == item.id)
-            val hasVideoFrame = isThisVideoActive && renderedVideoSurface?.articleId == item.id &&
+            val hasVideoFrame = initialWindowPrepared && isThisVideoActive && renderedVideoSurface?.articleId == item.id &&
                 renderedVideoSurface?.generation == playbackGeneration &&
                 renderedVideoSurface?.surface === MediaPlaybackManager.videoSurface?.surface
             val pageError = if (failedArticleId == item.id) "Không thể phát video. Chạm để thử lại." else videoLoadError
@@ -2143,6 +2140,15 @@ internal fun TikTokVideoFeedViewer(
                             strokeWidth = 3.dp
                         )
                     }
+                }
+
+                if (isCurrentPage && !initialWindowPrepared && pageError == null) {
+                    val total = uiState.videoPreparationTotal
+                    Text(
+                        text = if (total > 0) "Đang chuẩn bị video (${uiState.videoPreparationReady}/$total)" else "Đang chuẩn bị video…",
+                        color = Color.White,
+                        modifier = Modifier.align(Alignment.Center).padding(top = 96.dp).testTag("video_preparation")
+                    )
                 }
 
                 // 2. Icon Play to tròn ở trung tâm màn hình CHỈ KHI người dùng chủ động chạm tạm dừng (chuẩn TikTok)

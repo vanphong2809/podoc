@@ -13,3 +13,9 @@ FFmpeg generated four solid quadrants (red/green/blue/yellow); screenshot
 assertions verify their position after portrait/landscape switches so a stale,
 stretched or scrambled output fails the test. A local HTTP server supports Range
 and can hold a response to verify the black loading screen without thumbnails.
+
+`prefetch-long.mp4` is a 20-second synthetic 640×360 test pattern at 30 fps,
+H.264 CBR 2.5 Mbps, without audio (about 6.5 MB). The window tests verify that a
+far neighbour caches only its opening and downloads less than half this file.
+All HTTP fixtures require an Authorization header, expose batch source metadata,
+and count Range requests/bytes to detect downloads repeated despite caching.

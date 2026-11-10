@@ -1,6 +1,12 @@
+@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package com.podoc.app.data.local
 
 import android.content.Context
+import com.podoc.app.service.MediaPlaybackManager
+import com.podoc.app.service.VideoCacheStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -110,5 +116,11 @@ class DataStoreManager(private val context: Context) {
             preferences.remove(AUTH_TOKEN)
             preferences.remove(USERNAME)
         }
+        withContext(Dispatchers.Main.immediate) {
+            MediaPlaybackManager.serviceInstance?.stopForLogout()
+            MediaPlaybackManager.videoFeedPreloader?.close()
+            MediaPlaybackManager.videoFeedPreloader = null
+        }
+        VideoCacheStore.clear(context)
     }
 }

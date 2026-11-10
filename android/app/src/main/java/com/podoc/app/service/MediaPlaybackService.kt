@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package com.podoc.app.service
 
 import android.app.Notification
@@ -9,24 +11,31 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.SurfaceTexture
-import android.media.AudioAttributes
-import android.media.MediaPlayer
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
-import android.os.HandlerThread
+import android.os.Looper
 import android.os.IBinder
-import android.os.PowerManager
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
 import android.view.Surface
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.LoadControl
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.core.app.NotificationCompat
 import androidx.media.app.NotificationCompat.MediaStyle
 import com.podoc.app.MainActivity
 import kotlinx.coroutines.*
-import kotlinx.coroutines.android.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -75,6 +84,8 @@ object MediaPlaybackManager {
     internal val renderedVideoSurface: StateFlow<VideoSurface?> = _renderedVideoSurface.asStateFlow()
     internal val _playbackGeneration = MutableStateFlow(0L)
     val playbackGeneration: StateFlow<Long> = _playbackGeneration.asStateFlow()
+    internal val _firstFrameLatencyMs = MutableStateFlow<Long?>(null)
+    val firstFrameLatencyMs: StateFlow<Long?> = _firstFrameLatencyMs.asStateFlow()
     internal val _failedArticleId = MutableStateFlow<Int?>(null)
     val failedArticleId: StateFlow<Int?> = _failedArticleId.asStateFlow()
 
@@ -90,8 +101,24 @@ object MediaPlaybackManager {
 
     internal data class VideoSurface(val articleId: Int, val surface: Surface, val generation: Long)
     @Volatile internal var videoSurface: VideoSurface? = null
+    private val surfaces = mutableMapOf<Int, Surface>()
+    private val _surfaceVideoSizes = MutableStateFlow<Map<Int, Pair<Int, Int>>>(emptyMap())
+    internal val surfaceVideoSizes: StateFlow<Map<Int, Pair<Int, Int>>> = _surfaceVideoSizes.asStateFlow()
+    internal fun surfaceFor(id: Int): Surface? = surfaces[id]?.takeIf { it.isValid }
+    internal fun setSurfaceSize(id: Int, size: Pair<Int, Int>) {
+        _surfaceVideoSizes.value = _surfaceVideoSizes.value + (id to size)
+    }
+    internal fun registerSurface(surface: Surface, id: Int, active: Boolean, generation: Long) {
+        surfaces[id] = surface
+        if (id == _currentArticleId.value && id !in _surfaceVideoSizes.value) setSurfaceSize(id, _videoSize.value)
+        if (active) attachSurface(surface, id, generation)
+        else if (id != _currentArticleId.value) detachSurface(surface)
+        serviceInstance?.warmNextVideo()
+    }
+    @Volatile internal var videoFeedPreloader: VideoFeedPreloader? = null
     @Volatile internal var serviceInstance: MediaPlaybackService? = null
     @Volatile internal var selectedVideoArticleId: Int? = null
+    @Volatile internal var selectedVideoAtMs: Long = 0
 
     /**
      * Bật / tắt chế độ lặp lại (Loop / Repeat)
@@ -116,7 +143,7 @@ object MediaPlaybackManager {
     /** Each page owns its surface; disposing a neighbour must not detach the active page. */
     fun attachSurface(surface: Surface, articleId: Int, generation: Long) {
         if (articleId != _currentArticleId.value || generation != _playbackGeneration.value) return
-        if (videoSurface?.surface === surface && videoSurface?.articleId == articleId) return
+        if (videoSurface?.surface === surface && videoSurface?.articleId == articleId && videoSurface?.generation == generation) return
         _renderedArticleId.value = null
         _renderedVideoSurface.value = null
         videoSurface = VideoSurface(articleId, surface, generation)
@@ -132,6 +159,9 @@ object MediaPlaybackManager {
     }
 
     fun releaseSurface(surface: Surface, texture: SurfaceTexture? = null) {
+        val removed = surfaces.filterValues { it === surface }.keys
+        removed.forEach { surfaces.remove(it) }
+        _surfaceVideoSizes.value = _surfaceVideoSizes.value - removed
         detachSurface(surface)
         val service = serviceInstance
         if (service != null) service.releaseSurface(surface, texture) else {
@@ -147,6 +177,10 @@ object MediaPlaybackManager {
     }
 
     fun selectVideo(articleId: Int) {
+        if (selectedVideoArticleId != articleId || _currentArticleId.value == null || _failedArticleId.value == articleId) {
+            selectedVideoAtMs = android.os.SystemClock.elapsedRealtime()
+            _firstFrameLatencyMs.value = null
+        }
         selectedVideoArticleId = articleId
     }
 
@@ -173,13 +207,6 @@ object MediaPlaybackManager {
         } else {
             context.startService(intent)
         }
-    }
-
-    /**
-     * Chuẩn bị sẵn (pre-prepare) MediaPlayer cho video kế tiếp trong nền
-     */
-    fun preloadNext(filePath: String) {
-        serviceInstance?.preloadNext(filePath)
     }
 
     fun togglePlayPause(context: Context) {
@@ -235,7 +262,6 @@ object MediaPlaybackManager {
  * và duy trì phát nền WakeLock khi tắt màn hình.
  */
 class MediaPlaybackService : Service() {
-
     companion object {
         const val ACTION_START = "com.podoc.app.action.START"
         const val ACTION_PLAY = "com.podoc.app.action.PLAY"
@@ -244,129 +270,68 @@ class MediaPlaybackService : Service() {
         const val ACTION_SEEK = "com.podoc.app.action.SEEK"
         const val ACTION_STOP = "com.podoc.app.action.STOP"
         const val ACTION_REPLAY = "com.podoc.app.action.REPLAY"
-
         const val EXTRA_FILE_PATH = "file_path"
         const val EXTRA_TITLE = "title"
         const val EXTRA_ARTICLE_ID = "article_id"
         const val EXTRA_IS_VIDEO = "is_video"
         const val EXTRA_SEEK_POS = "seek_pos"
-
         private const val CHANNEL_ID = "podoc_media_playback"
         private const val NOTIFICATION_ID = 2026
         private const val TAG = "MediaPlaybackService"
     }
 
-    private var mediaPlayer: MediaPlayer? = null
-    private var preloadedPlayer: MediaPlayer? = null
-    private var preloadedFilePath: String? = null
-    private var preloadedPrepared = false
+    @Volatile private var mediaPlayer: ExoPlayer? = null
+    private var warmPlayer: ExoPlayer? = null
+    private var warmId: Int? = null
+    private var warmPath: String? = null
+    private var warmSurface: Surface? = null
+    private var warmOwner: VideoFeedPreloader? = null
+    private var warmRenderingStarted = false
+    private var warmTextureSeen = false
+    private var activeTextureSeen = false
+    private var playerOwner: VideoFeedPreloader? = null
     private var activePrepared = false
     private var playWhenReady = true
     private var activeFilePath: String? = null
     private var boundSurface: Surface? = null
     private var videoRenderingStarted = false
-    // MediaPlayer creation, callbacks and every access stay on this Looper.
-    private val playerThread = HandlerThread("PoDocPlayback").apply { start() }
-    private val playerHandler = Handler(playerThread.looper)
-    @Volatile private var latestPlaybackStartId = 0
-    private var mediaSession: MediaSessionCompat? = null
+    private val playerHandler = Handler(Looper.getMainLooper())
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var progressJob: Job? = null
-    private val serviceScope = CoroutineScope(playerHandler.asCoroutineDispatcher() + SupervisorJob())
+    private var mediaSession: MediaSessionCompat? = null
+    private var latestPlaybackStartId = 0
+    private var destroyed = false
 
     override fun onBind(intent: Intent?): IBinder? = null
-
     override fun onCreate() {
         super.onCreate()
         MediaPlaybackManager.serviceInstance = this
         createNotificationChannel()
-        initMediaSession()
-    }
-
-    private fun initMediaSession() {
-        try {
-            mediaSession = MediaSessionCompat(this, "PoDocMediaSession").apply {
-                setCallback(object : MediaSessionCompat.Callback() {
-                    override fun onPlay() {
-                        if (MediaPlaybackManager._isCompleted.value) {
-                            replayPlayback()
-                        } else {
-                            resumePlayback()
-                        }
-                    }
-
-                    override fun onPause() {
-                        pausePlayback()
-                    }
-
-                    override fun onSetRepeatMode(repeatMode: Int) {
-                        val isLoop = repeatMode != PlaybackStateCompat.REPEAT_MODE_NONE
-                        MediaPlaybackManager._isRepeatMode.value = isLoop
-                        try {
-                            if (activePrepared) mediaPlayer?.isLooping = isLoop
-                        } catch (_: Exception) {}
-                    }
-
-                    override fun onSeekTo(pos: Long) {
-                        if (!activePrepared) return
-                        try {
-                            mediaPlayer?.seekTo(pos.toInt())
-                            MediaPlaybackManager._currentPosition.value = pos.toInt()
-                            if (pos < (mediaPlayer?.duration ?: 0)) {
-                                MediaPlaybackManager._isCompleted.value = false
-                            }
-                            updatePlaybackState(pos.toInt(), MediaPlaybackManager._isPlaying.value)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Lỗi seekTo: ${e.message}")
-                        }
-                    }
-
-                    override fun onFastForward() {
-                        if (!activePrepared) return
-                        val cur = mediaPlayer?.currentPosition ?: 0
-                        val dur = mediaPlayer?.duration ?: 0
-                        val target = (cur + 10000).coerceAtMost(dur)
-                        mediaPlayer?.seekTo(target)
-                        MediaPlaybackManager._currentPosition.value = target
-                        if (target < dur) {
-                            MediaPlaybackManager._isCompleted.value = false
-                        }
-                        updatePlaybackState(target, MediaPlaybackManager._isPlaying.value)
-                    }
-
-                    override fun onRewind() {
-                        if (!activePrepared) return
-                        val cur = mediaPlayer?.currentPosition ?: 0
-                        val target = (cur - 10000).coerceAtLeast(0)
-                        mediaPlayer?.seekTo(target)
-                        MediaPlaybackManager._currentPosition.value = target
-                        MediaPlaybackManager._isCompleted.value = false
-                        updatePlaybackState(target, MediaPlaybackManager._isPlaying.value)
-                    }
-
-                    override fun onStop() {
-                        stopPlayback()
-                    }
-                }, playerHandler)
-                isActive = true
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Lỗi khởi tạo MediaSessionCompat", e)
+        mediaSession = MediaSessionCompat(this, "PoDocMediaSession").apply {
+            setCallback(object : MediaSessionCompat.Callback() {
+                override fun onPlay() = resumePlayback()
+                override fun onPause() = pausePlayback()
+                override fun onStop() = stopPlayback()
+                override fun onSeekTo(pos: Long) = seek(pos.toInt())
+                override fun onFastForward() = seek(position() + 10_000)
+                override fun onRewind() = seek(position() - 10_000)
+                override fun onSetRepeatMode(repeatMode: Int) {
+                    MediaPlaybackManager._isRepeatMode.value = repeatMode != PlaybackStateCompat.REPEAT_MODE_NONE
+                    setRepeatMode(MediaPlaybackManager._isRepeatMode.value)
+                }
+            }, playerHandler)
+            isActive = true
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent == null) return START_NOT_STICKY
-        // Meet the foreground-service deadline before queuing any codec work.
         if (intent.action == ACTION_START) {
             latestPlaybackStartId = startId
             startForegroundNotification(intent.getStringExtra(EXTRA_TITLE) ?: "Tệp media", true)
         }
         playerHandler.post {
-            try {
-                handleCommand(intent, startId)
-            } catch (e: Exception) {
-                reportPlaybackError(e)
-            }
+            if (!destroyed) try { handleCommand(intent, startId) } catch (e: Exception) { reportPlaybackError(e) }
         }
         return START_NOT_STICKY
     }
@@ -374,67 +339,118 @@ class MediaPlaybackService : Service() {
     private fun handleCommand(intent: Intent, startId: Int) {
         when (intent.action) {
             ACTION_START -> {
-                val filePath = intent.getStringExtra(EXTRA_FILE_PATH) ?: return
-                val title = intent.getStringExtra(EXTRA_TITLE) ?: "Tệp media"
-                val articleId = intent.getIntExtra(EXTRA_ARTICLE_ID, -1)
-                val isVideo = intent.getBooleanExtra(EXTRA_IS_VIDEO, false)
-
-                if (isVideo && MediaPlaybackManager.selectedVideoArticleId != articleId) return
-                if (activeFilePath == filePath && MediaPlaybackManager._currentArticleId.value == articleId) return
-                MediaPlaybackManager._currentTitle.value = title
-                MediaPlaybackManager._currentArticleId.value = if (articleId != -1) articleId else null
-                MediaPlaybackManager._currentFilePath.value = filePath
-                MediaPlaybackManager._isVideoMode.value = isVideo
-
-                playFile(filePath)
+                val path = intent.getStringExtra(EXTRA_FILE_PATH) ?: return
+                val id = intent.getIntExtra(EXTRA_ARTICLE_ID, -1)
+                val video = intent.getBooleanExtra(EXTRA_IS_VIDEO, false)
+                if (video && MediaPlaybackManager.selectedVideoArticleId != id) return
+                if (activeFilePath == path && MediaPlaybackManager._currentArticleId.value == id) return
+                MediaPlaybackManager._currentTitle.value = intent.getStringExtra(EXTRA_TITLE) ?: "Tệp media"
+                MediaPlaybackManager._currentArticleId.value = id.takeIf { it != -1 }
+                MediaPlaybackManager._currentFilePath.value = path
+                MediaPlaybackManager._isVideoMode.value = video
+                playFile(path)
             }
-
-            ACTION_PLAY -> {
-                resumePlayback()
-            }
-
-            ACTION_PAUSE -> {
-                pausePlayback()
-            }
-
-            ACTION_TOGGLE -> {
-                if (playWhenReady) {
-                    pausePlayback()
-                } else {
-                    resumePlayback()
-                }
-            }
-
-            ACTION_REPLAY -> {
-                replayPlayback()
-            }
-
-            ACTION_SEEK -> {
-                if (!activePrepared) return
-                val pos = intent.getIntExtra(EXTRA_SEEK_POS, 0)
-                try {
-                    mediaPlayer?.seekTo(pos)
-                    MediaPlaybackManager._currentPosition.value = pos
-                    val dur = mediaPlayer?.duration ?: 0
-                    if (pos < dur) {
-                        MediaPlaybackManager._isCompleted.value = false
-                    }
-                    updatePlaybackState(pos, MediaPlaybackManager._isPlaying.value)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Lỗi seekTo: ${e.message}")
-                }
-            }
-
-            ACTION_STOP -> {
-                // Leaving one reader must not stop a newer playback request already delivered.
-                if (startId >= latestPlaybackStartId) stopPlayback(stopStartId = startId)
-            }
+            ACTION_PLAY -> resumePlayback()
+            ACTION_PAUSE -> pausePlayback()
+            ACTION_TOGGLE -> if (playWhenReady) pausePlayback() else resumePlayback()
+            ACTION_REPLAY -> replayPlayback()
+            ACTION_SEEK -> seek(intent.getIntExtra(EXTRA_SEEK_POS, 0))
+            ACTION_STOP -> if (startId >= latestPlaybackStartId) stopPlayback(stopStartId = startId)
         }
-
     }
 
-    private fun playFile(filePath: String) {
-        progressJob?.cancel()
+    private fun createPlayer(owner: VideoFeedPreloader?): ExoPlayer {
+        var created: ExoPlayer? = null
+        val delegate = DefaultLoadControl.Builder().setBufferDurationsMs(15_000, 30_000, 100, 1_000)
+            .setTargetBufferBytes(16 * 1024 * 1024).build()
+        // Explicitly forward Java interface defaults: Kotlin delegation only forwards
+        // abstract methods, while Media3's lifecycle/buffer methods are defaults.
+        val loadControl = object : LoadControl by delegate {
+            override fun onPrepared(playerId: androidx.media3.exoplayer.analytics.PlayerId) = delegate.onPrepared(playerId)
+            override fun onStopped(playerId: androidx.media3.exoplayer.analytics.PlayerId) = delegate.onStopped(playerId)
+            override fun onReleased(playerId: androidx.media3.exoplayer.analytics.PlayerId) = delegate.onReleased(playerId)
+            override fun getBackBufferDurationUs(playerId: androidx.media3.exoplayer.analytics.PlayerId) = delegate.getBackBufferDurationUs(playerId)
+            override fun retainBackBufferFromKeyframe(playerId: androidx.media3.exoplayer.analytics.PlayerId) = delegate.retainBackBufferFromKeyframe(playerId)
+            override fun onTracksSelected(parameters: LoadControl.Parameters,
+                groups: androidx.media3.exoplayer.source.TrackGroupArray,
+                selections: Array<out androidx.media3.exoplayer.trackselection.ExoTrackSelection?>) =
+                delegate.onTracksSelected(parameters, groups, selections)
+            override fun shouldStartPlayback(parameters: LoadControl.Parameters) = delegate.shouldStartPlayback(parameters)
+            override fun shouldContinuePreloading(playerId: androidx.media3.exoplayer.analytics.PlayerId,
+                timeline: androidx.media3.common.Timeline,
+                mediaPeriodId: androidx.media3.exoplayer.source.MediaSource.MediaPeriodId,
+                bufferedDurationUs: Long) = delegate.shouldContinuePreloading(playerId, timeline, mediaPeriodId, bufferedDurationUs)
+            override fun shouldContinueLoading(parameters: LoadControl.Parameters): Boolean {
+                if (created != null && created !== mediaPlayer && parameters.bufferedDurationUs >= 750_000) return false
+                return delegate.shouldContinueLoading(parameters)
+            }
+        }
+        val player = owner?.buildPlayer(loadControl) ?: ExoPlayer.Builder(this)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(this,
+                DefaultHttpDataSource.Factory().setDefaultRequestProperties(
+                    MediaPlaybackManager._authToken.value?.takeIf { it.isNotBlank() }
+                        ?.let { mapOf("Authorization" to "Bearer $it") } ?: emptyMap()))))
+            .setLoadControl(loadControl).build()
+        created = player
+        player.setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
+        player.setWakeMode(C.WAKE_MODE_NETWORK)
+        player.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                if (player !== mediaPlayer) return
+                MediaPlaybackManager._isBuffering.value = state == Player.STATE_BUFFERING
+                when (state) {
+                    Player.STATE_READY -> {
+                        activePrepared = true
+                        MediaPlaybackManager._duration.value = duration()
+                        updateMetadata(MediaPlaybackManager._currentTitle.value, duration().toLong())
+                        maybeStart()
+                    }
+                    Player.STATE_ENDED -> {
+                        playWhenReady = false
+                        MediaPlaybackManager._isPlaying.value = false
+                        MediaPlaybackManager._isCompleted.value = true
+                        MediaPlaybackManager._currentPosition.value = duration()
+                        updatePlaybackState(duration(), false)
+                        updateNotification(MediaPlaybackManager._currentTitle.value, false)
+                    }
+                }
+            }
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (player !== mediaPlayer) return
+                MediaPlaybackManager._isPlaying.value = isPlaying
+                updatePlaybackState(position(), isPlaying)
+                updateNotification(MediaPlaybackManager._currentTitle.value, isPlaying)
+            }
+            override fun onVideoSizeChanged(size: VideoSize) {
+                if (player !== mediaPlayer && player !== warmPlayer) return
+                val dimensions = (size.width * size.pixelWidthHeightRatio).toInt() to size.height
+                player.currentMediaItem?.mediaId?.toIntOrNull()?.let { MediaPlaybackManager.setSurfaceSize(it, dimensions) }
+                if (player === mediaPlayer) MediaPlaybackManager._videoSize.value = dimensions
+            }
+            override fun onRenderedFirstFrame() {
+                if (player === mediaPlayer) { videoRenderingStarted = true; publishFrameIfReady() }
+                else if (player === warmPlayer) warmRenderingStarted = true
+            }
+            override fun onPlayerError(error: PlaybackException) {
+                if (player === mediaPlayer) reportPlaybackError(error)
+                else if (player === warmPlayer) {
+                    Log.w(TAG, "Bỏ chuẩn bị bộ giải mã phụ: ${error.errorCodeName}")
+                    releaseWarmPlayer()
+                }
+            }
+        })
+        return player
+    }
+
+    private fun playFile(path: String) {
+        val outgoingRendered = videoRenderingStarted
+        val outgoingTextureSeen = activeTextureSeen
+        activePrepared = false
+        playWhenReady = true
+        activeFilePath = path
+        videoRenderingStarted = false
+        activeTextureSeen = false
         MediaPlaybackManager._isPlaying.value = false
         MediaPlaybackManager._isCompleted.value = false
         MediaPlaybackManager._currentPosition.value = 0
@@ -445,317 +461,261 @@ class MediaPlaybackService : Service() {
         MediaPlaybackManager._playbackGeneration.value += 1
         MediaPlaybackManager._failedArticleId.value = null
         MediaPlaybackManager._isBuffering.value = true
-        activePrepared = false
-        playWhenReady = true
-        activeFilePath = filePath
-        videoRenderingStarted = false
-        try {
-            val previous = mediaPlayer
-            mediaPlayer = null
-            try {
-                previous?.setSurface(null)
-            } finally {
+        val owner = if (MediaPlaybackManager._isVideoMode.value) MediaPlaybackManager.videoFeedPreloader else null
+        if (owner == null) releaseWarmPlayer()
+        val id = MediaPlaybackManager._currentArticleId.value ?: -1
+        val promoting = owner != null && warmOwner === owner && warmId == id && warmPath == path &&
+            warmPlayer?.playbackState == Player.STATE_READY && warmSurface?.isValid == true
+        lastSelectionUsedPreparedVideo = promoting
+        Log.i(TAG, "VIDEO SELECT | id=$id | prepared=$promoting")
+        if (promoting) {
+            val incoming = warmPlayer!!
+            val incomingSurface = warmSurface!!
+            val rendered = warmRenderingStarted
+            val seen = warmTextureSeen
+            val outgoing = mediaPlayer
+            val outgoingOwner = playerOwner
+            mediaPlayer = incoming
+            playerOwner = owner
+            boundSurface = incomingSurface
+            warmPlayer = outgoing
+            warmOwner = outgoingOwner
+            warmId = outgoing?.currentMediaItem?.mediaId?.toIntOrNull()
+            warmPath = outgoing?.currentMediaItem?.localConfiguration?.uri?.toString()
+            warmSurface = warmId?.let { MediaPlaybackManager.surfaceFor(it) }
+            warmRenderingStarted = outgoingRendered
+            warmTextureSeen = outgoingTextureSeen
+            outgoing?.pause()
+            outgoing?.volume = 0f
+            outgoing?.seekTo(0)
+            videoRenderingStarted = rendered
+            activeTextureSeen = seen
+            activePrepared = true
+            MediaPlaybackManager._isBuffering.value = false
+            MediaPlaybackManager._duration.value = duration()
+            MediaPlaybackManager._videoSize.value = MediaPlaybackManager.surfaceVideoSizes.value[id] ?: (0 to 0)
+            MediaPlaybackManager.attachSurface(incomingSurface, id, MediaPlaybackManager._playbackGeneration.value)
+            incoming.volume = 1f
+            incoming.repeatMode = if (MediaPlaybackManager._isRepeatMode.value) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+            updateMetadata(MediaPlaybackManager._currentTitle.value, duration().toLong())
+            publishFrameIfReady()
+            maybeStart()
+        } else {
+            if (mediaPlayer == null || playerOwner !== owner) {
+                val previous = mediaPlayer
+                mediaPlayer = null
                 previous?.release()
+                boundSurface = null
+                playerOwner = owner
+                mediaPlayer = createPlayer(owner)
             }
+            val player = mediaPlayer!!
+            player.volume = 1f
+            player.playWhenReady = false
+            player.repeatMode = if (MediaPlaybackManager._isRepeatMode.value) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+            player.clearVideoSurface()
             boundSurface = null
-            if (preloadedFilePath == filePath && preloadedPlayer != null) {
-                mediaPlayer = preloadedPlayer
-                activePrepared = preloadedPrepared
-                preloadedPlayer = null
-                preloadedFilePath = null
-                preloadedPrepared = false
-                refreshSurfaceOnPlayerThread()
-                // A promoted player may still be Preparing. Its callback starts it later.
-                if (activePrepared) startPreparedPlayer()
-            } else {
-                mediaPlayer = createPlayer(filePath)
-                refreshSurfaceOnPlayerThread()
-                mediaPlayer?.prepareAsync()
+            val source = owner?.mediaSource(id)
+            if (source != null) player.setMediaSource(source)
+            else player.setMediaItem(MediaItem.Builder().setMediaId(id.toString()).setUri(path).build())
+            player.prepare()
+            MediaPlaybackManager.surfaceFor(id)?.let {
+                MediaPlaybackManager.attachSurface(it, id, MediaPlaybackManager._playbackGeneration.value)
             }
-        } catch (e: Exception) {
-            reportPlaybackError(e)
+            refreshSurfaceOnPlayerThread()
+        }
+        val player = mediaPlayer!!
+        warmNextVideo()
+        progressJob?.cancel()
+        progressJob = serviceScope.launch {
+            while (isActive) {
+                MediaPlaybackManager._currentPosition.value = position()
+                MediaPlaybackManager._duration.value = duration()
+                playerOwner?.onPlaybackBuffer((player.bufferedPosition - player.currentPosition).coerceAtLeast(0),
+                    player.playbackState == Player.STATE_BUFFERING,
+                    if (duration() > 0) (duration() - position()).coerceAtLeast(0).toLong() else -1)
+                delay(500)
+            }
         }
     }
 
-    private fun createPlayer(filePath: String): MediaPlayer {
-        val player = MediaPlayer()
-        try {
-            player.setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK)
-            player.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .build()
-            )
-            if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
-                val uri = Uri.parse(filePath)
-                val headers = mutableMapOf<String, String>()
-                val token = MediaPlaybackManager._authToken.value
-                if (!token.isNullOrBlank()) {
-                    headers["Authorization"] = "Bearer $token"
-                }
-                player.setDataSource(applicationContext, uri, headers)
-            } else {
-                player.setDataSource(filePath)
-            }
-            player.setOnPreparedListener { prepared ->
-                when (prepared) {
-                    mediaPlayer -> {
-                        activePrepared = true
-                        MediaPlaybackManager._isBuffering.value = false
-                        try {
-                            startPreparedPlayer()
-                        } catch (e: Exception) {
-                            reportPlaybackError(e)
-                        }
-                    }
-                    preloadedPlayer -> preloadedPrepared = true
-                }
-            }
-            player.setOnVideoSizeChangedListener { source, width, height ->
-                if (source === mediaPlayer) MediaPlaybackManager._videoSize.value = width to height
-            }
-            player.setOnInfoListener { source, what, _ ->
-                if (source === mediaPlayer) {
-                    when (what) {
-                        MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START -> {
-                            videoRenderingStarted = true
-                        }
-                        MediaPlayer.MEDIA_INFO_BUFFERING_START -> {
-                            MediaPlaybackManager._isBuffering.value = true
-                        }
-                        MediaPlayer.MEDIA_INFO_BUFFERING_END -> {
-                            MediaPlaybackManager._isBuffering.value = false
-                        }
-                    }
-                }
-                false
-            }
-            player.setOnCompletionListener { source ->
-                if (source === mediaPlayer) {
-                    MediaPlaybackManager._isPlaying.value = false
-                    MediaPlaybackManager._isCompleted.value = true
-                    MediaPlaybackManager._currentPosition.value = source.duration
-                    updatePlaybackState(source.duration, false)
-                    updateNotification(MediaPlaybackManager._currentTitle.value, false)
-                }
-            }
-            player.setOnErrorListener { source, what, extra ->
-                Log.e(TAG, "MediaPlayer error: what=$what, extra=$extra")
-                MediaPlaybackManager._isBuffering.value = false
-                if (source === mediaPlayer) {
-                    reportPlaybackError(IllegalStateException("MediaPlayer error $what/$extra"))
-                } else if (source === preloadedPlayer) {
-                    clearPreloadedPlayer()
-                }
-                true
-            }
-            return player
-        } catch (e: Exception) {
-            player.release()
-            throw e
-        }
-    }
-
-    private fun startPreparedPlayer() {
+    private fun maybeStart() {
         val player = mediaPlayer ?: return
-        player.isLooping = MediaPlaybackManager._isRepeatMode.value
-        MediaPlaybackManager._videoSize.value = player.videoWidth to player.videoHeight
-        MediaPlaybackManager._duration.value = player.duration
-        refreshSurfaceOnPlayerThread()
-        val canStart = playWhenReady && (!MediaPlaybackManager._isVideoMode.value || boundSurface != null)
-        if (canStart) player.start()
-        MediaPlaybackManager._isPlaying.value = canStart
-        updateMetadata(MediaPlaybackManager._currentTitle.value, player.duration.toLong())
-        updatePlaybackState(player.currentPosition, canStart)
-        updateNotification(MediaPlaybackManager._currentTitle.value, canStart)
-        startProgressTracker()
+        val canStart = !MediaPlaybackManager._isVideoMode.value || boundSurface != null || videoRenderingStarted
+        player.playWhenReady = playWhenReady && canStart
     }
 
-    private fun reportPlaybackError(error: Exception) {
-        Log.e(TAG, "Không thể phát media", error)
-        activePrepared = false
-        activeFilePath = null
+    private fun position(): Int = (mediaPlayer?.currentPosition ?: 0).coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
+    private fun duration(): Int = (mediaPlayer?.duration ?: 0).coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
+    private fun seek(positionMs: Int) {
+        if (!activePrepared) return
+        val target = positionMs.coerceIn(0, duration())
+        MediaPlaybackManager._isCompleted.value = false
+        mediaPlayer?.seekTo(target.toLong())
+        MediaPlaybackManager._currentPosition.value = target
+        updatePlaybackState(target, MediaPlaybackManager._isPlaying.value)
+    }
+    private fun resumePlayback() {
+        if (MediaPlaybackManager._isCompleted.value) { replayPlayback(); return }
+        playWhenReady = true
+        maybeStart()
+    }
+    private fun replayPlayback() {
+        MediaPlaybackManager._isCompleted.value = false
+        mediaPlayer?.seekTo(0)
+        playWhenReady = true
+        maybeStart()
+    }
+    private fun pausePlayback() {
         playWhenReady = false
+        mediaPlayer?.pause()
         MediaPlaybackManager._isPlaying.value = false
-        MediaPlaybackManager._renderedArticleId.value = null
-        MediaPlaybackManager._renderedVideoSurface.value = null
-        MediaPlaybackManager._failedArticleId.value = MediaPlaybackManager._currentArticleId.value
-        updatePlaybackState(0, false)
+        updatePlaybackState(position(), false)
         updateNotification(MediaPlaybackManager._currentTitle.value, false)
     }
-
-    /** Only the pager's predicted next video gets a decoder, not every cached file. */
-    fun preloadNext(filePath: String) {
-        playerHandler.post {
-            if (activeFilePath == filePath || preloadedFilePath == filePath) return@post
-            clearPreloadedPlayer()
-            try {
-                preloadedPlayer = createPlayer(filePath)
-                preloadedFilePath = filePath
-                preloadedPlayer?.prepareAsync()
-            } catch (e: Exception) {
-                clearPreloadedPlayer()
-                Log.w(TAG, "Lỗi preload video: ${e.message}")
-            }
-        }
+    fun pause() { playerHandler.post { pausePlayback() } }
+    internal fun stopForLogout() { stopPlayback() }
+    fun setRepeatMode(repeat: Boolean) {
+        playerHandler.post { mediaPlayer?.repeatMode = if (repeat) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF }
     }
-
-    private fun clearPreloadedPlayer() {
-        val previous = preloadedPlayer
-        preloadedPlayer = null
-        preloadedFilePath = null
-        preloadedPrepared = false
-        previous?.release()
-    }
-
-    fun refreshSurface() {
-        playerHandler.post {
-            refreshSurfaceOnPlayerThread()
-            // Start a new video only after its own output exists. Audio-only
-            // playback and audio continuing in the background remain independent.
-            if (activePrepared && playWhenReady && boundSurface != null && mediaPlayer?.isPlaying == false) {
-                startPreparedPlayer()
-            }
-        }
-    }
-
-    fun onSurfaceFrameAvailable(surface: Surface, articleId: Int) {
-        playerHandler.post {
-            val size = MediaPlaybackManager._videoSize.value
-            val target = MediaPlaybackManager.videoSurface
-            if (videoRenderingStarted && activePrepared && surface === boundSurface &&
-                target != null && target.surface === surface &&
-                target.generation == MediaPlaybackManager._playbackGeneration.value &&
-                MediaPlaybackManager._currentArticleId.value == articleId &&
-                MediaPlaybackManager.selectedVideoArticleId == articleId &&
-                size.first > 0 && size.second > 0) {
-                MediaPlaybackManager._renderedVideoSurface.value = target
-                MediaPlaybackManager._renderedArticleId.value = articleId
-            }
-        }
-    }
-
+    fun refreshSurface() { playerHandler.post { refreshSurfaceOnPlayerThread(); maybeStart() } }
     private fun refreshSurfaceOnPlayerThread() {
         val target = MediaPlaybackManager.videoSurface?.takeIf {
             it.articleId == MediaPlaybackManager._currentArticleId.value &&
                 it.generation == MediaPlaybackManager._playbackGeneration.value && it.surface.isValid
         }?.surface
         if (target === boundSurface) return
-        try {
-            mediaPlayer?.setSurface(target)
-            boundSurface = target
-        } catch (e: Exception) {
-            Log.w(TAG, "Lỗi gắn surface: ${e.message}")
+        activeTextureSeen = false
+        mediaPlayer?.setVideoSurface(target)
+        boundSurface = target
+    }
+    fun onSurfaceFrameAvailable(surface: Surface, articleId: Int) {
+        playerHandler.post {
+            if (surface === warmSurface && articleId == warmId) warmTextureSeen = true
+            if (surface === boundSurface && articleId == MediaPlaybackManager._currentArticleId.value) {
+                activeTextureSeen = true
+                publishFrameIfReady()
+            }
         }
     }
-
+    private fun publishFrameIfReady() {
+        val target = MediaPlaybackManager.videoSurface ?: return
+        val id = MediaPlaybackManager._currentArticleId.value ?: return
+        if (videoRenderingStarted && activeTextureSeen && target.surface === boundSurface &&
+            target.generation == MediaPlaybackManager._playbackGeneration.value && target.articleId == id &&
+            MediaPlaybackManager.selectedVideoArticleId == id && MediaPlaybackManager._videoSize.value.second > 0) {
+            MediaPlaybackManager._renderedVideoSurface.value = target
+            MediaPlaybackManager._renderedArticleId.value = id
+            if (MediaPlaybackManager._firstFrameLatencyMs.value == null) {
+                MediaPlaybackManager._firstFrameLatencyMs.value = android.os.SystemClock.elapsedRealtime() - MediaPlaybackManager.selectedVideoAtMs
+                Log.i(TAG, "VIDEO FIRST FRAME | id=$id | elapsed_ms=${MediaPlaybackManager._firstFrameLatencyMs.value}")
+            }
+        }
+    }
+    internal var lastSelectionUsedPreparedVideo = false
+        private set
+    internal fun preparedVideoId(): Int? = warmId?.takeIf {
+        warmPlayer?.playbackState == Player.STATE_READY && warmRenderingStarted && warmTextureSeen
+    }
+    internal fun warmNextVideo() {
+        if (destroyed || !MediaPlaybackManager._isVideoMode.value) return
+        val owner = playerOwner?.takeUnless { it.isClosed } ?: return
+        // Preserve the prepared incoming player until a pending selection is promoted.
+        if (owner.selectedId() != MediaPlaybackManager._currentArticleId.value ||
+            MediaPlaybackManager.selectedVideoArticleId != MediaPlaybackManager._currentArticleId.value) return
+        val id = owner.nextId() ?: return
+        if (id == MediaPlaybackManager._currentArticleId.value || owner.cachedDurationMs(id) < 1_000) return
+        val surface = MediaPlaybackManager.surfaceFor(id) ?: return
+        val path = owner.url(id) ?: return
+        if (warmOwner !== owner) { releaseWarmPlayer(); warmOwner = owner }
+        if (warmPlayer == null) warmPlayer = createPlayer(owner)
+        val player = warmPlayer!!
+        val sameItem = warmId == id && warmPath == path
+        if (sameItem && warmSurface === surface) return
+        warmId = id
+        warmPath = path
+        warmSurface = surface
+        warmRenderingStarted = false
+        warmTextureSeen = false
+        player.volume = 0f
+        player.playWhenReady = false
+        if (!sameItem) {
+            val source = owner.mediaSource(id) ?: return
+            player.clearVideoSurface()
+            player.setMediaSource(source)
+            player.prepare()
+            player.setVideoSurface(surface)
+        } else {
+            player.setVideoSurface(surface)
+            val size = player.videoSize
+            MediaPlaybackManager.setSurfaceSize(id, (size.width * size.pixelWidthHeightRatio).toInt() to size.height)
+            player.seekTo(0)
+        }
+    }
+    private fun releaseWarmPlayer() {
+        val previous = warmPlayer
+        warmPlayer = null
+        warmId = null
+        warmPath = null
+        warmSurface = null
+        warmOwner = null
+        warmRenderingStarted = false
+        warmTextureSeen = false
+        previous?.release()
+    }
+    internal fun releaseWarmForOwner(owner: VideoFeedPreloader) {
+        if (warmOwner === owner) releaseWarmPlayer()
+    }
     fun releaseSurface(surface: Surface, texture: SurfaceTexture? = null) {
         playerHandler.post {
             try {
-                if (boundSurface === surface) {
-                    mediaPlayer?.setSurface(null)
-                    boundSurface = null
+                if (boundSurface === surface) { mediaPlayer?.clearVideoSurface(); boundSurface = null }
+                if (warmSurface === surface) {
+                    warmPlayer?.clearVideoSurface()
+                    warmSurface = null
+                    warmRenderingStarted = false
+                    warmTextureSeen = false
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Lỗi gỡ surface: ${e.message}")
-            } finally {
-                surface.release()
-                texture?.release()
-            }
+            } finally { surface.release(); texture?.release() }
         }
     }
-
-    fun setRepeatMode(repeat: Boolean) {
-        playerHandler.post {
-            if (activePrepared) mediaPlayer?.isLooping = repeat
-        }
-    }
-
-    fun pause() {
-        playerHandler.post { pausePlayback() }
-    }
-
-    private fun resumePlayback() {
-        playWhenReady = true
-        if (!activePrepared) return
-        try {
-            if (MediaPlaybackManager._isCompleted.value) {
-                replayPlayback()
-                return
-            }
-            mediaPlayer?.start()
-            MediaPlaybackManager._isPlaying.value = true
-            val pos = mediaPlayer?.currentPosition ?: 0
-            updatePlaybackState(pos, isPlaying = true)
-            updateNotification(MediaPlaybackManager._currentTitle.value, true)
-            startProgressTracker()
-        } catch (e: Exception) {
-            Log.w(TAG, "Lỗi resume: ${e.message}")
-        }
-    }
-
-    private fun replayPlayback() {
-        playWhenReady = true
-        if (!activePrepared) return
-        try {
-            MediaPlaybackManager._isCompleted.value = false
-            mediaPlayer?.seekTo(0)
-            mediaPlayer?.start()
-            MediaPlaybackManager._isPlaying.value = true
-            MediaPlaybackManager._currentPosition.value = 0
-            updatePlaybackState(0, isPlaying = true)
-            updateNotification(MediaPlaybackManager._currentTitle.value, true)
-            startProgressTracker()
-        } catch (e: Exception) {
-            Log.w(TAG, "Lỗi replay: ${e.message}")
-        }
-    }
-
-    private fun pausePlayback() {
+    private fun reportPlaybackError(error: Exception) {
+        Log.e(TAG, "Không thể phát media", error)
+        activePrepared = false
+        activeFilePath = null
         playWhenReady = false
-        if (!activePrepared) return
-        try {
-            if (mediaPlayer?.isPlaying == true) mediaPlayer?.pause()
-            MediaPlaybackManager._isPlaying.value = false
-            val pos = mediaPlayer?.currentPosition ?: 0
-            updatePlaybackState(pos, isPlaying = false)
-            updateNotification(MediaPlaybackManager._currentTitle.value, false)
-        } catch (e: Exception) {
-            Log.w(TAG, "Lỗi pause: ${e.message}")
-        }
+        mediaPlayer?.pause()
+        MediaPlaybackManager._isPlaying.value = false
+        MediaPlaybackManager._isBuffering.value = false
+        MediaPlaybackManager._renderedArticleId.value = null
+        MediaPlaybackManager._renderedVideoSurface.value = null
+        MediaPlaybackManager._failedArticleId.value = MediaPlaybackManager._currentArticleId.value
     }
-
     private fun stopPlayback(stopService: Boolean = true, stopStartId: Int? = null) {
         progressJob?.cancel()
-        try {
-            mediaPlayer?.release()
-        } catch (_: Exception) {}
+        releaseWarmPlayer()
+        val previous = mediaPlayer
         mediaPlayer = null
+        previous?.release()
+        playerOwner = null
         activePrepared = false
         activeFilePath = null
         boundSurface = null
-        clearPreloadedPlayer()
-        if (MediaPlaybackManager.serviceInstance == null || MediaPlaybackManager.serviceInstance === this) {
-            MediaPlaybackManager._isPlaying.value = false
-            MediaPlaybackManager._isCompleted.value = false
-            MediaPlaybackManager._currentArticleId.value = null
-            MediaPlaybackManager._currentFilePath.value = null
-            MediaPlaybackManager._renderedArticleId.value = null
-            MediaPlaybackManager._renderedVideoSurface.value = null
-            MediaPlaybackManager._failedArticleId.value = null
-            MediaPlaybackManager._currentPosition.value = 0
-            MediaPlaybackManager._duration.value = 0
-        }
-
-        updatePlaybackState(0, isPlaying = false)
+        MediaPlaybackManager._isPlaying.value = false
+        MediaPlaybackManager._isCompleted.value = false
+        MediaPlaybackManager._isBuffering.value = false
+        MediaPlaybackManager._currentArticleId.value = null
+        MediaPlaybackManager._currentFilePath.value = null
+        MediaPlaybackManager._renderedArticleId.value = null
+        MediaPlaybackManager._renderedVideoSurface.value = null
+        MediaPlaybackManager._failedArticleId.value = null
+        MediaPlaybackManager._currentPosition.value = 0
+        MediaPlaybackManager._duration.value = 0
+        updatePlaybackState(0, false)
         mediaSession?.isActive = false
-
-        if (stopService) {
-            if (stopStartId == null || stopSelfResult(stopStartId)) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                if (stopStartId == null) stopSelf()
-            }
+        if (stopService && (stopStartId == null || stopSelfResult(stopStartId))) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            if (stopStartId == null) stopSelf()
         }
     }
 
@@ -795,23 +755,6 @@ class MediaPlaybackService : Service() {
             mediaSession?.setPlaybackState(playbackState)
         } catch (e: Exception) {
             Log.w(TAG, "Lỗi cập nhật PlaybackState: ${e.message}")
-        }
-    }
-
-    private fun startProgressTracker() {
-        progressJob?.cancel()
-        progressJob = serviceScope.launch {
-            while (isActive) {
-                val mp = mediaPlayer
-                if (mp != null && MediaPlaybackManager._isPlaying.value) {
-                    try {
-                        val pos = mp.currentPosition
-                        MediaPlaybackManager._currentPosition.value = pos
-                        updatePlaybackState(pos, isPlaying = true)
-                    } catch (_: Exception) {}
-                }
-                delay(1000)
-            }
         }
     }
 
@@ -910,15 +853,12 @@ class MediaPlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        destroyed = true
+        stopPlayback(stopService = false)
         if (MediaPlaybackManager.serviceInstance === this) MediaPlaybackManager.serviceInstance = null
-        playerHandler.post {
-            stopPlayback(stopService = false)
-            serviceScope.cancel()
-            mediaSession?.isActive = false
-            mediaSession?.release()
-            mediaSession = null
-            playerThread.quitSafely()
-        }
+        serviceScope.cancel()
+        mediaSession?.release()
+        mediaSession = null
         super.onDestroy()
     }
 }

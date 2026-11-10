@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Annotated, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -88,6 +88,24 @@ class ArticleDraft(BaseModel):
 
 class BatchDeleteRequest(BaseModel):
     ids: list[int]
+
+
+class VideoPlaybackRequest(BaseModel):
+    ids: list[Annotated[int, Field(gt=0)]] = Field(min_length=1, max_length=11)
+
+
+class VideoPlaybackSource(BaseModel):
+    id: int
+    variant: str
+    revision: str
+    url: str
+    file_size_bytes: int
+    mime_type: str
+
+
+class VideoPlaybackResponse(BaseModel):
+    items: list[VideoPlaybackSource]
+    unavailable_ids: list[int]
 
 
 class BatchUpdateCategoryRequest(BaseModel):

@@ -41,6 +41,9 @@ interface PoDocApiService {
     suspend fun deleteCategory(@Path("id") id: Int): Response<Unit>
 
     // Articles
+    @POST("api/articles/playback-sources")
+    suspend fun getVideoPlaybackSources(@Body request: VideoPlaybackRequest): VideoPlaybackResponse
+
     @GET("api/articles")
     suspend fun getArticles(
         @Query("q") query: String? = null,

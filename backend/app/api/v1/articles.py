@@ -5,6 +5,7 @@ import shutil
 import tempfile
 import urllib.parse
 import uuid
+from pathlib import Path
 from typing import Annotated, List, Literal, Optional
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, File, status
 from fastapi.responses import FileResponse
@@ -30,16 +31,42 @@ from app.schemas.article import (
     StorageItemStat,
     StorageStatsResponse,
     VideoVersionResponse,
+    VideoPlaybackRequest,
+    VideoPlaybackResponse,
 )
 from app.services.extractors.base import generate_excerpt
 from app.services.extractors.registry import extractor_registry
 from app.services.thumbnail import ensure_thumbnail
 from app.services.url_utils import normalize_url
 from app.services.video_transcoder import is_video_file, optimized_path, remove_video_derivatives, smaller_optimized_path
+from app.services.video_sources import describe_video, file_revision
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/articles", tags=["Articles"])
+
+
+@router.post("/playback-sources", response_model=VideoPlaybackResponse)
+async def video_playback_sources(
+    request: VideoPlaybackRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    ids = list(dict.fromkeys(request.ids))
+    rows = (await db.execute(select(Article).where(Article.id.in_(ids)))).scalars().all()
+    by_id = {article.id: article for article in rows}
+    items = []
+    unavailable = []
+    for article_id in ids:
+        try:
+            description = describe_video(by_id[article_id]) if article_id in by_id else None
+        except OSError:
+            description = None  # A file removed during the request is unavailable.
+        if description:
+            items.append(description)
+        else:
+            unavailable.append(article_id)
+    return VideoPlaybackResponse(items=items, unavailable_ids=unavailable)
 
 
 @router.get("", response_model=List[ArticleListResponse])
@@ -835,6 +862,7 @@ async def download_article_file(
     inline: bool = Query(False, description="Hiển thị trực tiếp (inline) hay tải về (attachment)"),
     original: bool = Query(False, description="Luôn lấy file gốc kể cả khi xem inline"),
     variant: Optional[Literal["original", "optimized"]] = Query(None, description="Chọn chính xác bản gốc hoặc bản nhẹ"),
+    revision: Optional[str] = Query(None, min_length=32, max_length=32),
 ):
     """Download the original; inline playback prefers the complete optimized MP4."""
     stmt = select(Article).where(Article.id == id)
@@ -874,13 +902,18 @@ async def download_article_file(
                 headers={"Retry-After": "5", "Cache-Control": "no-store"},
             )
 
+    current_revision = file_revision(Path(disk_path))
+    if revision is not None and revision != current_revision:
+        raise HTTPException(status_code=412, detail="Phiên bản video đã thay đổi. Vui lòng tải lại nguồn phát.")
     return FileResponse(
         path=disk_path,
         filename=download_name,
         media_type=media_type,
         content_disposition_type="inline" if inline else "attachment",
         # Revalidate the same playback URL when pending switches to ready.
-        headers={"Accept-Ranges": "bytes", "Cache-Control": "private, no-cache", "X-PoDoc-Video-Variant": chosen_variant},
+        headers={"Accept-Ranges": "bytes", "Cache-Control": "private, no-cache",
+                 "X-PoDoc-Video-Variant": chosen_variant,
+                 "X-PoDoc-Video-Revision": current_revision, "ETag": f'"{current_revision}"'},
     )
 
 

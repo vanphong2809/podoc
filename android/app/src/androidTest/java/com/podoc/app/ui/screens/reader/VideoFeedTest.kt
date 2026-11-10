@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package com.podoc.app.ui.screens.reader
 
 import android.content.Context
@@ -21,6 +23,8 @@ import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.podoc.app.data.local.DataStoreManager
+import com.podoc.app.data.api.PoDocApiService
+import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import com.podoc.app.data.model.ArticleDetail
 import com.podoc.app.data.model.ArticleListItem
 import com.podoc.app.data.repository.ArticleRepository
@@ -28,6 +32,10 @@ import com.podoc.app.service.MediaPlaybackManager
 import com.podoc.app.service.MediaPlaybackService
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import retrofit2.Retrofit
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -53,31 +61,38 @@ class VideoFeedTest {
     private lateinit var fixtureServer: VideoFixtureServer
     private lateinit var dataStore: DataStoreManager
     private lateinit var originalSettings: Triple<String, String, String>
-    private val feed = (0..2).map { index ->
+    private val allVideos = (0..15).map { index ->
         ArticleListItem(
             id = 9_000_001 + index, title = "QA video $index", sourceType = "FILE",
             categoryId = -1, fileName = "feed_qa_$index.mp4", mimeType = "video/mp4"
         )
     }
+    private val feed get() = allVideos.take(3)
 
     @Before fun prepare() {
         compose.activity.window.addOnFrameMetricsAvailableListener(frameListener, Handler(Looper.getMainLooper()))
         context.stopService(Intent(context, MediaPlaybackService::class.java))
         compose.waitUntil(5000) { MediaPlaybackManager.currentArticleId.value == null }
         val testContext = InstrumentationRegistry.getInstrumentation().context
-        val clips = feed.mapIndexed { index, item ->
-            val asset = if (index == 1) "landscape-hd.mp4" else "portrait-hd.mp4"
-            testContext.assets.open("video/$asset").use { input ->
-                item.id to input.readBytes()
-            }
+        val portrait = testContext.assets.open("video/portrait-hd.mp4").use { it.readBytes() }
+        val landscape = testContext.assets.open("video/landscape-hd.mp4").use { it.readBytes() }
+        val longClip = testContext.assets.open("video/prefetch-long.mp4").use { it.readBytes() }
+        val clips = allVideos.mapIndexed { index, item ->
+            item.id to if (index == 10) longClip else if (index % 2 == 1) landscape else portrait
         }.toMap()
         fixtureServer = VideoFixtureServer(clips)
         dataStore = DataStoreManager(context)
         runBlocking {
             originalSettings = Triple(dataStore.serverUrlFlow.first(), dataStore.authTokenFlow.first(), dataStore.usernameFlow.first())
-            dataStore.saveAuthData(fixtureServer.url, "", "")
+            dataStore.saveAuthData(fixtureServer.url, fixtureServer.requiredToken, "fixture-user")
         }
-        viewModel = ReaderViewModel(ArticleRepository({ null }, context), dataStore)
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            chain.proceed(chain.request().newBuilder().header("Authorization", "Bearer ${fixtureServer.requiredToken}").build())
+        }.build()
+        val api = Retrofit.Builder().baseUrl(fixtureServer.url + "/").client(client)
+            .addConverterFactory(Json { ignoreUnknownKeys = true }.asConverterFactory("application/json".toMediaType()))
+            .build().create(PoDocApiService::class.java)
+        viewModel = ReaderViewModel(ArticleRepository({ api }, context) { fixtureServer.url }, dataStore)
         store.put("reader", viewModel)
         compose.waitUntil(5000) { viewModel.getMediaPlaybackSource(context, feed[0]).startsWith(fixtureServer.url) }
         MediaPlaybackManager._isRepeatMode.value = true
@@ -173,14 +188,20 @@ class VideoFeedTest {
         }
     }
 
-    @Test fun reselectingVideoUsesFreshSurfaceAndIgnoresStaleCallbacks() {
+    @Test fun reselectingVideoKeepsArticleSurfaceAndIgnoresStaleCallbacks() {
         showFeed(feed.first(), feed)
         waitForVideo(feed[0])
+        compose.waitUntil(10000) {
+            compose.runOnIdle { MediaPlaybackManager.serviceInstance?.preparedVideoId() == feed[1].id }
+        }
         val firstSurface = MediaPlaybackManager.videoSurface!!
+        val firstRequests = fixtureServer.requestCounts[feed[0].id]?.get() ?: 0L
         compose.onRoot().performTouchInput { swipeUp(durationMillis = 100) }
         waitForVideo(feed[1])
         val secondSurface = MediaPlaybackManager.videoSurface!!
         compose.runOnIdle {
+            assertTrue("The adjacent video must use its already prepared native player",
+                MediaPlaybackManager.serviceInstance?.lastSelectionUsedPreparedVideo == true)
             assertNotSame(firstSurface.surface, secondSurface.surface)
             MediaPlaybackManager.attachSurface(firstSurface.surface, firstSurface.articleId, firstSurface.generation)
             MediaPlaybackManager.onSurfaceFrameAvailable(firstSurface.surface, firstSurface.articleId)
@@ -190,10 +211,54 @@ class VideoFeedTest {
         compose.onRoot().performTouchInput { swipeDown(durationMillis = 100) }
         waitForVideo(feed[0])
         compose.runOnIdle {
-            assertNotSame(firstSurface.surface, MediaPlaybackManager.videoSurface!!.surface)
+            assertNotSame(secondSurface.surface, MediaPlaybackManager.videoSurface!!.surface)
             assertEquals(MediaPlaybackManager.playbackGeneration.value, MediaPlaybackManager.videoSurface!!.generation)
         }
         assertQuadrants(portrait = true)
+        assertEquals("Revisiting a cached video must not download its bytes again", firstRequests,
+            fixtureServer.requestCounts[feed[0].id]?.get() ?: 0L)
+    }
+
+    @Test fun firstVideoWaitsForAllElevenOpenings() {
+        val far = allVideos[10]
+        fixtureServer.hold(far.id)
+        showFeed(allVideos[5], allVideos)
+        compose.waitUntil(30_000) { far.id in fixtureServer.requested }
+        compose.onNodeWithTag("video_preparation", useUnmergedTree = true).assertIsDisplayed()
+        compose.runOnIdle {
+            assertNull("The first video must not start before the full window is warm", MediaPlaybackManager.currentArticleId.value)
+        }
+        saveProof("video-warming-eleven", compose.onRoot().captureToImage().asAndroidBitmap())
+        fixtureServer.release(far.id)
+        waitForVideo(allVideos[5])
+        assertTrue(fixtureServer.sourceBatches.first().containsAll(allVideos.take(11).map { it.id }))
+        assertTrue(fixtureServer.requested.containsAll(allVideos.take(11).map { it.id }))
+        compose.onNodeWithTag("video_preparation", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test fun slidingWindowPreparesTwelveThroughSixteenBeforeTheyAreSelected() {
+        showFeed(allVideos[5], allVideos)
+        waitForVideo(allVideos[5])
+        val longId = allVideos[10].id
+        compose.waitUntil(30_000) { (MediaPlaybackManager.videoFeedPreloader?.cachedDurationMs(longId) ?: 0L) >= 2_000 }
+        val cached = MediaPlaybackManager.videoFeedPreloader!!.cachedBytes(longId)
+        val downloaded = fixtureServer.bytesSent[longId]?.get() ?: 0L
+        Log.i("VideoFeedQA", "PREFETCH BYTES | source_bytes=6521155 | cached_bytes=$cached | wire_bytes=$downloaded")
+        assertTrue("Only an opening should be cached for a far video", cached in 1..3_260_577)
+        assertTrue("Preloading must not download the entire 6.5 MB fixture", downloaded < 3_260_577)
+        compose.onRoot().performTouchInput { swipeUp(durationMillis = 150) }
+        waitForVideo(allVideos[6])
+        compose.waitUntil(20_000) { allVideos[11].id in fixtureServer.requested }
+        for (index in 7..10) {
+            compose.onRoot().performTouchInput { swipeUp(durationMillis = 150) }
+            waitForVideo(allVideos[index])
+        }
+        compose.waitUntil(20_000) { allVideos[15].id in fixtureServer.requested }
+        compose.runOnIdle { assertEquals(allVideos[10].id, MediaPlaybackManager.currentArticleId.value) }
+        // Video twelve has been cached since the selected position was seven.
+        compose.onRoot().performTouchInput { swipeUp(durationMillis = 150) }
+        waitForVideo(allVideos[11])
+        saveProof("video-after-twelve", compose.onRoot().captureToImage().asAndroidBitmap())
     }
 
     @Test fun lateFeedPreservesOpenedVideoAndNeighbourDisposalKeepsSurface() {
