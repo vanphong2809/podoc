@@ -11,6 +11,7 @@ import android.util.Log
 import android.view.FrameMetrics
 import android.view.Window
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -134,6 +135,98 @@ class VideoFeedTest {
         compose.onNodeWithTag("video_shutter_${item.id}", useUnmergedTree = true).assertDoesNotExist()
         compose.onNodeWithTag("video_loading_${item.id}").assertDoesNotExist()
         saveProof("video-portrait", compose.onRoot().captureToImage().asAndroidBitmap())
+    }
+
+    @Test fun preparedNeighbourIsVisibleBeforeSelectionWithoutLoadingFlash() {
+        showFeed(feed[0], feed)
+        waitForVideo(feed[0])
+        compose.waitUntil(10000) {
+            compose.runOnIdle { MediaPlaybackManager.serviceInstance?.preparedVideoId() == feed[1].id }
+        }
+        compose.onNodeWithTag("video_shutter_${feed[1].id}", useUnmergedTree = true).assertDoesNotExist()
+        compose.onRoot().performTouchInput {
+            down(center)
+            moveTo(center + Offset(0f, -height * 0.7f), 200)
+        }
+        compose.onNodeWithTag("video_loading_${feed[1].id}").assertDoesNotExist()
+        compose.runOnIdle { assertTrue("Muted preview must not steal foreground audio focus", MediaPlaybackManager.isPlaying.value) }
+        compose.onRoot().performTouchInput { up() }
+        waitForVideo(feed[1])
+        assertQuadrants(portrait = false)
+    }
+
+    @Test fun nativeVideoSizeIsAppliedBeforeNextComposeFrame() {
+        val id = feed[0].id
+        compose.setContent { FeedVideoSurface(id, false, 0, androidx.compose.ui.Modifier.fillMaxSize()) }
+        compose.waitUntil(5000) { compose.runOnIdle { MediaPlaybackManager.surfaceFor(id) != null } }
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.runOnIdle {
+                MediaPlaybackManager.setSurfaceSize(id, 1920 to 1080)
+                fun find(view: android.view.View): android.view.TextureView? {
+                    if (view is android.view.TextureView) return view
+                    if (view is android.view.ViewGroup) for (i in 0 until view.childCount) find(view.getChildAt(i))?.let { return it }
+                    return null
+                }
+                val texture = requireNotNull(find(compose.activity.window.decorView))
+                val values = FloatArray(9)
+                texture.getTransform(android.graphics.Matrix()).getValues(values)
+                assertEquals(1f, values[android.graphics.Matrix.MSCALE_X], 0.01f)
+                assertEquals(texture.width.toFloat() / texture.height / (1920f / 1080),
+                    values[android.graphics.Matrix.MSCALE_Y], 0.01f)
+            }
+        } finally { compose.mainClock.autoAdvance = true }
+    }
+
+    @Test fun transientPrefetchFailureIsRetriedWithoutUserAction() {
+        fixtureServer.failNextRequests(feed[0].id, 6)
+        showFeed(feed[0], feed)
+        waitForVideo(feed[0])
+        compose.onNodeWithTag("video_loading_${feed[0].id}").assertDoesNotExist()
+    }
+
+    @Test fun temporaryPlaybackHttpFailureRefreshesSourceAutomatically() {
+        val item = feed[0]
+        showFeed(item, feed)
+        waitForVideo(item)
+        val batchesBefore = fixtureServer.sourceBatches.size
+        // Reopen after the previous reader's preloader has been disposed. The
+        // uncached URL forces actual HTTP reads rather than reusing sample data.
+        val coldUrl = compose.runOnIdle {
+            val source = MediaPlaybackManager.videoFeedPreloader!!.url(item.id)!!
+            MediaPlaybackManager.videoFeedPreloader!!.close()
+            source + "&cold_reopen=true"
+        }
+        fixtureServer.failNextRequests(item.id, 3)
+        MediaPlaybackManager.startPlay(context, coldUrl, item.title, item.id, true)
+        compose.waitUntil(30000) { fixtureServer.sourceBatches.size > batchesBefore }
+        waitForVideo(item)
+        compose.runOnIdle {
+            assertNull(MediaPlaybackManager.failedArticleId.value)
+            assertNull(MediaPlaybackManager.videoRecovery.value)
+        }
+        assertQuadrants(portrait = true)
+    }
+
+    @Test fun replacedRevisionIsResolvedAutomaticallyAfterHttp412() {
+        val item = feed[0]
+        showFeed(item, feed)
+        waitForVideo(item)
+        val batchesBefore = fixtureServer.sourceBatches.size
+        val oldUrl = compose.runOnIdle {
+            val url = MediaPlaybackManager.videoFeedPreloader!!.url(item.id)!!
+            MediaPlaybackManager.videoFeedPreloader!!.close()
+            url
+        }
+        fixtureServer.replaceRevision(item.id)
+        MediaPlaybackManager.startPlay(context, oldUrl + "&cold_revision=true", item.title, item.id, true)
+        compose.waitUntil(30000) { fixtureServer.sourceBatches.size > batchesBefore }
+        waitForVideo(item)
+        compose.runOnIdle {
+            assertNotEquals(oldUrl, MediaPlaybackManager.currentFilePath.value)
+            assertNull(MediaPlaybackManager.failedArticleId.value)
+        }
+        assertQuadrants(portrait = true)
     }
 
     @Test fun bufferingFlagCannotKeepLoadingVisibleOverPlayingVideo() {
@@ -320,10 +413,25 @@ class VideoFeedTest {
     }
 
     private fun waitForVideo(item: ArticleListItem) {
-        compose.waitUntil(15000) {
-            MediaPlaybackManager.currentArticleId.value == item.id &&
-                MediaPlaybackManager.isPlaying.value &&
-                MediaPlaybackManager.renderedArticleId.value == item.id
+        try {
+            compose.waitUntil(15000) {
+                MediaPlaybackManager.currentArticleId.value == item.id &&
+                    MediaPlaybackManager.isPlaying.value &&
+                    MediaPlaybackManager.renderedArticleId.value == item.id
+            }
+        } catch (failure: Throwable) {
+            compose.runOnIdle {
+                val service = MediaPlaybackManager.serviceInstance
+                if (service != null) {
+                    for (name in listOf("mediaPlayer", "warmPlayer", "playWhenReady")) {
+                        val field = service.javaClass.getDeclaredField(name).apply { isAccessible = true }
+                        val value = field.get(service)
+                        if (value is androidx.media3.exoplayer.ExoPlayer) Log.e("VideoFeedQA", "PLAYER DIAG $name id=${value.currentMediaItem?.mediaId} play=${value.playWhenReady} playing=${value.isPlaying} state=${value.playbackState} suppress=${value.playbackSuppressionReason} position=${value.currentPosition} buffered=${value.bufferedPosition} error=${value.playerError}")
+                        else Log.e("VideoFeedQA", "PLAYER DIAG $name=$value")
+                    }
+                }
+            }
+            throw failure
         }
     }
 

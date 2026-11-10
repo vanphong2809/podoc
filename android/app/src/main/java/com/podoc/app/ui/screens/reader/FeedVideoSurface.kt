@@ -31,6 +31,8 @@ internal fun FeedVideoSurface(articleId: Int, isActive: Boolean, playbackGenerat
 
 private class FeedTextureView(context: Context) : TextureView(context), TextureView.SurfaceTextureListener {
     private var output: Surface? = null
+    private var hasTextureFrame = false
+    private var frameEpoch = -1L
     private var articleId: Int? = null
     private var generation = 0L
     private var active = false
@@ -48,15 +50,17 @@ private class FeedTextureView(context: Context) : TextureView(context), TextureV
         articleId = id
         active = isActive
         generation = playbackGeneration
-        videoSize = size
         keepScreenOn = isActive
+        videoSize = id?.let { MediaPlaybackManager.surfaceSizeFor(it) } ?: size
         output?.let { surface ->
-            if (id != null) MediaPlaybackManager.registerSurface(surface, id, isActive, generation)
+            if (id != null) MediaPlaybackManager.registerSurface(surface, id, isActive, generation, ::applyVideoSize)
         }
         fitVideo()
     }
 
     override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) {
+        retiredTexture = null
+        hasTextureFrame = false
         output = Surface(texture)
         bind(articleId, active, generation, videoSize)
     }
@@ -68,20 +72,50 @@ private class FeedTextureView(context: Context) : TextureView(context), TextureV
     override fun onSurfaceTextureUpdated(texture: SurfaceTexture) {
         // Decoder INFO only means a frame was queued. Wait until TextureView
         // actually latches it, with the final aspect transform already applied.
-        fitVideo()
+        syncFrameEpoch()
+        hasTextureFrame = true
         val id = articleId ?: return
-        output?.let { MediaPlaybackManager.onSurfaceFrameAvailable(it, id) }
+        videoSize = MediaPlaybackManager.surfaceSizeFor(id)
+        acknowledgeFrame()
     }
 
-    private fun fitVideo() {
+    private fun applyVideoSize(size: Pair<Int, Int>) {
+        syncFrameEpoch()
+        videoSize = size
+        acknowledgeFrame()
+    }
+
+    private fun syncFrameEpoch() {
+        val epoch = articleId?.let { MediaPlaybackManager.presentationEpoch(it) } ?: return
+        if (epoch != frameEpoch) {
+            frameEpoch = epoch
+            hasTextureFrame = false
+        }
+    }
+
+    private fun acknowledgeFrame() {
+        val id = articleId ?: return
+        if (fitVideo() && hasTextureFrame) output?.let { MediaPlaybackManager.onSurfaceFrameAvailable(it, id) }
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        acknowledgeFrame()
+    }
+
+    private fun fitVideo(): Boolean {
         val (videoWidth, videoHeight) = videoSize
-        if (width <= 0 || height <= 0 || videoWidth <= 0 || videoHeight <= 0) return
+        if (width <= 0 || height <= 0 || videoWidth <= 0 || videoHeight <= 0) return false
         val size = listOf(width, height, videoWidth, videoHeight)
-        if (size == fittedSize) return
-        fittedSize = size
-        val scale = minOf(width.toFloat() / videoWidth, height.toFloat() / videoHeight)
-        videoTransform.setScale(videoWidth * scale / width, videoHeight * scale / height, width / 2f, height / 2f)
-        setTransform(videoTransform)
+        if (size != fittedSize) {
+            fittedSize = size
+            val scale = minOf(width.toFloat() / videoWidth, height.toFloat() / videoHeight)
+            videoTransform.setScale(videoWidth * scale / width, videoHeight * scale / height, width / 2f, height / 2f)
+            setTransform(videoTransform)
+        }
+        val id = articleId ?: return false
+        output?.let { MediaPlaybackManager.geometryApplied(it, id, videoSize) }
+        return true
     }
 
     override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
@@ -95,5 +129,6 @@ private class FeedTextureView(context: Context) : TextureView(context), TextureV
         retiredTexture = texture
         output?.let { MediaPlaybackManager.releaseSurface(it, texture) }
         output = null
+        hasTextureFrame = false
     }
 }

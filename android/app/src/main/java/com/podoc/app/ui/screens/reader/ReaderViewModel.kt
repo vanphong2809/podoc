@@ -481,6 +481,7 @@ class ReaderViewModel(
             if (waitForStartup || feed[index].id !in videoSources) {
                 if (unknown.isNotEmpty()) {
                     val response = articleRepository.getVideoPlaybackSources(unknown)
+                    response.unavailableIds.forEach { videoSources.remove(it); videoSourcesCheckedAt.remove(it) }
                     response.items.forEach { videoSources[it.id] = it; videoSourcesCheckedAt[it.id] = now }
                 }
                 check(feed[index].id in videoSources) { "Video không còn khả dụng. Vui lòng tải lại danh sách." }
@@ -491,6 +492,7 @@ class ReaderViewModel(
                 if (unknown.isNotEmpty()) windowUpdateJob = viewModelScope.launch {
                     try {
                         val response = articleRepository.getVideoPlaybackSources(unknown)
+                        response.unavailableIds.forEach { videoSources.remove(it); videoSourcesCheckedAt.remove(it) }
                         response.items.forEach { videoSources[it.id] = it; videoSourcesCheckedAt[it.id] = now }
                         if (windowSerial == serial && !controller.isClosed) publish()
                     } catch (cancelled: CancellationException) { throw cancelled }
@@ -510,7 +512,7 @@ class ReaderViewModel(
         }
     }
 
-    fun predictVideo(index: Int) { feedPreloader?.takeUnless { it.isClosed }?.predict(index) }
+    fun predictVideo(index: Int, scrolling: Boolean = false) { feedPreloader?.takeUnless { it.isClosed }?.predict(index, scrolling) }
 
     override fun onCleared() {
         if (MediaPlaybackManager.videoFeedPreloader === feedPreloader) MediaPlaybackManager.videoFeedPreloader = null

@@ -1,4 +1,4 @@
-# Video feed cache — PoDoc 1.6.38
+# Video feed cache — PoDoc 1.6.39
 
 Video playback now uses Media3 ExoPlayer 1.11.1. Audio playback retains the
 existing service/session/notification controls through the same Media3 player.
@@ -74,3 +74,27 @@ audio tests remain. The long fixture is packaged only in the test APK.
 `VIDEO FIRST FRAME` Android logs measure selection-to-presented-frame latency;
 startup includes its deliberate preparation wait. Emulator figures do not imply
 the same latency on every physical device or network.
+
+## Frame presentation and recovery (1.6.39)
+
+A decoded frame belongs to its article's surface, independently of which page
+is active. Ready adjacent surfaces are visible during the drag and their muted
+standby player runs while being swiped into view. A cancelled drag leaves the
+foreground audio/player selected. A short transition does not flash a spinner;
+loading appears after 250 ms if there is still no usable frame.
+
+Native video-size callbacks apply the TextureView matrix synchronously. A frame
+is ready only when its actual texture has latched and the view has acknowledged
+the matching dimensions. Texture arrivals are remembered for the current source
+epoch even if dimensions arrive later; recomposition does not discard that latch.
+A new source explicitly resets the epoch. Analytics events are checked against
+their media item and output surface so an old decoder callback cannot reveal a new article.
+
+Transient preload errors get two bounded retries. Playback I/O/decoder errors
+request up to two automatic source refreshes for the same selection; switching
+to another article invalidates a pending retry. Decoder initialization fallback
+is enabled. If a standby decoder fails, additional standby creation is disabled
+for that service session. A standby source/network failure skips that URL until
+its revision changes and does not disable preparation of other videos.
+Foreground decoder recovery releases the standby before recreating playback. Android logs include VIDEO RECOVER / VIDEO PREFETCH
+RETRY / VIDEO STANDBY SKIPPED and Media3 error codes.

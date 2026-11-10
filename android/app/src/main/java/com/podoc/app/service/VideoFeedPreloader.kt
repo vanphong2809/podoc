@@ -49,7 +49,10 @@ internal class VideoFeedPreloader(
     private val errors = mutableMapOf<String, String>()
     private val startup = MutableStateFlow(VideoPreparation())
     private var center = 0
-    private var initial = true
+    private var initial = false
+    private var previewIndex: Int? = null
+    private val retryAttempts = mutableMapOf<String, Int>()
+    private val retryPending = mutableSetOf<String>()
     private var rapid = false
     private var movedAt = 0L
     private var pausedForPlayback = false
@@ -92,6 +95,7 @@ internal class VideoFeedPreloader(
         }
         center = selectedIndex
         preferredIndex = selectedIndex
+        previewIndex = null
         val desired = sources.map { it.second.id }.toSet()
         entries.keys.toList().filter { it !in desired }.forEach(::remove)
         for ((index, source) in sources) {
@@ -111,9 +115,10 @@ internal class VideoFeedPreloader(
         MediaPlaybackManager.serviceInstance?.warmNextVideo()
     }
 
-    fun predict(index: Int) {
+    fun predict(index: Int, scrolling: Boolean) {
         if (!closed) {
             preferredIndex = index
+            previewIndex = index.takeIf { scrolling && it != center }
             schedule()
             MediaPlaybackManager.serviceInstance?.warmNextVideo()
         }
@@ -140,7 +145,7 @@ internal class VideoFeedPreloader(
             active.helper.release(false)
         }
         if (caching != null || (!initial && pausedForPlayback)) return
-        val next = entries.values.filter { targetMs(it.index) > (completed[it.key] ?: 0L) && it.key !in errors }
+        val next = entries.values.filter { targetMs(it.index) > (completed[it.key] ?: 0L) && it.key !in errors && it.key !in retryPending }
             .minByOrNull { abs(it.index - preferredIndex) } ?: return
         cancelBackground()
         val target = targetMs(next.index)
@@ -158,13 +163,23 @@ internal class VideoFeedPreloader(
                         scope.launch { yield(); schedule(); MediaPlaybackManager.serviceInstance?.warmNextVideo() }
                     }
                 }
-                override fun onPrepareError(item: MediaItem, error: java.io.IOException) = failed()
-                override fun onDownloadError(item: MediaItem, error: java.io.IOException) = failed()
-                private fun failed() {
+                override fun onPrepareError(item: MediaItem, error: java.io.IOException) = failed(error)
+                override fun onDownloadError(item: MediaItem, error: java.io.IOException) = failed(error)
+                private fun failed(error: java.io.IOException) {
                     if (caching?.ticket !== ticket) return
-                    errors[next.key] = "Không thể chuẩn bị video ${next.source.id}. Chạm để thử lại."
                     caching?.helper?.release(false)
                     caching = null
+                    val attempt = (retryAttempts[next.key] ?: 0) + 1
+                    retryAttempts[next.key] = attempt
+                    if (attempt <= 2) {
+                        retryPending.add(next.key)
+                        android.util.Log.w("VideoFeedPreloader", "VIDEO PREFETCH RETRY | id=${next.source.id} | attempt=$attempt | cause=${error.javaClass.simpleName}")
+                        scope.launch {
+                            delay(250L * attempt)
+                            retryPending.remove(next.key)
+                            if (!closed && entries[next.source.id] === next) schedule()
+                        }
+                    } else errors[next.key] = "Không thể chuẩn bị video ${next.source.id}. Chạm để thử lại."
                     publishProgress()
                     schedule()
                 }
@@ -191,8 +206,9 @@ internal class VideoFeedPreloader(
     fun url(articleId: Int): String? = entries[articleId]?.item?.localConfiguration?.uri?.toString()
     fun cachedDurationMs(articleId: Int): Long = entries[articleId]?.let { completed[it.key] } ?: 0L
     fun cachedBytes(articleId: Int): Long = entries[articleId]?.let { cache.getCachedBytes(it.key, 0, it.source.fileSizeBytes) } ?: 0L
-    fun buildPlayer(loadControl: LoadControl): ExoPlayer = ExoPlayer.Builder(context)
+    fun buildPlayer(loadControl: LoadControl): ExoPlayer = ExoPlayer.Builder(context, DefaultRenderersFactory(context).setEnableDecoderFallback(true))
         .setMediaSourceFactory(sourceFactory).setBandwidthMeter(bandwidth).setLoadControl(loadControl).build()
+    fun shouldPlayPreview(id: Int): Boolean = entries[id]?.index == previewIndex
     fun selectedId(): Int? = entries.values.firstOrNull { it.index == center }?.source?.id
     fun nextId(): Int? = entries.values.firstOrNull { it.index == preferredIndex && it.index != center }?.source?.id
         ?: entries.values.firstOrNull { it.index == center + 1 }?.source?.id
@@ -244,6 +260,8 @@ internal class VideoFeedPreloader(
             // Re-entering the window verifies the bytes again. Disk spans remain;
             // an old readiness marker must not survive an intervening LRU eviction.
             completed.remove(it.key)
+            retryAttempts.remove(it.key)
+            retryPending.remove(it.key)
         }
     }
 

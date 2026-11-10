@@ -102,15 +102,54 @@ object MediaPlaybackManager {
     internal data class VideoSurface(val articleId: Int, val surface: Surface, val generation: Long)
     @Volatile internal var videoSurface: VideoSurface? = null
     private val surfaces = mutableMapOf<Int, Surface>()
+    private val sizeListeners = mutableMapOf<Surface, (Pair<Int, Int>) -> Unit>()
+    private val fittedSizes = mutableMapOf<Surface, Pair<Int, Int>>()
+    private val presentationEpochs = mutableMapOf<Int, Long>()
+    internal fun presentationEpoch(id: Int): Long = presentationEpochs[id] ?: 0
+    private val _presentedSurfaces = MutableStateFlow<Map<Int, Surface>>(emptyMap())
+    internal val presentedSurfaces: StateFlow<Map<Int, Surface>> = _presentedSurfaces.asStateFlow()
+    internal data class VideoRecovery(val articleId: Int, val selection: Long, val attempt: Int)
+    internal val _videoRecovery = MutableStateFlow<VideoRecovery?>(null)
+    internal val videoRecovery: StateFlow<VideoRecovery?> = _videoRecovery.asStateFlow()
+    internal var selectionSerial = 0L
+        private set
     private val _surfaceVideoSizes = MutableStateFlow<Map<Int, Pair<Int, Int>>>(emptyMap())
     internal val surfaceVideoSizes: StateFlow<Map<Int, Pair<Int, Int>>> = _surfaceVideoSizes.asStateFlow()
     internal fun surfaceFor(id: Int): Surface? = surfaces[id]?.takeIf { it.isValid }
+    internal fun surfaceSizeFor(id: Int): Pair<Int, Int> = _surfaceVideoSizes.value[id] ?: (0 to 0)
     internal fun setSurfaceSize(id: Int, size: Pair<Int, Int>) {
+        if (surfaceSizeFor(id) != size) {
+            surfaces[id]?.let { fittedSizes.remove(it) }
+            _presentedSurfaces.value = _presentedSurfaces.value - id
+        }
         _surfaceVideoSizes.value = _surfaceVideoSizes.value + (id to size)
+        // Apply on the native view synchronously, before acknowledging its first
+        // frame. Waiting for Compose to collect this StateFlow is one frame late.
+        surfaces[id]?.let { sizeListeners[it]?.invoke(size) }
     }
-    internal fun registerSurface(surface: Surface, id: Int, active: Boolean, generation: Long) {
+    internal fun geometryApplied(surface: Surface, id: Int, size: Pair<Int, Int>) {
+        if (surfaceFor(id) !== surface || size != surfaceSizeFor(id) || size.first <= 0 || size.second <= 0) return
+        if (fittedSizes[surface] == size) return
+        fittedSizes[surface] = size
+        serviceInstance?.publishFrameIfReady()
+    }
+    internal fun isGeometryReady(surface: Surface, id: Int): Boolean =
+        surfaceFor(id) === surface && surfaceSizeFor(id).let { it.first > 0 && it.second > 0 && fittedSizes[surface] == it }
+    internal fun present(surface: Surface, id: Int) {
+        if (_presentedSurfaces.value[id] !== surface && isGeometryReady(surface, id))
+            _presentedSurfaces.value = _presentedSurfaces.value + (id to surface)
+    }
+    internal fun clearPresentedFrames() { _presentedSurfaces.value = emptyMap() }
+    internal fun clearPresentation(id: Int) {
+        presentationEpochs[id] = presentationEpoch(id) + 1
+        _presentedSurfaces.value = _presentedSurfaces.value - id
+        setSurfaceSize(id, 0 to 0)
+    }
+    internal fun registerSurface(surface: Surface, id: Int, active: Boolean, generation: Long,
+        onSize: (Pair<Int, Int>) -> Unit) {
         surfaces[id] = surface
-        if (id == _currentArticleId.value && id !in _surfaceVideoSizes.value) setSurfaceSize(id, _videoSize.value)
+        sizeListeners[surface] = onSize
+        onSize(surfaceSizeFor(id))
         if (active) attachSurface(surface, id, generation)
         else if (id != _currentArticleId.value) detachSurface(surface)
         serviceInstance?.warmNextVideo()
@@ -160,8 +199,11 @@ object MediaPlaybackManager {
 
     fun releaseSurface(surface: Surface, texture: SurfaceTexture? = null) {
         val removed = surfaces.filterValues { it === surface }.keys
-        removed.forEach { surfaces.remove(it) }
+        removed.forEach { surfaces.remove(it); presentationEpochs.remove(it) }
         _surfaceVideoSizes.value = _surfaceVideoSizes.value - removed
+        _presentedSurfaces.value = _presentedSurfaces.value - removed
+        sizeListeners.remove(surface)
+        fittedSizes.remove(surface)
         detachSurface(surface)
         val service = serviceInstance
         if (service != null) service.releaseSurface(surface, texture) else {
@@ -171,13 +213,16 @@ object MediaPlaybackManager {
     }
 
     fun onSurfaceFrameAvailable(surface: Surface, articleId: Int) {
-        if (_renderedVideoSurface.value?.surface !== surface) {
+        if (_presentedSurfaces.value[articleId] !== surface ||
+            (articleId == _currentArticleId.value && _renderedVideoSurface.value?.surface !== surface)) {
             serviceInstance?.onSurfaceFrameAvailable(surface, articleId)
         }
     }
 
     fun selectVideo(articleId: Int) {
         if (selectedVideoArticleId != articleId || _currentArticleId.value == null || _failedArticleId.value == articleId) {
+            selectionSerial += 1
+            _videoRecovery.value = null
             selectedVideoAtMs = android.os.SystemClock.elapsedRealtime()
             _firstFrameLatencyMs.value = null
         }
@@ -286,6 +331,10 @@ class MediaPlaybackService : Service() {
     private var warmPath: String? = null
     private var warmSurface: Surface? = null
     private var warmOwner: VideoFeedPreloader? = null
+    private var warmDisabled = false
+    private val warmFailedPaths = mutableSetOf<String>()
+    private var recoverySelection = -1L
+    private var recoveryAttempts = 0
     private var warmRenderingStarted = false
     private var warmTextureSeen = false
     private var activeTextureSeen = false
@@ -344,6 +393,11 @@ class MediaPlaybackService : Service() {
                 val video = intent.getBooleanExtra(EXTRA_IS_VIDEO, false)
                 if (video && MediaPlaybackManager.selectedVideoArticleId != id) return
                 if (activeFilePath == path && MediaPlaybackManager._currentArticleId.value == id) return
+                if (recoverySelection != MediaPlaybackManager.selectionSerial) {
+                    recoverySelection = MediaPlaybackManager.selectionSerial
+                    recoveryAttempts = 0
+                }
+                MediaPlaybackManager._videoRecovery.value = null
                 MediaPlaybackManager._currentTitle.value = intent.getStringExtra(EXTRA_TITLE) ?: "Tệp media"
                 MediaPlaybackManager._currentArticleId.value = id.takeIf { it != -1 }
                 MediaPlaybackManager._currentFilePath.value = path
@@ -359,7 +413,7 @@ class MediaPlaybackService : Service() {
         }
     }
 
-    private fun createPlayer(owner: VideoFeedPreloader?): ExoPlayer {
+    private fun createPlayer(owner: VideoFeedPreloader?, standby: Boolean = false): ExoPlayer {
         var created: ExoPlayer? = null
         val delegate = DefaultLoadControl.Builder().setBufferDurationsMs(15_000, 30_000, 100, 1_000)
             .setTargetBufferBytes(16 * 1024 * 1024).build()
@@ -385,7 +439,7 @@ class MediaPlaybackService : Service() {
                 return delegate.shouldContinueLoading(parameters)
             }
         }
-        val player = owner?.buildPlayer(loadControl) ?: ExoPlayer.Builder(this)
+        val player = owner?.buildPlayer(loadControl) ?: ExoPlayer.Builder(this, androidx.media3.exoplayer.DefaultRenderersFactory(this).setEnableDecoderFallback(true))
             .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(this,
                 DefaultHttpDataSource.Factory().setDefaultRequestProperties(
                     MediaPlaybackManager._authToken.value?.takeIf { it.isNotBlank() }
@@ -393,7 +447,7 @@ class MediaPlaybackService : Service() {
             .setLoadControl(loadControl).build()
         created = player
         player.setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA)
-            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), !standby)
         player.setWakeMode(C.WAKE_MODE_NETWORK)
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
@@ -418,26 +472,43 @@ class MediaPlaybackService : Service() {
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (player !== mediaPlayer) return
-                MediaPlaybackManager._isPlaying.value = isPlaying
-                updatePlaybackState(position(), isPlaying)
-                updateNotification(MediaPlaybackManager._currentTitle.value, isPlaying)
-            }
-            override fun onVideoSizeChanged(size: VideoSize) {
-                if (player !== mediaPlayer && player !== warmPlayer) return
-                val dimensions = (size.width * size.pixelWidthHeightRatio).toInt() to size.height
-                player.currentMediaItem?.mediaId?.toIntOrNull()?.let { MediaPlaybackManager.setSurfaceSize(it, dimensions) }
-                if (player === mediaPlayer) MediaPlaybackManager._videoSize.value = dimensions
-            }
-            override fun onRenderedFirstFrame() {
-                if (player === mediaPlayer) { videoRenderingStarted = true; publishFrameIfReady() }
-                else if (player === warmPlayer) warmRenderingStarted = true
+                publishPlayingState(player)
             }
             override fun onPlayerError(error: PlaybackException) {
-                if (player === mediaPlayer) reportPlaybackError(error)
+                if (player === mediaPlayer) recoverPlayback(error)
                 else if (player === warmPlayer) {
-                    Log.w(TAG, "Bỏ chuẩn bị bộ giải mã phụ: ${error.errorCodeName}")
+                    // Some devices cannot run two hardware decoders. Keep the
+                    // foreground player and stop reopening a failing standby.
+                    if (error.errorCode in 4000..4999) warmDisabled = true
+                    warmPath?.let { warmFailedPaths.add(it) }
+                    Log.w(TAG, "VIDEO STANDBY SKIPPED | decoder_disabled=$warmDisabled | code=${error.errorCodeName}")
                     releaseWarmPlayer()
                 }
+            }
+        })
+        player.addAnalyticsListener(object : androidx.media3.exoplayer.analytics.AnalyticsListener {
+            private fun matches(time: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime): Boolean {
+                if (time.timeline.isEmpty || time.windowIndex !in 0 until time.timeline.windowCount) return false
+                val item = time.timeline.getWindow(time.windowIndex, androidx.media3.common.Timeline.Window()).mediaItem
+                return item == player.currentMediaItem && (player === mediaPlayer || player === warmPlayer)
+            }
+            override fun onVideoSizeChanged(time: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime, size: VideoSize) {
+                if (!matches(time)) return
+                val id = player.currentMediaItem?.mediaId?.toIntOrNull() ?: return
+                val dimensions = (size.width * size.pixelWidthHeightRatio).toInt() to size.height
+                if (MediaPlaybackManager.surfaceSizeFor(id) != dimensions) {
+                    if (player === mediaPlayer) activeTextureSeen = false else warmTextureSeen = false
+                }
+                if (player === mediaPlayer) MediaPlaybackManager._videoSize.value = dimensions
+                MediaPlaybackManager.setSurfaceSize(id, dimensions)
+                publishFrameIfReady()
+            }
+            override fun onRenderedFirstFrame(time: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+                output: Any, renderTimeMs: Long) {
+                if (!matches(time)) return
+                if (player === mediaPlayer && output === boundSurface) videoRenderingStarted = true
+                else if (player === warmPlayer && output === warmSurface) warmRenderingStarted = true
+                publishFrameIfReady()
             }
         })
         return player
@@ -486,6 +557,8 @@ class MediaPlaybackService : Service() {
             warmRenderingStarted = outgoingRendered
             warmTextureSeen = outgoingTextureSeen
             outgoing?.pause()
+            outgoing?.let { it.setAudioAttributes(it.audioAttributes, false) }
+            incoming.setAudioAttributes(incoming.audioAttributes, true)
             outgoing?.volume = 0f
             outgoing?.seekTo(0)
             videoRenderingStarted = rendered
@@ -515,6 +588,7 @@ class MediaPlaybackService : Service() {
             player.repeatMode = if (MediaPlaybackManager._isRepeatMode.value) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
             player.clearVideoSurface()
             boundSurface = null
+            MediaPlaybackManager.clearPresentation(id)
             val source = owner?.mediaSource(id)
             if (source != null) player.setMediaSource(source)
             else player.setMediaItem(MediaItem.Builder().setMediaId(id.toString()).setUri(path).build())
@@ -543,6 +617,18 @@ class MediaPlaybackService : Service() {
         val player = mediaPlayer ?: return
         val canStart = !MediaPlaybackManager._isVideoMode.value || boundSurface != null || videoRenderingStarted
         player.playWhenReady = playWhenReady && canStart
+        // A running preview may already be playing when promoted. In that case
+        // there is no new onIsPlayingChanged callback for its new foreground role.
+        publishPlayingState(player)
+    }
+    private fun publishPlayingState(player: ExoPlayer) {
+        if (player !== mediaPlayer) return
+        val playing = player.isPlaying
+        if (MediaPlaybackManager._isPlaying.value != playing) {
+            MediaPlaybackManager._isPlaying.value = playing
+            updatePlaybackState(position(), playing)
+            updateNotification(MediaPlaybackManager._currentTitle.value, playing)
+        }
     }
 
     private fun position(): Int = (mediaPlayer?.currentPosition ?: 0).coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
@@ -590,20 +676,23 @@ class MediaPlaybackService : Service() {
         boundSurface = target
     }
     fun onSurfaceFrameAvailable(surface: Surface, articleId: Int) {
-        playerHandler.post {
-            if (surface === warmSurface && articleId == warmId) warmTextureSeen = true
-            if (surface === boundSurface && articleId == MediaPlaybackManager._currentArticleId.value) {
-                activeTextureSeen = true
-                publishFrameIfReady()
-            }
-        }
+        if (!MediaPlaybackManager.isGeometryReady(surface, articleId)) return
+        if (surface === warmSurface && articleId == warmId) warmTextureSeen = true
+        if (surface === boundSurface && articleId == MediaPlaybackManager._currentArticleId.value) activeTextureSeen = true
+        publishFrameIfReady()
     }
-    private fun publishFrameIfReady() {
+    internal fun publishFrameIfReady() {
+        val standbyId = warmId
+        val standbySurface = warmSurface
+        if (warmRenderingStarted && warmTextureSeen && standbyId != null && standbySurface != null) {
+            MediaPlaybackManager.present(standbySurface, standbyId)
+        }
         val target = MediaPlaybackManager.videoSurface ?: return
         val id = MediaPlaybackManager._currentArticleId.value ?: return
         if (videoRenderingStarted && activeTextureSeen && target.surface === boundSurface &&
             target.generation == MediaPlaybackManager._playbackGeneration.value && target.articleId == id &&
-            MediaPlaybackManager.selectedVideoArticleId == id && MediaPlaybackManager._videoSize.value.second > 0) {
+            MediaPlaybackManager.selectedVideoArticleId == id && MediaPlaybackManager.isGeometryReady(target.surface, id)) {
+            MediaPlaybackManager.present(target.surface, id)
             MediaPlaybackManager._renderedVideoSurface.value = target
             MediaPlaybackManager._renderedArticleId.value = id
             if (MediaPlaybackManager._firstFrameLatencyMs.value == null) {
@@ -615,10 +704,11 @@ class MediaPlaybackService : Service() {
     internal var lastSelectionUsedPreparedVideo = false
         private set
     internal fun preparedVideoId(): Int? = warmId?.takeIf {
-        warmPlayer?.playbackState == Player.STATE_READY && warmRenderingStarted && warmTextureSeen
+        warmPlayer?.playbackState == Player.STATE_READY && warmRenderingStarted && warmTextureSeen &&
+            warmSurface?.let { surface -> MediaPlaybackManager.isGeometryReady(surface, it) } == true
     }
     internal fun warmNextVideo() {
-        if (destroyed || !MediaPlaybackManager._isVideoMode.value) return
+        if (destroyed || warmDisabled || !MediaPlaybackManager._isVideoMode.value) return
         val owner = playerOwner?.takeUnless { it.isClosed } ?: return
         // Preserve the prepared incoming player until a pending selection is promoted.
         if (owner.selectedId() != MediaPlaybackManager._currentArticleId.value ||
@@ -627,11 +717,19 @@ class MediaPlaybackService : Service() {
         if (id == MediaPlaybackManager._currentArticleId.value || owner.cachedDurationMs(id) < 1_000) return
         val surface = MediaPlaybackManager.surfaceFor(id) ?: return
         val path = owner.url(id) ?: return
+        if (path in warmFailedPaths) return
         if (warmOwner !== owner) { releaseWarmPlayer(); warmOwner = owner }
-        if (warmPlayer == null) warmPlayer = createPlayer(owner)
+        if (warmPlayer == null) try { warmPlayer = createPlayer(owner, standby = true) } catch (error: RuntimeException) {
+            warmDisabled = true
+            Log.w(TAG, "VIDEO STANDBY DISABLED | cause=${error.javaClass.simpleName}")
+            return
+        }
         val player = warmPlayer!!
         val sameItem = warmId == id && warmPath == path
-        if (sameItem && warmSurface === surface) return
+        if (sameItem && warmSurface === surface) {
+            player.playWhenReady = owner.shouldPlayPreview(id)
+            return
+        }
         warmId = id
         warmPath = path
         warmSurface = surface
@@ -642,6 +740,7 @@ class MediaPlaybackService : Service() {
         if (!sameItem) {
             val source = owner.mediaSource(id) ?: return
             player.clearVideoSurface()
+            MediaPlaybackManager.clearPresentation(id)
             player.setMediaSource(source)
             player.prepare()
             player.setVideoSurface(surface)
@@ -651,6 +750,7 @@ class MediaPlaybackService : Service() {
             MediaPlaybackManager.setSurfaceSize(id, (size.width * size.pixelWidthHeightRatio).toInt() to size.height)
             player.seekTo(0)
         }
+        player.playWhenReady = owner.shouldPlayPreview(id)
     }
     private fun releaseWarmPlayer() {
         val previous = warmPlayer
@@ -678,6 +778,30 @@ class MediaPlaybackService : Service() {
                 }
             } finally { surface.release(); texture?.release() }
         }
+    }
+    private fun recoverPlayback(error: PlaybackException) {
+        val id = MediaPlaybackManager._currentArticleId.value
+        val recoverable = error.errorCode in 2000..2999 || error.errorCode in 4000..4999
+        if (MediaPlaybackManager._isVideoMode.value && id != null &&
+            MediaPlaybackManager.selectedVideoArticleId == id && recoverable && recoveryAttempts < 2) {
+            recoveryAttempts += 1
+            progressJob?.cancel()
+            activeFilePath = null
+            activePrepared = false
+            mediaPlayer?.pause()
+            MediaPlaybackManager._isBuffering.value = true
+            if (error.errorCode in 4000..4999) {
+                warmDisabled = true
+                releaseWarmPlayer()
+                val previous = mediaPlayer
+                mediaPlayer = null
+                previous?.release()
+                boundSurface = null
+            }
+            Log.w(TAG, "VIDEO RECOVER | id=$id | attempt=$recoveryAttempts | code=${error.errorCodeName}")
+            MediaPlaybackManager._videoRecovery.value = MediaPlaybackManager.VideoRecovery(id,
+                MediaPlaybackManager.selectionSerial, recoveryAttempts)
+        } else reportPlaybackError(error)
     }
     private fun reportPlaybackError(error: Exception) {
         Log.e(TAG, "Không thể phát media", error)
@@ -709,6 +833,8 @@ class MediaPlaybackService : Service() {
         MediaPlaybackManager._renderedArticleId.value = null
         MediaPlaybackManager._renderedVideoSurface.value = null
         MediaPlaybackManager._failedArticleId.value = null
+        MediaPlaybackManager._videoRecovery.value = null
+        MediaPlaybackManager.clearPresentedFrames()
         MediaPlaybackManager._currentPosition.value = 0
         MediaPlaybackManager._duration.value = 0
         updatePlaybackState(0, false)

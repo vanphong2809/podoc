@@ -1928,7 +1928,8 @@ internal fun TikTokVideoFeedViewer(
     val isRepeatMode by MediaPlaybackManager.isRepeatMode.collectAsState()
     val playbackGeneration by MediaPlaybackManager.playbackGeneration.collectAsState()
     val currentPlayingArticleId by MediaPlaybackManager.currentArticleId.collectAsState()
-    val renderedVideoSurface by MediaPlaybackManager.renderedVideoSurface.collectAsState()
+    val presentedSurfaces by MediaPlaybackManager.presentedSurfaces.collectAsState()
+    val videoRecovery by MediaPlaybackManager.videoRecovery.collectAsState()
     val failedArticleId by MediaPlaybackManager.failedArticleId.collectAsState()
 
     var itemToDelete by remember { mutableStateOf<ArticleListItem?>(null) }
@@ -2009,6 +2010,13 @@ internal fun TikTokVideoFeedViewer(
         )
     )
 
+    LaunchedEffect(videoRecovery) {
+        val recovery = videoRecovery ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(200L * recovery.attempt)
+        if (MediaPlaybackManager.selectedVideoArticleId == recovery.articleId &&
+            MediaPlaybackManager.selectionSerial == recovery.selection) retryCount++
+    }
+
     // Keep the outgoing frame moving with the drag. Switch playback only when a page settles.
     // collectLatest cancels a pending selection as soon as another drag starts.
     LaunchedEffect(pagerState, feedList, isFeedReady, retryCount) {
@@ -2020,7 +2028,8 @@ internal fun TikTokVideoFeedViewer(
                 videoLoadError = null
                 MediaPlaybackManager.selectVideo(item.id)
                 if (MediaPlaybackManager.currentArticleId.value == item.id &&
-                    MediaPlaybackManager.failedArticleId.value != item.id) {
+                    MediaPlaybackManager.failedArticleId.value != item.id &&
+                    MediaPlaybackManager.videoRecovery.value?.articleId != item.id) {
                     try {
                         viewModel.prepareVideoWindow(context, feedList, pageIndex, !initialWindowPrepared, retryCount)
                         initialWindowPrepared = true
@@ -2055,7 +2064,7 @@ internal fun TikTokVideoFeedViewer(
         snapshotFlow { Triple(pagerState.settledPage, pagerState.targetPage, pagerState.isScrollInProgress) }
             .collectLatest { (settled, target, scrolling) ->
                 val predicted = if (scrolling && target != settled) target else settled
-                if (predicted in feedList.indices) viewModel.predictVideo(predicted)
+                if (predicted in feedList.indices) viewModel.predictVideo(predicted, scrolling)
             }
     }
 
@@ -2079,9 +2088,18 @@ internal fun TikTokVideoFeedViewer(
             val item = feedList[pageIndex]
             val isCurrentPage = (pageIndex == pagerState.currentPage)
             val isThisVideoActive = (currentPlayingArticleId == item.id)
-            val hasVideoFrame = initialWindowPrepared && isThisVideoActive && renderedVideoSurface?.articleId == item.id &&
-                renderedVideoSurface?.generation == playbackGeneration &&
-                renderedVideoSurface?.surface === MediaPlaybackManager.videoSurface?.surface
+            val hasVideoFrame = initialWindowPrepared && presentedSurfaces[item.id]?.let {
+                it === MediaPlaybackManager.surfaceFor(item.id)
+            } == true
+            var showLoading by remember(item.id) { mutableStateOf(false) }
+            LaunchedEffect(isCurrentPage, hasVideoFrame, initialWindowPrepared) {
+                if (isCurrentPage && !hasVideoFrame) {
+                    // Keep the initial preparation indicator visible until its
+                    // first frame; only defer a new indicator between pages.
+                    if (initialWindowPrepared && !showLoading) kotlinx.coroutines.delay(250)
+                    showLoading = true
+                } else showLoading = false
+            }
             val pageError = if (failedArticleId == item.id) "Không thể phát video. Chạm để thử lại." else videoLoadError
             Box(
                 modifier = Modifier
@@ -2126,7 +2144,7 @@ internal fun TikTokVideoFeedViewer(
                     )
                 // Buffering notifications may lag behind visible playback.
                 // Loading ends when this surface presents its first frame.
-                } else if (isCurrentPage && !hasVideoFrame) {
+                } else if (isCurrentPage && !hasVideoFrame && showLoading) {
                     Box(
                         modifier = Modifier
                             .size(56.dp)

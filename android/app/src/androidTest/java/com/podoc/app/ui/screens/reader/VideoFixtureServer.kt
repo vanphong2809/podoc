@@ -16,6 +16,13 @@ internal class VideoFixtureServer(private val clips: Map<Int, ByteArray>) : Clos
     private val socket = ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"))
     private val executor = Executors.newCachedThreadPool()
     private val gates = ConcurrentHashMap<Int, CountDownLatch>()
+    private val revisions = ConcurrentHashMap<Int, Int>()
+    private fun revision(id: Int): String = MessageDigest.getInstance("MD5").run {
+        update(clips.getValue(id)); update((revisions[id] ?: 0).toString().toByteArray())
+        digest().joinToString("") { "%02x".format(it) }
+    }
+    fun replaceRevision(id: Int) { revisions[id] = (revisions[id] ?: 0) + 1 }
+    private val failures = ConcurrentHashMap<Int, java.util.concurrent.atomic.AtomicInteger>()
     val bytesSent = ConcurrentHashMap<Int, AtomicLong>()
     val requestCounts = ConcurrentHashMap<Int, AtomicLong>()
     val sourceBatches = java.util.concurrent.CopyOnWriteArrayList<List<Int>>()
@@ -57,7 +64,7 @@ internal class VideoFixtureServer(private val clips: Map<Int, ByteArray>) : Clos
                                     val bytes = clips[id]
                                     if (bytes == null) missing.put(id)
                                     else {
-                                        val rev = MessageDigest.getInstance("MD5").digest(bytes).joinToString("") { "%02x".format(it) }
+                                        val rev = revision(id)
                                         items.put(JSONObject().put("id", id).put("variant", "optimized").put("revision", rev)
                                             .put("url", "/api/articles/$id/file?inline=true&variant=optimized&revision=$rev")
                                             .put("mime_type", "video/mp4").put("file_size_bytes", bytes.size))
@@ -72,6 +79,17 @@ internal class VideoFixtureServer(private val clips: Map<Int, ByteArray>) : Clos
                             val bytes = clips[id] ?: return@serve
                             requestCounts.getOrPut(id) { AtomicLong() }.incrementAndGet()
                             requested.add(id)
+                            if ((failures[id]?.getAndUpdate { (it - 1).coerceAtLeast(0) } ?: 0) > 0) {
+                                output.write("HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+                                output.flush()
+                                return@serve
+                            }
+                            val pinned = Regex("revision=([a-f0-9]+)").find(request)?.groupValues?.get(1)
+                            if (pinned != null && pinned != revision(id)) {
+                                output.write("HTTP/1.1 412 Precondition Failed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+                                output.flush()
+                                return@serve
+                            }
                             gates[id]?.await()
                             val range = headers["range"]?.let { Regex("bytes=(\\d+)-(\\d*)").find(it) }
                             val start = range?.groupValues?.get(1)?.toIntOrNull() ?: 0
@@ -103,6 +121,7 @@ internal class VideoFixtureServer(private val clips: Map<Int, ByteArray>) : Clos
         }
     }
 
+    fun failNextRequests(id: Int, count: Int) { failures[id] = java.util.concurrent.atomic.AtomicInteger(count) }
     fun hold(id: Int) { gates[id] = CountDownLatch(1) }
     fun release(id: Int) { gates.remove(id)?.countDown() }
 
