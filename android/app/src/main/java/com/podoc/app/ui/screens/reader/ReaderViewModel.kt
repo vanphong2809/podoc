@@ -81,7 +81,10 @@ class ReaderViewModel(
     private val videoSources = mutableMapOf<Int, VideoPlaybackSource>()
     private val videoSourcesCheckedAt = mutableMapOf<Int, Long>()
     private var windowUpdateJob: Job? = null
-    private var windowSerial = 0
+    private data class VideoWindow(val feed: List<ArticleListItem>, val index: Int, val controller: VideoFeedPreloader)
+    private var latestVideoWindow: VideoWindow? = null
+    private val videoSourceUpdates = MutableStateFlow(0L)
+    private val videoSourceErrors = mutableMapOf<Int, String>()
     private var lastVideoRetry = 0
 
     init {
@@ -454,6 +457,10 @@ class ReaderViewModel(
             MediaPlaybackManager.setAuthToken(token.takeIf { it.isNotBlank() })
             val account = VideoCacheStore.namespace(server, username)
             if (account != feedCacheScope || retry != lastVideoRetry || feedPreloader?.isClosed == true) {
+                windowUpdateJob?.cancel()
+                windowUpdateJob = null
+                latestVideoWindow = null
+                videoSourceErrors.clear()
                 feedPreloader?.close()
                 feedPreloader = null
                 videoSources.clear()
@@ -469,36 +476,25 @@ class ReaderViewModel(
             controller.updateAuth(token)
             MediaPlaybackManager.videoFeedPreloader = controller
             if (waitForStartup) controller.beginStartup()
-            val serial = ++windowSerial
-            windowUpdateJob?.cancel()
-            val now = android.os.SystemClock.elapsedRealtime()
-            val unknown = ids.filter { it !in videoSources || now - (videoSourcesCheckedAt[it] ?: 0L) > 30_000 }
-            fun publish() {
-                controller.updateWindow(indices.mapNotNull { position ->
-                    videoSources[feed[position].id]?.let { position to it }
-                }, index)
-            }
-            if (waitForStartup || feed[index].id !in videoSources) {
-                if (unknown.isNotEmpty()) {
-                    val response = articleRepository.getVideoPlaybackSources(unknown)
-                    response.unavailableIds.forEach { videoSources.remove(it); videoSourcesCheckedAt.remove(it) }
-                    response.items.forEach { videoSources[it.id] = it; videoSourcesCheckedAt[it.id] = now }
+            latestVideoWindow = VideoWindow(feed, index, controller)
+            ids.forEach { videoSourceErrors.remove(it) }
+            publishLatestVideoWindow(controller)
+            resolveVideoWindow(controller)
+            val required = if (waitForStartup) ids else if (feed[index].id !in videoSources) listOf(feed[index].id) else emptyList()
+            try {
+                kotlinx.coroutines.withTimeout(50_000) {
+                    videoSourceUpdates.first {
+                        required.any { id -> id in videoSourceErrors } || required.all { id ->
+                            val checked = videoSourcesCheckedAt[id]
+                            checked != null && android.os.SystemClock.elapsedRealtime() - checked <= 30_000
+                        }
+                    }
                 }
-                check(feed[index].id in videoSources) { "Video không còn khả dụng. Vui lòng tải lại danh sách." }
-                publish()
-            } else {
-                // A newly exposed far neighbour never delays switching to an already cached video.
-                publish()
-                if (unknown.isNotEmpty()) windowUpdateJob = viewModelScope.launch {
-                    try {
-                        val response = articleRepository.getVideoPlaybackSources(unknown)
-                        response.unavailableIds.forEach { videoSources.remove(it); videoSourcesCheckedAt.remove(it) }
-                        response.items.forEach { videoSources[it.id] = it; videoSourcesCheckedAt[it.id] = now }
-                        if (windowSerial == serial && !controller.isClosed) publish()
-                    } catch (cancelled: CancellationException) { throw cancelled }
-                    catch (_: Exception) { /* Retry the missing neighbour on the next move. */ }
-                }
+            } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+                throw java.io.IOException("Không thể lấy đủ nguồn phát video. Kiểm tra kết nối và thử lại.")
             }
+            required.firstNotNullOfOrNull { videoSourceErrors[it] }?.let { throw java.io.IOException(it) }
+            check(feed[index].id in videoSources) { "Video không còn khả dụng. Vui lòng tải lại danh sách." }
             if (waitForStartup) controller.awaitStartup()
             controller.url(feed[index].id) ?: error("Không tìm thấy nguồn phát video")
         } catch (e: Exception) {
@@ -512,9 +508,60 @@ class ReaderViewModel(
         }
     }
 
+    private fun publishLatestVideoWindow(controller: VideoFeedPreloader) {
+        val window = latestVideoWindow?.takeIf { it.controller === controller && feedPreloader === controller && !controller.isClosed } ?: return
+        val indices = VideoPreloadPolicy.window(window.feed.size, window.index)
+        controller.updateWindow(indices.mapNotNull { position ->
+            videoSources[window.feed[position].id]?.let { position to it }
+        }, window.index, window.feed.size)
+    }
+
+    /** One resolver survives page changes; its result is merged into the latest window. */
+    private fun resolveVideoWindow(controller: VideoFeedPreloader) {
+        if (windowUpdateJob?.isActive == true) return
+        windowUpdateJob = viewModelScope.launch {
+            var failures = 0
+            while (feedPreloader === controller && !controller.isClosed) {
+                val window = latestVideoWindow?.takeIf { it.controller === controller } ?: break
+                val now = android.os.SystemClock.elapsedRealtime()
+                val missing = VideoPreloadPolicy.window(window.feed.size, window.index).map { window.feed[it].id }
+                    .filter { id -> videoSourcesCheckedAt[id]?.let { now - it > 30_000 } ?: true }
+                if (missing.isEmpty()) break
+                try {
+                    val response = articleRepository.getVideoPlaybackSources(missing)
+                    if (feedPreloader !== controller || controller.isClosed) break
+                    val received = response.items.associateBy { it.id }
+                    val checked = android.os.SystemClock.elapsedRealtime()
+                    missing.forEach { id ->
+                        val source = received[id]
+                        if (source == null) videoSources.remove(id) else videoSources[id] = source
+                        videoSourcesCheckedAt[id] = checked
+                        videoSourceErrors.remove(id)
+                    }
+                    failures = 0
+                    // Do not apply the page/index captured before the HTTP request.
+                    publishLatestVideoWindow(controller)
+                    videoSourceUpdates.value += 1
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    failures += 1
+                    if (failures <= 2) delay(250L * failures)
+                    else {
+                        missing.forEach { videoSourceErrors[it] = "Không thể lấy nguồn video. Kiểm tra kết nối và thử lại." }
+                        videoSourceUpdates.value += 1
+                        break
+                    }
+                }
+            }
+        }
+    }
+
     fun predictVideo(index: Int, scrolling: Boolean = false) { feedPreloader?.takeUnless { it.isClosed }?.predict(index, scrolling) }
 
     override fun onCleared() {
+        windowUpdateJob?.cancel()
+        latestVideoWindow = null
         if (MediaPlaybackManager.videoFeedPreloader === feedPreloader) MediaPlaybackManager.videoFeedPreloader = null
         feedPreloader?.close()
         super.onCleared()

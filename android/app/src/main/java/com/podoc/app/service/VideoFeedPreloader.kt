@@ -55,7 +55,10 @@ internal class VideoFeedPreloader(
     private val retryPending = mutableSetOf<String>()
     private var rapid = false
     private var movedAt = 0L
-    private var pausedForPlayback = false
+    private var bufferBudget = VideoPreloadPolicy.Budget.FULL
+    private var direction = 1
+    private var viewIntervalMs = 1_000L
+    private var totalCount = 0
     private var closed = false
     val isClosed: Boolean get() = closed
     private var backgroundJob: Job? = null
@@ -82,20 +85,30 @@ internal class VideoFeedPreloader(
 
     fun beginStartup() {
         initial = true
-        pausedForPlayback = false
+        bufferBudget = VideoPreloadPolicy.Budget.FULL
     }
 
-    fun updateWindow(sources: List<Pair<Int, VideoPlaybackSource>>, selectedIndex: Int, force: Boolean = false) {
+    fun updateWindow(sources: List<Pair<Int, VideoPlaybackSource>>, selectedIndex: Int, total: Int, force: Boolean = false) {
         check(!closed)
-        cancelBackground()
+        val moved = selectedIndex != center
         val now = SystemClock.elapsedRealtime()
-        if (selectedIndex != center) {
-            rapid = movedAt != 0L && now - movedAt < 750L * maxOf(1, abs(selectedIndex - center))
+        if (moved) {
+            cancelBackground()
+            if (!initial) bufferBudget = VideoPreloadPolicy.Budget.OPENINGS
+            val gap = abs(selectedIndex - center)
+            direction = if (selectedIndex > center) 1 else -1
+            if (movedAt != 0L) {
+                val interval = ((now - movedAt) / gap).coerceIn(250, 10_000)
+                viewIntervalMs = (viewIntervalMs * 3 + interval) / 4
+                rapid = interval < 750
+            }
             movedAt = now
+            preferredIndex = selectedIndex
+            previewIndex = null
         }
         center = selectedIndex
-        preferredIndex = selectedIndex
-        previewIndex = null
+        totalCount = total
+        val previousIds = entries.keys.toSet()
         val desired = sources.map { it.second.id }.toSet()
         entries.keys.toList().filter { it !in desired }.forEach(::remove)
         for ((index, source) in sources) {
@@ -110,6 +123,8 @@ internal class VideoFeedPreloader(
             entries[source.id] = Entry(source, item, index, key)
             cache.addListener(key, cacheListener)
         }
+        if (moved || previousIds != entries.keys) android.util.Log.i("VideoFeedPreloader",
+            "VIDEO WINDOW | index=${center + 1}/$totalCount | id=${selectedId()} | before=${entries.values.count { it.index < center }} | after=${entries.values.count { it.index > center }} | direction=$direction")
         publishProgress()
         schedule()
         MediaPlaybackManager.serviceInstance?.warmNextVideo()
@@ -136,19 +151,39 @@ internal class VideoFeedPreloader(
         MediaPlaybackManager.serviceInstance?.warmNextVideo()
     }
 
+    private data class Task(val entry: Entry, val targetMs: Long, val tier: Int, val dueMs: Long)
+    private fun task(entry: Entry): Task? {
+        if (entry.key in errors || entry.key in retryPending) return null
+        val complete = completed[entry.key] ?: 0L
+        val target = VideoPreloadPolicy.taskTargetMs(entry.index - center, complete, initial, rapid,
+            bandwidth.bitrateEstimate in 1..1_500_000)
+        if (target == 0L || (!initial && bufferBudget == VideoPreloadPolicy.Budget.PAUSED) ||
+            (!initial && bufferBudget == VideoPreloadPolicy.Budget.OPENINGS && target > 1_000)) return null
+        val tier = if (initial && entry.index == center) -1 else if (complete < 1_000) 0 else 1
+        val predicted = previewIndex?.let { if (it > center) 1 else -1 } ?: direction
+        val signedGap = (entry.index - center) * predicted
+        val steps = if (entry.index == preferredIndex && entry.index != center) 0
+            else if (signedGap >= 0) signedGap else VideoPreloadPolicy.RADIUS - signedGap
+        return Task(entry, target, tier, steps * viewIntervalMs)
+    }
+    private val taskOrder = compareBy<Task> { it.tier }.thenBy { it.dueMs }
+
     private fun schedule() {
         if (closed) return
+        val best = entries.values.mapNotNull(::task).minWithOrNull(taskOrder)
         val active = caching
-        if (active != null && (entries[active.entry.source.id] !== active.entry ||
-            targetMs(active.entry.index) != active.targetMs || (!initial && pausedForPlayback))) {
-            caching = null
-            active.helper.release(false)
+        if (active != null) {
+            val current = entries[active.entry.source.id]?.takeIf { it === active.entry }?.let(::task)
+            val preempt = current == null || (best != null && best.entry !== active.entry && taskOrder.compare(best, current) < 0)
+            if (preempt) {
+                caching = null
+                active.helper.release(false)
+            } else return // A changed distance alone does not discard an in-flight range.
         }
-        if (caching != null || (!initial && pausedForPlayback)) return
-        val next = entries.values.filter { targetMs(it.index) > (completed[it.key] ?: 0L) && it.key !in errors && it.key !in retryPending }
-            .minByOrNull { abs(it.index - preferredIndex) } ?: return
+        val nextTask = best ?: return
         cancelBackground()
-        val target = targetMs(next.index)
+        val next = nextTask.entry
+        val target = nextTask.targetMs
         val ticket = Any()
         val helper = PreCacheHelper.Factory(cache, upstream, DefaultRenderersFactory(context), Looper.getMainLooper())
             .setDownloadExecutor(executor)
@@ -157,6 +192,8 @@ internal class VideoFeedPreloader(
                     if (caching?.ticket !== ticket) return
                     if (percent >= 100f || (length != C.LENGTH_UNSET.toLong() && length >= 0 && downloaded >= length)) {
                         completed[next.key] = maxOf(completed[next.key] ?: 0L, target)
+                        retryAttempts.remove(next.key)
+                        android.util.Log.i("VideoFeedPreloader", "VIDEO PREFETCH DONE | index=${next.index + 1} | id=${next.source.id} | opening_ms=$target | center=${center + 1}")
                         caching?.helper?.release(false)
                         caching = null
                         publishProgress()
@@ -208,28 +245,32 @@ internal class VideoFeedPreloader(
     fun cachedBytes(articleId: Int): Long = entries[articleId]?.let { cache.getCachedBytes(it.key, 0, it.source.fileSizeBytes) } ?: 0L
     fun buildPlayer(loadControl: LoadControl): ExoPlayer = ExoPlayer.Builder(context, DefaultRenderersFactory(context).setEnableDecoderFallback(true))
         .setMediaSourceFactory(sourceFactory).setBandwidthMeter(bandwidth).setLoadControl(loadControl).build()
-    fun shouldPlayPreview(id: Int): Boolean = entries[id]?.index == previewIndex
+    fun shouldPlayPreview(id: Int): Boolean = previewIndex != null && entries[id]?.index == previewIndex
+    internal fun currentIndex(): Int = center
+    internal fun windowIds(): Set<Int> = entries.keys.toSet()
+    internal fun preloadBudget(): VideoPreloadPolicy.Budget = bufferBudget
     fun selectedId(): Int? = entries.values.firstOrNull { it.index == center }?.source?.id
     fun nextId(): Int? = entries.values.firstOrNull { it.index == preferredIndex && it.index != center }?.source?.id
-        ?: entries.values.firstOrNull { it.index == center + 1 }?.source?.id
+        ?: entries.values.firstOrNull { it.index == center + direction }?.source?.id
+        ?: entries.values.firstOrNull { it.index == center - direction }?.source?.id
 
     /** Foreground buffering wins bandwidth; whole-file fill only uses otherwise idle time. */
-    fun onPlaybackBuffer(bufferedMs: Long, buffering: Boolean, remainingMs: Long) {
-        if (closed || initial) return
-        val fullyBuffered = remainingMs >= 0 && bufferedMs >= remainingMs - 250
-        val starved = !fullyBuffered && (buffering || bufferedMs < 3_000)
-        val shouldPause = starved || (!fullyBuffered && pausedForPlayback && bufferedMs < 8_000)
-        if (pausedForPlayback != shouldPause) {
-            pausedForPlayback = shouldPause
+    fun onPlaybackBuffer(articleId: Int?, bufferedMs: Long, buffering: Boolean, remainingMs: Long, loading: Boolean) {
+        if (closed || initial || articleId != selectedId()) return
+        val fullyBuffered = !buffering && remainingMs >= 0 && bufferedMs >= remainingMs - 250
+        val previous = bufferBudget
+        bufferBudget = VideoPreloadPolicy.playbackBudget(bufferedMs, buffering, remainingMs, loading, previous)
+        if (previous != bufferBudget) {
             schedule()
             MediaPlaybackManager.serviceInstance?.warmNextVideo()
         }
-        if (starved) { cancelBackground(); return }
+        if (bufferBudget != VideoPreloadPolicy.Budget.FULL) cancelBackground()
+        if (bufferBudget == VideoPreloadPolicy.Budget.PAUSED) return
         if (rapid && SystemClock.elapsedRealtime() - movedAt >= 2_000) rapid = false
         schedule()
         val entry = entries.values.firstOrNull { it.index == center } ?: return
         val warm = entries.values.all { (completed[it.key] ?: 0L) >= targetMs(it.index) }
-        if (!warm || (!fullyBuffered && bufferedMs < 10_000) || backgroundJob?.isActive == true ||
+        if (bufferBudget != VideoPreloadPolicy.Budget.FULL || !warm || (!fullyBuffered && bufferedMs < 10_000) || backgroundJob?.isActive == true ||
             entry.source.fileSizeBytes > 64L * 1024 * 1024 ||
             rapid || SystemClock.elapsedRealtime() - movedAt < 2_000) return
         if (cache.getCachedBytes(entry.key, 0, entry.source.fileSizeBytes) >= entry.source.fileSizeBytes) return

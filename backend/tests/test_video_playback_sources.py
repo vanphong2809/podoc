@@ -23,8 +23,18 @@ async def test_batch_sources_are_cheap_ordered_and_bounded(client, monkeypatch):
     assert [item["id"] for item in response.json()["items"]] == [second["id"], first["id"]]
     assert response.json()["unavailable_ids"] == [999999]
     assert not probe.called
-    for ids in [[], [first["id"]] * 12, [0], [-1]]:
+    for ids in [[], [first["id"]] * 22, [0], [-1]]:
         assert (await client.post("/api/articles/playback-sources", json={"ids": ids})).status_code == 422
+
+
+async def test_batch_accepts_all_twenty_one_positions(client):
+    article, _ = await upload_video(client)
+    ids = [article["id"], *range(10000, 10020)]
+    response = await client.post("/api/articles/playback-sources", json={"ids": ids})
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["items"]] == [article["id"]]
+    assert response.json()["unavailable_ids"] == ids[1:]
+    assert (await client.post("/api/articles/playback-sources", json={"ids": ids + [20000]})).status_code == 422
 
 
 async def test_source_pins_variant_and_revision_across_ranges(client):

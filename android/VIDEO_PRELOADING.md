@@ -1,4 +1,4 @@
-# Video feed cache — PoDoc 1.6.40
+# Video feed cache — PoDoc 1.6.41
 
 Video playback now uses Media3 ExoPlayer 1.11.1. Audio playback retains the
 existing service/session/notification controls through the same Media3 player.
@@ -7,13 +7,13 @@ The selected player is reused across swipes rather than released every time.
 ## Startup and moving window
 
 The feed list must finish loading before the first playback request. The initial
-window contains the selected entry and up to five entries on either side.
+window contains the selected entry and up to ten entries on either side.
 `VideoFeedPreloader` waits for three playable seconds of the selected source and
 one playable second of every available neighbour. A shorter clip is cached in
 full. The user sees preparation progress and cannot swipe until this gate opens.
 
 After startup, cache targets are 6 seconds at distance 1, 4 seconds at distance 2,
-and 2 seconds at distances 3–5. Rapid swiping or measured throughput below
+and 2 seconds at distances 3–5, and 1 second at distances 6–10. Rapid swiping or measured throughput below
 1.5 Mbps reduces these targets to 2/2/1 seconds. After two seconds without a move,
 normal targets are restored. During a drag, the predicted target gets priority.
 Every settled page shifts the window and resolves the newly exposed neighbours
@@ -31,9 +31,10 @@ Its loading stops after roughly 750 ms of encoded samples (one source read may
 overshoot). Devices that cannot open the standby decoder fall back to cached
 playback without failing the current video.
 
-Foreground playback has priority: neighbourhood prefetch pauses below a
-three-second buffer and resumes at eight seconds, or when a short clip is fully
-buffered. When the window is warm and foreground buffering is healthy, files up
+Foreground playback has priority: neighbourhood prefetch pauses when foreground playback is buffering or has less than 750 ms available.
+Between 750 ms and 2.5 seconds it can maintain openings; deeper loading resumes
+at 2.5 seconds (1.5-second hysteresis), when a short clip is fully buffered, or
+when the active player's byte budget stops loading before that time threshold. When the window is warm and foreground buffering is healthy, files up
 to 64 MiB can finish caching in the background in cancellable 512 KiB ranges.
 
 ## Storage and identity
@@ -52,22 +53,23 @@ and removes cached media.
 
 Cache keys include a hash of server/account plus article ID, variant and file
 revision. Tokens are passed in Authorization headers and never enter cache keys.
-`POST /api/articles/playback-sources` resolves up to 11 files with one DB query and
+`POST /api/articles/playback-sources` resolves up to 21 files with one DB query and
 filesystem stats, without ffprobe. Playback URLs pin original/optimized and a
 32-character revision. Range reads reject changed revisions with HTTP 412.
 Metadata is refreshed after 30 seconds, and retry resolves fresh sources.
 An original and its later derivative cannot share
 the same cache entry.
 
-Startup HTTP metadata is bounded to 15 seconds and media preparation to 60 seconds.
+Each HTTP metadata request is bounded to 15 seconds, with two retries and a
+50-second acquisition deadline. Media preparation is bounded to 60 seconds.
 Failures show retry UI rather than silently opening an unprepared window.
 
 ## Verification
 
-`VideoPreloadPolicyTest` covers boundaries, overlap and video twelve entering the
-window at position seven. `VideoFeedTest` uses authenticated HTTP/Range fixtures,
-holds the eleventh opening to verify the startup gate, measures bytes downloaded
-for a 6.5 MB far clip, checks prefetch through sixteen before selection, and
+`VideoPreloadPolicyTest` covers boundaries, one-position shifts of a 21-video
+window, duration budgets and recovery from byte-limited buffering. `VideoFeedTest` uses authenticated HTTP/Range fixtures,
+holds the twenty-first opening to verify the startup gate, measures bytes downloaded
+for a 6.5 MB far clip, checks continued prefetch past position thirty, and
 checks cache reuse on return. Existing aspect-ratio, cancellation, loading and
 audio tests remain. The long fixture is packaged only in the test APK.
 
@@ -122,3 +124,43 @@ rejects readiness immediately after a size setter, before any draw commit.
 
 References: [TextureView transforms](https://developer.android.com/reference/android/view/TextureView#setTransform(android.graphics.Matrix)),
 [frame commit callbacks](https://developer.android.com/reference/android/view/ViewTreeObserver#registerFrameCommitCallback(java.lang.Runnable)).
+
+## Continuous 21-video window (1.6.41)
+
+Positions come from the pager's settled index in the ordered feed, never from
+article-ID arithmetic. Each selection shifts a ±10 window. Initial preparation
+covers 3 seconds of the selected file and 1 second of each available neighbour:
+23 seconds of video, roughly 8.6 MB at 3 Mbps before audio and MP4 overhead.
+Steady neighbour targets total 42 seconds (formerly 32 for ±5): 6/4/2/1 seconds
+at distances 1/2/3–5/6–10.
+
+Every missing opening outranks deepening a warm entry. Direction and recent
+viewing intervals order deadlines, with the dragged page getting priority.
+Moving a position does not cancel a range solely because its duration changed.
+A newly exposed opening can preempt lower-priority work; cached spans survive.
+The last committed direction also chooses the next native standby player.
+
+One metadata resolver survives swipes and merges responses into the latest
+window, then resolves newly missing IDs. Only account/controller replacement,
+retry or reader disposal cancels it. Client and API accept all 21 IDs. Updating
+metadata for the same position preserves the drag prediction. Buffer reports
+include the actual player's ID so an outgoing player cannot pause the new window.
+
+Budgets distinguish paused, openings-only and full prefetch. The isLoading flag
+prevents an unreachable 8-second threshold from permanently pausing prefetch
+when the active player's 16 MiB encoded buffer is full. Disk cache and the
+two-player limit are unchanged. VIDEO WINDOW / VIDEO PREFETCH DONE Android logs
+include position, ID, window coverage and completed opening duration.
+
+Tests cover a held 21st opening, partial far-file downloads, an in-flight
+metadata request across three moves, a 5-second byte-limited foreground buffer,
+and continuous playback beyond position 30 then reverse swipes. IDs are
+nonconsecutive; later fixtures are 20-second moving videos.
+
+Changing the selected position starts with an openings-only budget until the
+new foreground reports its buffer. READY and loading-state events report
+immediately in addition to the 500 ms progress tick. An outgoing player's low
+buffer cannot leave the new window permanently paused during rapid swipes.
+A standby that is still preparing is adopted with its existing surface and
+source; a second codec is never attached to that same output. Standby previews
+loop while muted so a long drag cannot exhaust a short clip before promotion.

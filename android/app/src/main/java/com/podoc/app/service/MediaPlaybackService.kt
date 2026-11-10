@@ -464,6 +464,7 @@ class MediaPlaybackService : Service() {
                         MediaPlaybackManager._duration.value = duration()
                         updateMetadata(MediaPlaybackManager._currentTitle.value, duration().toLong())
                         maybeStart()
+                        reportForegroundBuffer(player)
                     }
                     Player.STATE_ENDED -> {
                         playWhenReady = false
@@ -474,6 +475,9 @@ class MediaPlaybackService : Service() {
                         updateNotification(MediaPlaybackManager._currentTitle.value, false)
                     }
                 }
+            }
+            override fun onIsLoadingChanged(isLoading: Boolean) {
+                if (player === mediaPlayer) reportForegroundBuffer(player)
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (player !== mediaPlayer) return
@@ -540,8 +544,12 @@ class MediaPlaybackService : Service() {
         val owner = if (MediaPlaybackManager._isVideoMode.value) MediaPlaybackManager.videoFeedPreloader else null
         if (owner == null) releaseWarmPlayer()
         val id = MediaPlaybackManager._currentArticleId.value ?: -1
+        val candidate = warmPlayer
+        // A buffering standby already owns this surface. Adopt its preparation
+        // rather than connecting a second codec to the same producer output.
         val promoting = owner != null && warmOwner === owner && warmId == id && warmPath == path &&
-            warmPlayer?.playbackState == Player.STATE_READY && warmSurface?.isValid == true
+            candidate != null && candidate.playerError == null && candidate.playbackState != Player.STATE_IDLE &&
+            warmSurface?.isValid == true && warmSurface === MediaPlaybackManager.surfaceFor(id)
         lastSelectionUsedPreparedVideo = promoting
         Log.i(TAG, "VIDEO SELECT | id=$id | prepared=$promoting")
         if (promoting) {
@@ -568,17 +576,19 @@ class MediaPlaybackService : Service() {
             outgoing?.seekTo(0)
             videoRenderingStarted = rendered
             activeTextureSeen = seen
-            activePrepared = true
-            MediaPlaybackManager._isBuffering.value = false
+            activePrepared = incoming.playbackState == Player.STATE_READY
+            MediaPlaybackManager._isBuffering.value = !activePrepared
             MediaPlaybackManager._duration.value = duration()
             MediaPlaybackManager._videoSize.value = MediaPlaybackManager.surfaceVideoSizes.value[id] ?: (0 to 0)
             MediaPlaybackManager.attachSurface(incomingSurface, id, MediaPlaybackManager._playbackGeneration.value)
             incoming.volume = 1f
             incoming.repeatMode = if (MediaPlaybackManager._isRepeatMode.value) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+            if (incoming.playbackState == Player.STATE_ENDED) incoming.seekTo(0)
             updateMetadata(MediaPlaybackManager._currentTitle.value, duration().toLong())
             publishFrameIfReady()
             maybeStart()
         } else {
+            if (warmId == id) releaseWarmPlayer()
             if (mediaPlayer == null || playerOwner !== owner) {
                 val previous = mediaPlayer
                 mediaPlayer = null
@@ -610,12 +620,18 @@ class MediaPlaybackService : Service() {
             while (isActive) {
                 MediaPlaybackManager._currentPosition.value = position()
                 MediaPlaybackManager._duration.value = duration()
-                playerOwner?.onPlaybackBuffer((player.bufferedPosition - player.currentPosition).coerceAtLeast(0),
-                    player.playbackState == Player.STATE_BUFFERING,
-                    if (duration() > 0) (duration() - position()).coerceAtLeast(0).toLong() else -1)
+                reportForegroundBuffer(player)
                 delay(500)
             }
         }
+    }
+
+    private fun reportForegroundBuffer(player: ExoPlayer) {
+        if (player !== mediaPlayer) return
+        val remaining = if (player.duration > 0) (player.duration - player.currentPosition).coerceAtLeast(0) else -1
+        playerOwner?.onPlaybackBuffer(player.currentMediaItem?.mediaId?.toIntOrNull(),
+            (player.bufferedPosition - player.currentPosition).coerceAtLeast(0),
+            player.playbackState == Player.STATE_BUFFERING, remaining, player.isLoading)
     }
 
     private fun maybeStart() {
@@ -730,6 +746,7 @@ class MediaPlaybackService : Service() {
             return
         }
         val player = warmPlayer!!
+        player.repeatMode = Player.REPEAT_MODE_ONE
         val sameItem = warmId == id && warmPath == path
         if (sameItem && warmSurface === surface) {
             player.playWhenReady = owner.shouldPlayPreview(id)

@@ -62,9 +62,9 @@ class VideoFeedTest {
     private lateinit var fixtureServer: VideoFixtureServer
     private lateinit var dataStore: DataStoreManager
     private lateinit var originalSettings: Triple<String, String, String>
-    private val allVideos = (0..15).map { index ->
+    private val allVideos = (0..39).map { index ->
         ArticleListItem(
-            id = 9_000_001 + index, title = "QA video $index", sourceType = "FILE",
+            id = 9_000_001 + index * 37, title = "QA video $index", sourceType = "FILE",
             categoryId = -1, fileName = "feed_qa_$index.mp4", mimeType = "video/mp4"
         )
     }
@@ -80,7 +80,7 @@ class VideoFeedTest {
         val landscape = testContext.assets.open("video/landscape-hd.mp4").use { it.readBytes() }
         val longClip = testContext.assets.open("video/prefetch-long.mp4").use { it.readBytes() }
         val clips = allVideos.mapIndexed { index, item ->
-            item.id to if (index == 10) longClip else if (index % 2 == 1) landscape else portrait
+            item.id to if (index == 10 || index >= 20) longClip else if (index % 2 == 1) landscape else portrait
         }.toMap() + (rotatedVideo.id to testContext.assets.open("video/rotated-landscape-hd.mp4").use { it.readBytes() })
         fixtureServer = VideoFixtureServer(clips)
         dataStore = DataStoreManager(context)
@@ -403,46 +403,109 @@ class VideoFeedTest {
             fixtureServer.requestCounts[feed[0].id]?.get() ?: 0L)
     }
 
-    @Test fun firstVideoWaitsForAllElevenOpenings() {
-        val far = allVideos[10]
+    @Test fun firstVideoWaitsForAllTwentyOneOpenings() {
+        val far = allVideos[20]
         fixtureServer.hold(far.id)
-        showFeed(allVideos[5], allVideos)
+        showFeed(allVideos[10], allVideos)
         compose.waitUntil(30_000) { far.id in fixtureServer.requested }
         compose.onNodeWithTag("video_preparation", useUnmergedTree = true).assertIsDisplayed()
-        compose.runOnIdle {
-            assertNull("The first video must not start before the full window is warm", MediaPlaybackManager.currentArticleId.value)
-        }
-        saveProof("video-warming-eleven", compose.onRoot().captureToImage().asAndroidBitmap())
+        compose.runOnIdle { assertNull(MediaPlaybackManager.currentArticleId.value) }
+        saveProof("video-warming-twenty-one", compose.onRoot().captureToImage().asAndroidBitmap())
         fixtureServer.release(far.id)
-        waitForVideo(allVideos[5])
-        assertTrue(fixtureServer.sourceBatches.first().containsAll(allVideos.take(11).map { it.id }))
-        assertTrue(fixtureServer.requested.containsAll(allVideos.take(11).map { it.id }))
+        waitForVideo(allVideos[10])
+        assertEquals(allVideos.take(21).map { it.id }.toSet(), fixtureServer.sourceBatches.first().toSet())
+        assertTrue(fixtureServer.requested.containsAll(allVideos.take(21).map { it.id }))
         compose.onNodeWithTag("video_preparation", useUnmergedTree = true).assertDoesNotExist()
     }
 
-    @Test fun slidingWindowPreparesTwelveThroughSixteenBeforeTheyAreSelected() {
-        showFeed(allVideos[5], allVideos)
-        waitForVideo(allVideos[5])
-        val longId = allVideos[10].id
-        compose.waitUntil(30_000) { (MediaPlaybackManager.videoFeedPreloader?.cachedDurationMs(longId) ?: 0L) >= 2_000 }
-        val cached = MediaPlaybackManager.videoFeedPreloader!!.cachedBytes(longId)
+    @Test fun farOpeningsStayPartialAndWindowReplenishesBeforeSelection() {
+        showFeed(allVideos[10], allVideos)
+        waitForVideo(allVideos[10])
+        val longId = allVideos[20].id
+        val cached = compose.runOnIdle { MediaPlaybackManager.videoFeedPreloader!!.cachedBytes(longId) }
         val downloaded = fixtureServer.bytesSent[longId]?.get() ?: 0L
         Log.i("VideoFeedQA", "PREFETCH BYTES | source_bytes=6521155 | cached_bytes=$cached | wire_bytes=$downloaded")
-        assertTrue("Only an opening should be cached for a far video", cached in 1..3_260_577)
-        assertTrue("Preloading must not download the entire 6.5 MB fixture", downloaded < 3_260_577)
+        assertTrue(cached in 1..3_260_577)
+        assertTrue(downloaded < 3_260_577)
         compose.onRoot().performTouchInput { swipeUp(durationMillis = 150) }
-        waitForVideo(allVideos[6])
-        compose.waitUntil(20_000) { allVideos[11].id in fixtureServer.requested }
-        for (index in 7..10) {
+        waitForVideo(allVideos[11])
+        compose.waitUntil(20_000) { allVideos[21].id in fixtureServer.requested }
+        for (index in 12..16) {
             compose.onRoot().performTouchInput { swipeUp(durationMillis = 150) }
             waitForVideo(allVideos[index])
         }
-        compose.waitUntil(20_000) { allVideos[15].id in fixtureServer.requested }
-        compose.runOnIdle { assertEquals(allVideos[10].id, MediaPlaybackManager.currentArticleId.value) }
-        // Video twelve has been cached since the selected position was seven.
-        compose.onRoot().performTouchInput { swipeUp(durationMillis = 150) }
-        waitForVideo(allVideos[11])
-        saveProof("video-after-twelve", compose.onRoot().captureToImage().asAndroidBitmap())
+        compose.waitUntil(20_000) { allVideos[26].id in fixtureServer.requested }
+        compose.runOnIdle { assertEquals(allVideos[16].id, MediaPlaybackManager.currentArticleId.value) }
+    }
+
+    @Test fun metadataInFlightSurvivesMovingToANewerPosition() {
+        showFeed(allVideos[10], allVideos)
+        waitForVideo(allVideos[10])
+        val previousBatches = fixtureServer.sourceBatches.size
+        fixtureServer.holdSources()
+        try {
+            for (index in 11..13) {
+                runBlocking { viewModel.prepareVideoWindow(context, allVideos, index, false, 0) }
+                Thread.sleep(80)
+            }
+            compose.waitUntil(5000) { fixtureServer.sourceBatches.size > previousBatches }
+            assertEquals("Moving pages must not cancel and duplicate the request already in flight",
+                previousBatches + 1, fixtureServer.sourceBatches.size)
+        } finally { fixtureServer.releaseSources() }
+        compose.waitUntil(15000) {
+            compose.runOnIdle { (MediaPlaybackManager.videoFeedPreloader?.cachedDurationMs(allVideos[23].id) ?: 0L) >= 1_000 }
+        }
+        compose.runOnIdle {
+            val controller = MediaPlaybackManager.videoFeedPreloader!!
+            assertEquals(13, controller.currentIndex())
+            assertEquals(allVideos.subList(3, 24).map { it.id }.toSet(), controller.windowIds())
+        }
+    }
+
+    @Test fun prefetchResumesWithAByteLimitedFiveSecondForegroundBuffer() {
+        showFeed(allVideos[10], allVideos)
+        waitForVideo(allVideos[10])
+        compose.runOnIdle {
+            val controller = MediaPlaybackManager.videoFeedPreloader!!
+            controller.onPlaybackBuffer(allVideos[10].id, 0, true, 120_000, true)
+            assertEquals(com.podoc.app.service.VideoPreloadPolicy.Budget.PAUSED, controller.preloadBudget())
+            controller.onPlaybackBuffer(allVideos[10].id, 5_000, false, 120_000, false)
+            assertEquals(com.podoc.app.service.VideoPreloadPolicy.Budget.FULL, controller.preloadBudget())
+        }
+        runBlocking { viewModel.prepareVideoWindow(context, allVideos, 11, false, 0) }
+        compose.waitUntil(15000) {
+            compose.runOnIdle { (MediaPlaybackManager.videoFeedPreloader?.cachedDurationMs(allVideos[21].id) ?: 0L) >= 1_000 }
+        }
+    }
+
+    @Test fun longWalkKeepsPreparingTheNextVideoBeyondTheInitialWindow() {
+        fixtureServer.sourceDelayMs = 300
+        showFeed(allVideos[10], allVideos)
+        waitForVideo(allVideos[10])
+        for (index in 11..32) {
+            Thread.sleep(900) // Simulate viewing time; do not wait on prefetch readiness.
+            compose.runOnIdle {
+                val controller = MediaPlaybackManager.videoFeedPreloader!!
+                assertEquals(index - 1, controller.currentIndex())
+                val indices = com.podoc.app.service.VideoPreloadPolicy.window(allVideos.size, index - 1)
+                assertEquals(indices.map { allVideos[it].id }.toSet(), controller.windowIds())
+                assertTrue("Opening missing before selecting position ${index + 1}", controller.cachedDurationMs(allVideos[index].id) >= 1_000)
+                assertEquals("Next native player was not ready at position ${index + 1}", allVideos[index].id,
+                    MediaPlaybackManager.serviceInstance?.preparedVideoId())
+            }
+            compose.onRoot().performTouchInput { swipeUp(durationMillis = 150) }
+            waitForVideo(allVideos[index])
+            compose.runOnIdle { assertTrue(MediaPlaybackManager.serviceInstance!!.lastSelectionUsedPreparedVideo) }
+        }
+        compose.onRoot().performTouchInput { swipeDown(durationMillis = 150) }
+        waitForVideo(allVideos[31])
+        for (index in 30 downTo 28) {
+            Thread.sleep(900)
+            compose.runOnIdle { assertEquals(allVideos[index].id, MediaPlaybackManager.serviceInstance?.preparedVideoId()) }
+            compose.onRoot().performTouchInput { swipeDown(durationMillis = 150) }
+            waitForVideo(allVideos[index])
+        }
+        saveProof("video-continuous-window-at-29", compose.onRoot().captureToImage().asAndroidBitmap())
     }
 
     @Test fun lateFeedPreservesOpenedVideoAndNeighbourDisposalKeepsSurface() {

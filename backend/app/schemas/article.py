@@ -91,7 +91,7 @@ class BatchDeleteRequest(BaseModel):
 
 
 class VideoPlaybackRequest(BaseModel):
-    ids: list[Annotated[int, Field(gt=0)]] = Field(min_length=1, max_length=11)
+    ids: list[Annotated[int, Field(gt=0)]] = Field(min_length=1, max_length=21)
 
 
 class VideoPlaybackSource(BaseModel):

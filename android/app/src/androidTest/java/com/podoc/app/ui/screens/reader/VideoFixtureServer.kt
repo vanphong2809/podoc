@@ -15,6 +15,8 @@ import java.util.concurrent.Executors
 internal class VideoFixtureServer(private val clips: Map<Int, ByteArray>) : Closeable {
     private val socket = ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"))
     private val executor = Executors.newCachedThreadPool()
+    @Volatile private var sourceGate: CountDownLatch? = null
+    @Volatile var sourceDelayMs = 0L
     private val gates = ConcurrentHashMap<Int, CountDownLatch>()
     private val revisions = ConcurrentHashMap<Int, Int>()
     private fun revision(id: Int): String = MessageDigest.getInstance("MD5").run {
@@ -60,6 +62,8 @@ internal class VideoFixtureServer(private val clips: Map<Int, ByteArray>) : Clos
                                 val missing = JSONArray()
                                 val batch = (0 until ids.length()).map { ids.getInt(it) }
                                 sourceBatches.add(batch)
+                                sourceGate?.await()
+                                if (sourceDelayMs > 0) Thread.sleep(sourceDelayMs)
                                 batch.forEach { id ->
                                     val bytes = clips[id]
                                     if (bytes == null) missing.put(id)
@@ -121,12 +125,15 @@ internal class VideoFixtureServer(private val clips: Map<Int, ByteArray>) : Clos
         }
     }
 
+    fun holdSources() { sourceGate = CountDownLatch(1) }
+    fun releaseSources() { sourceGate?.countDown(); sourceGate = null }
     fun failNextRequests(id: Int, count: Int) { failures[id] = java.util.concurrent.atomic.AtomicInteger(count) }
     fun hold(id: Int) { gates[id] = CountDownLatch(1) }
     fun release(id: Int) { gates.remove(id)?.countDown() }
 
     override fun close() {
         socket.close()
+        releaseSources()
         gates.values.forEach { it.countDown() }
         executor.shutdownNow()
     }

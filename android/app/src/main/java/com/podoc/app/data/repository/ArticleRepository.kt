@@ -71,7 +71,9 @@ class ArticleRepository(
     suspend fun getVideoPlaybackSources(ids: List<Int>): VideoPlaybackResponse = withContext(Dispatchers.IO) {
         try {
             kotlinx.coroutines.withTimeout(15_000) {
-                getApi().getVideoPlaybackSources(VideoPlaybackRequest(ids.distinct().take(11)))
+                val unique = ids.distinct()
+                require(unique.isNotEmpty() && unique.size <= 21)
+                getApi().getVideoPlaybackSources(VideoPlaybackRequest(unique))
             }
         } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
             throw IOException("Không thể lấy nguồn video. Kiểm tra kết nối và thử lại.")
