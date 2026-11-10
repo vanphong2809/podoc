@@ -344,7 +344,7 @@ async def test_real_ffmpeg_output(tmp_path, size, fps, audio, monkeypatch):
     assert bool(sound) == audio
     if sound:
         assert sound["codec_name"] == "aac"
-        # Low bitrate AAC is copied without unnecessary resampling/upmixing.
+        # Audio is copied without resampling/upmixing.
         assert sound["sample_rate"] == "44100"
         assert sound["channels"] == 1
     data = output.read_bytes()
@@ -393,3 +393,68 @@ async def test_real_compact_mp4_keeps_original_without_reencoding(tmp_path):
     assert await video.transcode_video(source, partial) is False
     assert not partial.exists()
     assert source.read_bytes() == before
+
+
+@pytest.mark.parametrize("codec", ["aac", "libmp3lame"])
+async def test_real_all_audio_tracks_are_bit_identical(tmp_path, codec):
+    if not shutil.which(settings.FFMPEG_BINARY) or not shutil.which(settings.FFPROBE_BINARY):
+        pytest.skip("FFmpeg and ffprobe required")
+    source = tmp_path / "two_tracks.mp4"
+    output = tmp_path / "optimized.part.mp4"
+    await video.run_command(
+        settings.FFMPEG_BINARY, "-v", "error", "-y",
+        "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30",
+        "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100",
+        "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=32000",
+        "-map", "0:v", "-map", "1:a", "-map", "2:a", "-t", "1",
+        "-threads", "1", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "10",
+        "-c:a", codec, "-b:a:0", "256k", "-ac:a:0", "2",
+        "-b:a:1", "160k", "-ac:a:1", "1", str(source), timeout=30,
+    )
+    before = source.read_bytes()
+    assert await video.transcode_video(source, output) is True
+
+    async def audio_fingerprint(path):
+        data = json.loads(await video.run_command(
+            settings.FFPROBE_BINARY, "-v", "error", "-select_streams", "a",
+            "-show_entries", "stream=codec_name,sample_rate,channels:packet=stream_index,data_hash",
+            "-show_data_hash", "sha256", "-of", "json", str(path), timeout=10,
+        ))
+        return data
+
+    original_audio = await audio_fingerprint(source)
+    assert len(original_audio["streams"]) == 2
+    assert len(original_audio["packets"]) > 10
+    # Compare every compressed audio packet, not just nominal codec/bitrate.
+    assert await audio_fingerprint(output) == original_audio
+    assert source.read_bytes() == before
+
+
+async def test_real_unsupported_audio_keeps_original_with_clear_log(client, tmp_path, caplog):
+    if not shutil.which(settings.FFMPEG_BINARY) or not shutil.which(settings.FFPROBE_BINARY):
+        pytest.skip("FFmpeg and ffprobe required")
+    source = tmp_path / "wma_audio.mkv"
+    await video.run_command(
+        settings.FFMPEG_BINARY, "-v", "error", "-y",
+        "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30",
+        "-f", "lavfi", "-i", "sine=sample_rate=44100", "-t", "0.5",
+        "-threads", "1", "-c:v", "libx264", "-c:a", "wmav2", str(source), timeout=30,
+    )
+    original = source.read_bytes()
+    response = await client.post("/api/articles/upload", files={
+        "file": ("âm thanh gốc.mkv", original, "video/x-matroska"),
+        "thumbnail": ("thumb.jpg", b"thumbnail", "image/jpeg"),
+    })
+    assert response.status_code == 201
+    article = response.json()
+    with caplog.at_level(logging.INFO, logger=video.__name__):
+        await video.VideoTranscoder(TestingSessionLocal).process_next()
+    assert (await client.get(f"/api/articles/{article['id']}")).json()["video_status"] == "kept_original"
+    result = await client.get(f"/api/articles/{article['id']}/file?inline=true")
+    assert result.content == original
+    assert result.headers["x-podoc-video-variant"] == "original"
+    assert not video.optimized_path(article["file_path"]).exists()
+    assert not video.optimized_path(article["file_path"]).with_suffix(".part.mp4").exists()
+    assert 'GIỮ BẢN GỐC | file="âm thanh gốc.mkv"' in caplog.text
+    assert "codec âm thanh gốc không ghép được vào MP4" in caplog.text
+    assert "NÉN LỖI" not in caplog.text

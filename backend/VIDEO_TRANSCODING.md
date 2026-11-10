@@ -1,4 +1,4 @@
-# Nén video nền (PoDoc 1.6.34)
+# Nén video nền (PoDoc 1.6.35)
 
 Video tải lên được giữ nguyên trong `FILES_STORAGE_DIR`; `file_path`, MIME và
 thông tin file luôn mô tả bản gốc. API trả 201 sau khi lưu file và metadata,
@@ -30,7 +30,8 @@ Trường `video_status` trong API danh sách/chi tiết nhận `pending`, `proc
 không dùng cache bản gốc để thay thế lượt stream video này.
 
 `kept_original` nghĩa là nguồn đã gọn hoặc bản mã hóa mới không nhỏ hơn
-nguồn. Khi đó app phát bản gốc, giao diện ghi rõ giữ nguyên nguồn, không
+nguồn, hoặc codec âm thanh gốc không ghép được vào MP4. Khi đó app phát bản gốc,
+giao diện ghi rõ giữ nguyên nguồn, không
 hiển thị nút tải một "bản nhẹ" lớn hơn nguồn. API lựa chọn `optimized` trả
 404 cùng giải thích. File gốc luôn được giữ nguyên.
 
@@ -42,8 +43,13 @@ hiển thị nút tải một "bản nhẹ" lớn hơn nguồn. API lựa chọn
 - Video dọc nằm trong 1080×1920; ngang trong 1920×1080, giữ tỷ lệ,
   không phóng lớn video nhỏ, kích thước chẵn và tự xoay theo metadata.
 - Tối đa 30fps, giữ fps thấp hơn của nguồn.
-- Giữ nguyên AAC đã gọn (tối đa 128kbps), kể cả 8kHz mono. Audio cần mã hóa
-  được giới hạn tối đa 128kbps và giữ mono nếu nguồn mono; hỗ trợ video im lặng.
+- Chỉ nén hình ảnh. `-map 0:a? -c:a copy` sao chép tất cả track âm thanh gốc,
+  giữ codec, dữ liệu âm thanh, tần số lấy mẫu và số kênh; không giới hạn bitrate,
+  không resample/downmix và không mã hóa lại AAC. Hỗ trợ video im lặng.
+- Nếu codec âm thanh không ghép được vào MP4, giữ file gốc và ghi rõ lý do
+  trong log `GIỮ BẢN GỐC`; không tự chuyển codec hoặc bỏ tiếng.
+- Chính sách này áp dụng cho các lượt xử lý từ phiên bản 1.6.35, gồm hàng đợi
+  tiếp tục sau triển khai. Các bản nhẹ đã hoàn tất trước đó không tự tạo lại.
 - Nguồn MP4 H.264/HEVC với AAC hoặc không audio, dài ít nhất 5 giây và tổng
   bitrate tối đa 1,2Mbps được giữ nguyên để tránh mã hóa lại mất chất lượng.
 - Video cần mã hóa với ngân sách bitrate thấp dùng tối đa 720p; nguồn lớn
@@ -53,7 +59,7 @@ hiển thị nút tải một "bản nhẹ" lớn hơn nguồn. API lựa chọn
   và reference frames. Blueprint cấp 2 CPU và 2 luồng, vẫn giữ RAM 1 GiB.
 
 Dung lượng phụ thuộc thời lượng và độ phức tạp; CRF/VBR không đảm bảo mọi
-file giảm 85–95% hoặc đạt 15–35 MB. Tại 3,5Mbps video + 128kbps audio,
+file giảm 85–95% hoặc đạt 15–35 MB. Ví dụ tại 3,5Mbps video + 128kbps audio gốc,
 một phút vào khoảng 27MB trước overhead; cảnh đơn giản thường nhỏ hơn.
 Backend vẫn nhận toàn bộ file gốc nên không rút ngắn bước upload. Disk phải
 chứa cả bản gốc và bản tối ưu; thống kê dung lượng tính cả hai (thumbnail và
@@ -99,8 +105,9 @@ pytest chỉ bỏ qua các ca mã hóa thực tế, vẫn kiểm tra queue và A
 ## Log sau khi nén
 
 Sau khi công bố file và commit trạng thái `ready`, server ghi INFO `NÉN XONG`
-với tên file gốc, dung lượng trước/sau (MB), phần trăm thay đổi và thời gian
-xử lý; ID nội bộ nằm cuối dòng để tra cứu. `NÉN XONG` chỉ dành cho kết quả
+với tên file gốc, dung lượng trước/sau (MB), phần trăm thay đổi, thời gian
+xử lý và `âm thanh=giữ nguyên`. ID nội bộ nằm cuối dòng để tra cứu.
+`NÉN XONG` chỉ dành cho kết quả
 nhỏ hơn nguồn. `GIỮ BẢN GỐC` ghi rõ lý do bỏ mã hóa hoặc bỏ kết quả lớn hơn.
 Tên Unicode được giữ,
 ký tự điều khiển được escape để mỗi sự kiện chỉ chiếm một dòng log.

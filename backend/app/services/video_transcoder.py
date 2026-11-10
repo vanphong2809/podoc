@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts", ".flv", ".m4v"}
 
 
+class AudioCopyUnsupportedError(RuntimeError):
+    """The original audio cannot be muxed into MP4 without re-encoding."""
+
+
 def is_video_file(file_path: str | None, mime_type: str | None, file_name: str | None = None) -> bool:
     return bool(file_path) and (
         (mime_type or "").lower().startswith("video/")
@@ -87,7 +91,7 @@ async def transcode_video(source: Path, partial: Path) -> bool:
     """Return False when an already compact MP4 should be retained losslessly."""
     metadata = await probe_video(source)
     stream = next(s for s in metadata["streams"] if s.get("codec_type") == "video")
-    audio = next((s for s in metadata["streams"] if s.get("codec_type") == "audio"), None)
+    audio_streams = [s for s in metadata["streams"] if s.get("codec_type") == "audio"]
     try:
         duration = float(metadata.get("format", {}).get("duration", "0"))
     except (TypeError, ValueError):
@@ -96,25 +100,18 @@ async def transcode_video(source: Path, partial: Path) -> bool:
     container = metadata.get("format", {}).get("format_name", "")
     if (duration >= 5 and 0 < total_rate <= 1_200_000 and "mp4" in container
             and stream.get("codec_name") in ("h264", "hevc")
-            and (audio is None or audio.get("codec_name") == "aac")):
+            and all(s.get("codec_name") == "aac" for s in audio_streams)):
         # Re-encoding a compact AVC/HEVC source can enlarge it or lose detail.
         return False
 
-    # Preserve compact AAC tracks instead of upsampling 8 kHz mono to stereo.
-    audio_options = []
+    # Copy every audio track, regardless of codec/bitrate. Never resample,
+    # downmix, or fall back to lossy audio encoding to fit the MP4 container.
     audio_rate = 0
-    if audio:
+    for audio in audio_streams:
         try:
-            input_audio_rate = int(audio.get("bit_rate", 0))
+            audio_rate += max(0, int(audio.get("bit_rate", 0))) or 128_000
         except (TypeError, ValueError):
-            input_audio_rate = 0
-        if audio.get("codec_name") == "aac" and 0 < input_audio_rate <= 128_000:
-            audio_options = ["-c:a", "copy"]
-            audio_rate = input_audio_rate
-        else:
-            audio_rate = min(128_000, max(32_000, input_audio_rate or 128_000))
-            audio_options = ["-c:a", "aac", "-b:a", str(audio_rate), "-ar", "48000",
-                             "-ac", "1" if audio.get("channels") == 1 else "2"]
+            audio_rate += 128_000
     # Leave headroom for audio/container overhead and cap against source size.
     maxrate = min(3_500_000, max(64_000, int(total_rate * 0.85 - audio_rate - 16_000))) if total_rate else 3_500_000
     long_edge, short_edge = (1280, 720) if maxrate < 1_500_000 else (1920, 1080)
@@ -141,18 +138,28 @@ async def transcode_video(source: Path, partial: Path) -> bool:
             "zscale=p=bt709", "tonemap=tonemap=hable:desat=0",
             "zscale=t=bt709:m=bt709:r=tv",
         ])
-    await run_command(
-        settings.FFMPEG_BINARY, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-        "-threads", str(settings.VIDEO_TRANSCODING_THREADS), "-filter_threads", "1", "-protocol_whitelist", "file,pipe",
-        "-i", str(source), "-map", "0:v:0", "-map", "0:a:0?",
-        "-vf", ",".join(filters), "-c:v", "libx264", "-preset", "fast",
-        "-crf", "24", "-maxrate", str(maxrate), "-bufsize", str(maxrate * 2),
-        "-threads", str(settings.VIDEO_TRANSCODING_THREADS), "-x264-params", "rc-lookahead=10:ref=2",
-        "-pix_fmt", "yuv420p", "-tag:v", "avc1", "-g", "60",
-        *audio_options,
-        "-map_metadata", "-1", "-movflags", "+faststart", str(partial),
-        timeout=settings.VIDEO_TRANSCODING_TIMEOUT_SECONDS,
-    )
+    try:
+        await run_command(
+            settings.FFMPEG_BINARY, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+            "-threads", str(settings.VIDEO_TRANSCODING_THREADS), "-filter_threads", "1", "-protocol_whitelist", "file,pipe",
+            "-i", str(source), "-map", "0:v:0", "-map", "0:a?",
+            "-vf", ",".join(filters), "-c:v", "libx264", "-preset", "fast",
+            "-crf", "24", "-maxrate", str(maxrate), "-bufsize", str(maxrate * 2),
+            "-threads", str(settings.VIDEO_TRANSCODING_THREADS), "-x264-params", "rc-lookahead=10:ref=2",
+            "-pix_fmt", "yuv420p", "-tag:v", "avc1", "-g", "60",
+            "-c:a", "copy",
+            "-map_metadata", "-1", "-movflags", "+faststart", str(partial),
+            timeout=settings.VIDEO_TRANSCODING_TIMEOUT_SECONDS,
+        )
+    except RuntimeError as exc:
+        # With H.264 video fixed above, these muxer errors concern copied audio.
+        # Other errors (corrupt media, permissions, etc.) remain real failures.
+        if audio_streams and ("Could not find tag for codec" in str(exc)
+                              or "not currently supported in container" in str(exc)):
+            raise AudioCopyUnsupportedError(
+                "codec âm thanh gốc không ghép được vào MP4; giữ nguyên âm thanh, không mã hóa lại"
+            ) from exc
+        raise
     if not partial.is_file() or partial.stat().st_size == 0:
         raise RuntimeError("Encoder produced an empty video")
     await probe_video(partial)
@@ -233,7 +240,12 @@ class VideoTranscoder:
                 raise FileNotFoundError("Original video path is missing")
             source = Path(settings.FILES_STORAGE_DIR) / file_path
             original_bytes = source.stat().st_size
-            encoded = await transcode_video(source, partial)
+            keep_reason = "file đã gọn, không mã hóa lại"
+            try:
+                encoded = await transcode_video(source, partial)
+            except AudioCopyUnsupportedError as exc:
+                encoded = False
+                keep_reason = str(exc)
             optimized_bytes = partial.stat().st_size if encoded is not False else original_bytes
             publish = encoded is not False and optimized_bytes < original_bytes
             # Re-check after encoding: a deleted article must not leave an orphan.
@@ -254,14 +266,14 @@ class VideoTranscoder:
                 logger.info(
                     "GIỮ BẢN GỐC | file=%s | gốc=%.2f MB | lý do=%s | bỏ bản lớn hơn=%.2f MB | thời gian=%.1fs | id=%s",
                     log_file_name, original_bytes / (1024 * 1024),
-                    "file đã gọn, không mã hóa lại" if encoded is False else "bản mới không nhỏ hơn nguồn",
+                    keep_reason if encoded is False else "bản mới không nhỏ hơn nguồn",
                     max(previous_output_bytes, optimized_bytes if encoded is not False else 0) / (1024 * 1024),
                     monotonic() - started_at, article_id,
                 )
                 return True
             size_change = (optimized_bytes / original_bytes - 1) * 100 if original_bytes else 0
             logger.info(
-                "NÉN XONG | file=%s | gốc=%.2f MB | bản nén=%.2f MB | thay đổi=%+.1f%% | thời gian=%.1fs | id=%s",
+                "NÉN XONG | file=%s | gốc=%.2f MB | bản nén=%.2f MB | thay đổi=%+.1f%% | thời gian=%.1fs | âm thanh=giữ nguyên | id=%s",
                 log_file_name, original_bytes / (1024 * 1024), optimized_bytes / (1024 * 1024),
                 size_change, monotonic() - started_at, article_id,
             )

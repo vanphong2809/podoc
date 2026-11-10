@@ -287,7 +287,7 @@ fun FileInfoBottomSheet(
                             "processing" -> "Đang nén trên máy chủ…"
                             "pending" -> "Đang chờ nén • vị trí ${info?.videoQueuePosition ?: "—"}"
                             "failed" -> "Nén chưa thành công"
-                            "kept_original" -> "Bản gốc đã gọn (${info?.fileSizeFormatted ?: ""}); giữ nguyên để phát"
+                            "kept_original" -> "Giữ nguyên bản gốc (${info?.fileSizeFormatted ?: ""}) để bảo toàn chất lượng và âm thanh"
                             else -> "Chưa có bản nhẹ"
                         }
                         FileInfoRow(

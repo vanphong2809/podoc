@@ -868,7 +868,7 @@ async def download_article_file(
             raise HTTPException(
                 status_code=409 if waiting else 404,
                 detail="Bản nhẹ đang chờ nén hoặc đang xử lý. Vui lòng thử lại sau." if waiting else (
-                    "File gốc đã gọn; hệ thống giữ bản gốc thay vì tạo thêm file lớn hơn. Hãy tải bản gốc."
+                    "Hệ thống giữ bản gốc để bảo toàn chất lượng và âm thanh hoặc tránh tạo file lớn hơn. Hãy tải bản gốc."
                     if art.video_status == "kept_original" else "Không có bản nhẹ nhỏ hơn file gốc. Hãy tải bản gốc."
                 ),
                 headers={"Retry-After": "5", "Cache-Control": "no-store"},
