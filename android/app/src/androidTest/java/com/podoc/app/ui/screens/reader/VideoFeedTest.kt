@@ -68,6 +68,7 @@ class VideoFeedTest {
             categoryId = -1, fileName = "feed_qa_$index.mp4", mimeType = "video/mp4"
         )
     }
+    private val rotatedVideo = allVideos[0].copy(id = 9_000_017, title = "QA rotated landscape", fileName = "rotated-landscape-hd.mp4")
     private val feed get() = allVideos.take(3)
 
     @Before fun prepare() {
@@ -80,7 +81,7 @@ class VideoFeedTest {
         val longClip = testContext.assets.open("video/prefetch-long.mp4").use { it.readBytes() }
         val clips = allVideos.mapIndexed { index, item ->
             item.id to if (index == 10) longClip else if (index % 2 == 1) landscape else portrait
-        }.toMap()
+        }.toMap() + (rotatedVideo.id to testContext.assets.open("video/rotated-landscape-hd.mp4").use { it.readBytes() })
         fixtureServer = VideoFixtureServer(clips)
         dataStore = DataStoreManager(context)
         runBlocking {
@@ -155,27 +156,117 @@ class VideoFeedTest {
         assertQuadrants(portrait = false)
     }
 
-    @Test fun nativeVideoSizeIsAppliedBeforeNextComposeFrame() {
+    @Test fun geometryIsNotReadyUntilItsFittedDrawHasBeenCommitted() {
         val id = feed[0].id
         compose.setContent { FeedVideoSurface(id, false, 0, androidx.compose.ui.Modifier.fillMaxSize()) }
         compose.waitUntil(5000) { compose.runOnIdle { MediaPlaybackManager.surfaceFor(id) != null } }
-        compose.mainClock.autoAdvance = false
-        try {
-            compose.runOnIdle {
-                MediaPlaybackManager.setSurfaceSize(id, 1920 to 1080)
-                fun find(view: android.view.View): android.view.TextureView? {
-                    if (view is android.view.TextureView) return view
-                    if (view is android.view.ViewGroup) for (i in 0 until view.childCount) find(view.getChildAt(i))?.let { return it }
-                    return null
-                }
-                val texture = requireNotNull(find(compose.activity.window.decorView))
-                val values = FloatArray(9)
-                texture.getTransform(android.graphics.Matrix()).getValues(values)
-                assertEquals(1f, values[android.graphics.Matrix.MSCALE_X], 0.01f)
-                assertEquals(texture.width.toFloat() / texture.height / (1920f / 1080),
-                    values[android.graphics.Matrix.MSCALE_Y], 0.01f)
+        compose.runOnIdle {
+            val surface = MediaPlaybackManager.surfaceFor(id)!!
+            MediaPlaybackManager.setSurfaceSize(id, 1920 to 1080)
+            assertFalse("Setting a size is not proof that fitted pixels have been drawn",
+                MediaPlaybackManager.isGeometryReady(surface, id))
+        }
+    }
+
+    @Test fun nativeOutputHidesAnEarlyFrameUntilItsAspectRatioIsKnown() {
+        val id = feed[0].id
+        compose.setContent { FeedVideoSurface(id, false, 0, androidx.compose.ui.Modifier.fillMaxSize()) }
+        compose.waitUntil(5000) { compose.runOnIdle { MediaPlaybackManager.surfaceFor(id) != null } }
+        compose.runOnIdle {
+            val surface = MediaPlaybackManager.surfaceFor(id)!!
+            val canvas = surface.lockCanvas(null)
+            canvas.drawColor(android.graphics.Color.RED)
+            surface.unlockCanvasAndPost(canvas)
+        }
+        // Force actual window frames while dimensions have deliberately not arrived.
+        repeat(3) {
+            val bitmap = captureWindowPixels()
+            val pixel = bitmap.getPixel(bitmap.width / 2, bitmap.height / 2)
+            assertTrue("An unmeasured video frame must remain behind the native black shutter",
+                android.graphics.Color.red(pixel) < 8 && android.graphics.Color.green(pixel) < 8 && android.graphics.Color.blue(pixel) < 8)
+        }
+        compose.runOnIdle { MediaPlaybackManager.setSurfaceSize(id, 1920 to 1080) }
+        var firstVisible: Bitmap? = null
+        repeat(30) {
+            val bitmap = captureWindowPixels()
+            // Every sampled frame must be letterboxed, including the first visible one.
+            val upper = bitmap.getPixel(bitmap.width / 2, bitmap.height / 4)
+            assertTrue("Landscape pixels must never fill the portrait viewport",
+                android.graphics.Color.red(upper) < 8 && android.graphics.Color.green(upper) < 8 && android.graphics.Color.blue(upper) < 8)
+            if (android.graphics.Color.red(bitmap.getPixel(bitmap.width / 2, bitmap.height / 2)) > 200 && firstVisible == null) firstVisible = bitmap
+        }
+        assertNotNull("The fitted frame must eventually become visible", firstVisible)
+        saveProof("video-first-visible-landscape", firstVisible!!)
+    }
+
+    @Test fun firstVisibleDecodedLandscapeFramesAreAlreadyLetterboxed() =
+        assertFirstVisibleLandscapeFrames(feed[1], feed, "video-decoded-first-visible-landscape")
+
+    @Test fun rotatedSourceIsLandscapeFromItsFirstVisibleDecodedFrame() =
+        assertFirstVisibleLandscapeFrames(rotatedVideo, listOf(rotatedVideo), "video-rotated-first-visible-landscape")
+
+    private fun assertFirstVisibleLandscapeFrames(item: ArticleListItem, items: List<ArticleListItem>, proof: String) {
+        val capturing = java.util.concurrent.atomic.AtomicBoolean(true)
+        val visibleFrames = java.util.concurrent.atomic.AtomicInteger()
+        val badFrames = java.util.concurrent.atomic.AtomicInteger()
+        val firstFrame = java.util.concurrent.atomic.AtomicReference<Bitmap?>()
+        val firstBadFrame = java.util.concurrent.atomic.AtomicReference<Bitmap?>()
+        val thread = android.os.HandlerThread("VideoWindowPixels").apply { start() }
+        val handler = Handler(thread.looper)
+        val bounds = compose.runOnIdle {
+            val decor = compose.activity.window.decorView
+            android.graphics.Rect(0, 0, decor.width, decor.height)
+        }
+        val videoHeight = bounds.width() * 1080f / 1920
+        val top = (bounds.height() - videoHeight) / 2
+        fun sampleY(y: Float) = (y / bounds.height() * 600).toInt().coerceIn(0, 599)
+        val topColourY = sampleY(top + videoHeight * 0.25f)
+        val bottomColourY = sampleY(top + videoHeight * 0.75f)
+        val topBarY = sampleY(top / 2)
+        val bottomBarY = sampleY(bounds.height() - top / 2)
+        val capture = object : Runnable {
+            override fun run() {
+                if (!capturing.get()) return
+                val bitmap = Bitmap.createBitmap(270, 600, Bitmap.Config.ARGB_8888)
+                android.view.PixelCopy.request(compose.activity.window, bounds, bitmap, { result ->
+                    if (result == android.view.PixelCopy.SUCCESS) {
+                        val upper = bitmap.getPixel(67, topColourY)
+                        val lower = bitmap.getPixel(67, bottomColourY)
+                        fun coloured(c: Int): Boolean {
+                            val channels = listOf(android.graphics.Color.red(c), android.graphics.Color.green(c), android.graphics.Color.blue(c))
+                            return channels.max() > 150 && channels.max() - channels.min() > 70
+                        }
+                        if (coloured(upper) && coloured(lower)) {
+                            visibleFrames.incrementAndGet()
+                            firstFrame.compareAndSet(null, bitmap)
+                            fun black(y: Int): Boolean {
+                                val c = bitmap.getPixel(67, y)
+                                return android.graphics.Color.red(c) < 40 && android.graphics.Color.green(c) < 40 && android.graphics.Color.blue(c) < 40
+                            }
+                            if (!black(topBarY) || !black(bottomBarY)) {
+                                badFrames.incrementAndGet()
+                                firstBadFrame.compareAndSet(null, bitmap)
+                            }
+                        }
+                    }
+                    if (bitmap !== firstFrame.get() && bitmap !== firstBadFrame.get()) bitmap.recycle()
+                    if (capturing.get()) handler.postDelayed(this, 8)
+                }, handler)
             }
-        } finally { compose.mainClock.autoAdvance = true }
+        }
+        handler.post(capture)
+        try {
+            showFeed(item, items)
+            waitForVideo(item)
+            compose.waitUntil(5000) { visibleFrames.get() >= 6 }
+        } finally {
+            capturing.set(false)
+            thread.quitSafely()
+            thread.join(3000)
+        }
+        firstBadFrame.get()?.let { saveProof("$proof-invalid", it) }
+        assertEquals("Every decoded landscape frame must be letterboxed from first visibility", 0, badFrames.get())
+        saveProof(proof, requireNotNull(firstFrame.get()))
     }
 
     @Test fun transientPrefetchFailureIsRetriedWithoutUserAction() {
@@ -433,6 +524,26 @@ class VideoFeedTest {
             }
             throw failure
         }
+    }
+
+    private fun captureWindowPixels(): Bitmap {
+        val location = IntArray(2)
+        var bounds: android.graphics.Rect? = null
+        compose.runOnIdle {
+            val root = compose.activity.findViewById<android.view.View>(android.R.id.content)
+            root.getLocationInWindow(location)
+            bounds = android.graphics.Rect(location[0], location[1], location[0] + root.width, location[1] + root.height)
+        }
+        val rect = bounds!!
+        val bitmap = Bitmap.createBitmap(rect.width(), rect.height(), Bitmap.Config.ARGB_8888)
+        val complete = java.util.concurrent.CountDownLatch(1)
+        var result = -1
+        android.view.PixelCopy.request(compose.activity.window, rect, bitmap, { status ->
+            result = status; complete.countDown()
+        }, Handler(Looper.getMainLooper()))
+        assertTrue("Window copy timed out", complete.await(3, java.util.concurrent.TimeUnit.SECONDS))
+        assertEquals(android.view.PixelCopy.SUCCESS, result)
+        return bitmap
     }
 
     private fun saveProof(name: String, bitmap: Bitmap) {

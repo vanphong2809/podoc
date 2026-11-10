@@ -1,4 +1,4 @@
-# Video feed cache — PoDoc 1.6.39
+# Video feed cache — PoDoc 1.6.40
 
 Video playback now uses Media3 ExoPlayer 1.11.1. Audio playback retains the
 existing service/session/notification controls through the same Media3 player.
@@ -98,3 +98,27 @@ for that service session. A standby source/network failure skips that URL until
 its revision changes and does not disable preparation of other videos.
 Foreground decoder recovery releases the standby before recreating playback. Android logs include VIDEO RECOVER / VIDEO PREFETCH
 RETRY / VIDEO STANDBY SKIPPED and Media3 error codes.
+
+## First visible frame (1.6.40)
+
+The output is a native FrameLayout containing an aspect-fitted TextureView and
+an opaque native shutter. The TextureView has the actual fitted pixel bounds;
+there is no full-viewport scaling matrix. Size changes and source epochs close
+the native shutter immediately and invalidate presentation readiness.
+
+A texture latch and a size callback are insufficient to reveal a frame. The
+output waits for a draw with the exact fitted child bounds, followed by Android's
+frame-commit callback (API 29+), before acknowledging geometry and opening the
+shutter. API 26–28 retains the shutter through the fitted draw and the following
+rendering traversal. Stale commit callbacks cannot acknowledge a newer geometry
+or a newer source. Prewarming completes this work on the neighbouring page.
+
+Regression checks use PixelCopy of actual window pixels, deliberately deliver a
+frame before dimensions, and check that no landscape pixels ever fill the
+portrait viewport, including the first visible frame. Continuous window capture
+covers real decoded landscape and portrait-encoded / 90-degree-rotated sources.
+The geometry test also
+rejects readiness immediately after a size setter, before any draw commit.
+
+References: [TextureView transforms](https://developer.android.com/reference/android/view/TextureView#setTransform(android.graphics.Matrix)),
+[frame commit callbacks](https://developer.android.com/reference/android/view/ViewTreeObserver#registerFrameCommitCallback(java.lang.Runnable)).

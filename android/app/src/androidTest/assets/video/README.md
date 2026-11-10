@@ -19,3 +19,7 @@ H.264 CBR 2.5 Mbps, without audio (about 6.5 MB). The window tests verify that a
 far neighbour caches only its opening and downloads less than half this file.
 All HTTP fixtures require an Authorization header, expose batch source metadata,
 and count Range requests/bytes to detect downloads repeated despite caching.
+
+`rotated-landscape-hd.mp4` copies the portrait fixture's encoded H.264 samples
+and adds a 90-degree display rotation. It tests phone-style files whose encoded
+pixel dimensions are portrait but whose intended display dimensions are landscape.

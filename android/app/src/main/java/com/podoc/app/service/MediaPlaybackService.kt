@@ -123,9 +123,14 @@ object MediaPlaybackManager {
             _presentedSurfaces.value = _presentedSurfaces.value - id
         }
         _surfaceVideoSizes.value = _surfaceVideoSizes.value + (id to size)
-        // Apply on the native view synchronously, before acknowledging its first
-        // frame. Waiting for Compose to collect this StateFlow is one frame late.
+        // The native output lays itself out and acknowledges a committed fitted
+        // draw. A size callback alone must never reveal its first frame.
         surfaces[id]?.let { sizeListeners[it]?.invoke(size) }
+    }
+    internal fun invalidateGeometry(surface: Surface, id: Int) {
+        if (surfaceFor(id) !== surface) return
+        fittedSizes.remove(surface)
+        _presentedSurfaces.value = _presentedSurfaces.value - id
     }
     internal fun geometryApplied(surface: Surface, id: Int, size: Pair<Int, Int>) {
         if (surfaceFor(id) !== surface || size != surfaceSizeFor(id) || size.first <= 0 || size.second <= 0) return
