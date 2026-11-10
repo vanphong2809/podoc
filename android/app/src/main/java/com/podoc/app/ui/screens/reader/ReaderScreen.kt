@@ -1930,7 +1930,6 @@ internal fun TikTokVideoFeedViewer(
     val currentPlayingArticleId by MediaPlaybackManager.currentArticleId.collectAsState()
     val renderedVideoSurface by MediaPlaybackManager.renderedVideoSurface.collectAsState()
     val failedArticleId by MediaPlaybackManager.failedArticleId.collectAsState()
-    val isBuffering by MediaPlaybackManager.isBuffering.collectAsState()
 
     var itemToDelete by remember { mutableStateOf<ArticleListItem?>(null) }
     var showHint by remember { mutableStateOf(true) }
@@ -2128,7 +2127,9 @@ internal fun TikTokVideoFeedViewer(
                             .clickable { retryCount++ }
                             .padding(16.dp)
                     )
-                } else if (isCurrentPage && (!hasVideoFrame || isBuffering)) {
+                // Buffering notifications may lag behind visible playback.
+                // Loading ends when this surface presents its first frame.
+                } else if (isCurrentPage && !hasVideoFrame) {
                     Box(
                         modifier = Modifier
                             .size(56.dp)

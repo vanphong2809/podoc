@@ -121,6 +121,23 @@ class VideoFeedTest {
         saveProof("video-portrait", compose.onRoot().captureToImage().asAndroidBitmap())
     }
 
+    @Test fun bufferingFlagCannotKeepLoadingVisibleOverPlayingVideo() {
+        val item = feed.first()
+        showFeed(item, feed)
+        waitForVideo(item)
+        // Reproduce a late/stuck buffering notification while frames are visible.
+        compose.runOnIdle { MediaPlaybackManager._isBuffering.value = true }
+        compose.onNodeWithTag("video_loading_${item.id}").assertDoesNotExist()
+        compose.onNodeWithTag("video_shutter_${item.id}", useUnmergedTree = true).assertDoesNotExist()
+        assertQuadrants(portrait = true)
+        compose.runOnIdle {
+            assertTrue(MediaPlaybackManager.isPlaying.value)
+            assertTrue(MediaPlaybackManager.isBuffering.value)
+        }
+        saveProof("video-playing-with-buffering-flag", compose.onRoot().captureToImage().asAndroidBitmap())
+        compose.runOnIdle { MediaPlaybackManager._isBuffering.value = false }
+    }
+
     @Test fun swipeBothDirectionsAndCancelledDragKeepPlaybackCorrect() {
         showFeed(feed.first(), feed)
         waitForVideo(feed[0])
