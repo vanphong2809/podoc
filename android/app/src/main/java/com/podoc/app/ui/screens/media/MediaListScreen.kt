@@ -636,8 +636,9 @@ private fun MediaGridCard(
         }
         if (!bottomLabel.isNullOrBlank()) {
             Surface(
-                color = Color.Black.copy(alpha = if (isVideo) 0.65f else 0.55f),
+                color = Color.Black.copy(alpha = if (isVideo) 0.72f else 0.55f),
                 shape = RoundedCornerShape(4.dp),
+                border = if (isVideo) androidx.compose.foundation.BorderStroke(0.5.dp, Color.White.copy(alpha = 0.22f)) else null,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(4.dp)

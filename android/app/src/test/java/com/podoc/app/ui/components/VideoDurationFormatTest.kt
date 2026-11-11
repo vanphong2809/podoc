@@ -21,8 +21,8 @@ class VideoDurationFormatTest {
         assertEquals("59:59", formatVideoDuration(3599f))
     }
 
-    @Test fun hoursFormatAsHmmSs() {
-        assertEquals("1:01:05", formatVideoDuration(3665f))
+    @Test fun overSixtyMinutesAlsoFormatsAsMmSs() {
+        assertEquals("61:05", formatVideoDuration(3665f))
     }
 }
 

@@ -1092,11 +1092,10 @@ async def get_article_file_info(
         await db.commit()
 
     if duration_seconds is not None and duration_seconds > 0:
-        total_secs = int(round(duration_seconds))
-        h = total_secs // 3600
-        m = (total_secs % 3600) // 60
+        total_secs = max(1, int(round(duration_seconds)))
+        m = total_secs // 60
         s = total_secs % 60
-        duration_formatted = f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
+        duration_formatted = f"{m:02d}:{s:02d}"
 
     versions = []
     queue_position = None

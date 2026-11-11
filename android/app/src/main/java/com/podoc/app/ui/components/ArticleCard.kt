@@ -931,12 +931,7 @@ fun formatArticleDate(isoString: String?): String? {
 fun formatVideoDuration(seconds: Float?): String? {
     if (seconds == null || seconds <= 0f) return null
     val totalSeconds = kotlin.math.round(seconds).toInt().coerceAtLeast(1)
-    val hours = totalSeconds / 3600
-    val minutes = (totalSeconds % 3600) / 60
+    val minutes = totalSeconds / 60
     val secs = totalSeconds % 60
-    return if (hours > 0) {
-        String.format(java.util.Locale.US, "%d:%02d:%02d", hours, minutes, secs)
-    } else {
-        String.format(java.util.Locale.US, "%02d:%02d", minutes, secs)
-    }
+    return String.format(java.util.Locale.US, "%02d:%02d", minutes, secs)
 }

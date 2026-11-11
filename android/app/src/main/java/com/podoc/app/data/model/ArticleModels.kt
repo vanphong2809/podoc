@@ -100,6 +100,9 @@ data class ArticleListItem(
     @SerialName("updated_at") val updatedAt: String? = null
 )
 
+fun List<ArticleListItem>.withVideoDuration(articleId: Int, durationSeconds: Float): List<ArticleListItem> =
+    map { if (it.id == articleId) it.copy(durationSeconds = durationSeconds) else it }
+
 @Serializable
 data class ArticleDetail(
     @SerialName("id") val id: Int,

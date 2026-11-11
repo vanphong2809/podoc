@@ -1052,8 +1052,9 @@ private fun MediaGridItem(
             }
             if (!formattedDuration.isNullOrBlank()) {
                 Surface(
-                    color = Color.Black.copy(alpha = 0.65f),
+                    color = Color.Black.copy(alpha = 0.72f),
                     shape = RoundedCornerShape(4.dp),
+                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color.White.copy(alpha = 0.22f)),
                     modifier = Modifier
                         .align(Alignment.BottomStart)
                         .padding(3.dp)

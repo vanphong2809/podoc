@@ -21,7 +21,13 @@ import okio.BufferedSink
 import okio.source
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 class StreamingUriRequestBody(
@@ -67,6 +73,100 @@ class ArticleRepository(
 ) {
     private fun getApi(): PoDocApiService =
         apiServiceProvider() ?: throw IllegalStateException("Chưa kết nối tới máy chủ API")
+
+    private val durationPrefs by lazy {
+        context.getSharedPreferences("podoc_video_durations", Context.MODE_PRIVATE)
+    }
+    private val memoryDurationCache = ConcurrentHashMap<String, Float>()
+    private val unresolvableDurationKeys = ConcurrentHashMap.newKeySet<String>()
+
+    private fun durationCacheKey(articleId: Int): String =
+        "${serverUrlProvider().trimEnd('/')}:$articleId"
+
+    fun getCachedVideoDuration(articleId: Int): Float? {
+        val key = durationCacheKey(articleId)
+        memoryDurationCache[key]?.let { return it }
+        val stored = durationPrefs.getFloat(key, -1f)
+        if (stored > 0f) {
+            memoryDurationCache[key] = stored
+            return stored
+        }
+        return null
+    }
+
+    fun cacheVideoDuration(articleId: Int, durationSeconds: Float) {
+        if (durationSeconds <= 0f) return
+        val key = durationCacheKey(articleId)
+        unresolvableDurationKeys.remove(key)
+        memoryDurationCache[key] = durationSeconds
+        durationPrefs.edit().putFloat(key, durationSeconds).apply()
+    }
+
+    fun isVideoArticle(item: ArticleListItem): Boolean {
+        val lower = (item.fileName ?: item.filePath ?: "").lowercase()
+        return item.mimeType?.startsWith("video/") == true ||
+            listOf(".mp4", ".mov", ".mkv", ".webm", ".avi", ".3gp", ".ts", ".flv", ".m4v")
+                .any { lower.endsWith(it) }
+    }
+
+    private fun parseDurationFormattedSeconds(formatted: String?): Float? {
+        if (formatted.isNullOrBlank()) return null
+        val parts = formatted.trim().split(":")
+        return try {
+            when (parts.size) {
+                2 -> (parts[0].toLong() * 60 + parts[1].toLong()).toFloat()
+                3 -> (parts[0].toLong() * 3600 + parts[1].toLong() * 60 + parts[2].toLong()).toFloat()
+                else -> null
+            }?.takeIf { it > 0f }
+        } catch (_: NumberFormatException) {
+            null
+        }
+    }
+
+    /**
+     * Fetches duration via /file-info for video items whose list payload omitted duration_seconds
+     * (e.g. while backend is on an older version or ffprobe backfill has not finished yet).
+     */
+    suspend fun hydrateMissingVideoDurations(
+        items: List<ArticleListItem>,
+        onDurationResolved: (articleId: Int, durationSeconds: Float) -> Unit
+    ) {
+        val missing = items.filter { item ->
+            isVideoArticle(item) &&
+                (item.durationSeconds == null || item.durationSeconds <= 0f) &&
+                !unresolvableDurationKeys.contains(durationCacheKey(item.id))
+        }
+        if (missing.isEmpty()) return
+
+        val semaphore = Semaphore(3)
+        coroutineScope {
+            missing.forEach { item ->
+                val cached = getCachedVideoDuration(item.id)
+                if (cached != null) {
+                    onDurationResolved(item.id, cached)
+                    return@forEach
+                }
+                launch(Dispatchers.IO) {
+                    semaphore.withPermit {
+                        val key = durationCacheKey(item.id)
+                        val result = getArticleFileInfo(item.id)
+                        result.onSuccess { info ->
+                            val resolved = info.durationSeconds?.takeIf { it > 0f }
+                                ?: parseDurationFormattedSeconds(info.durationFormatted)
+                            if (resolved != null) {
+                                cacheVideoDuration(item.id, resolved)
+                                onDurationResolved(item.id, resolved)
+                            } else {
+                                unresolvableDurationKeys.add(key)
+                            }
+                        }.onFailure { err ->
+                            if (err is CancellationException) throw err
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     suspend fun getVideoPlaybackSources(ids: List<Int>): VideoPlaybackResponse = withContext(Dispatchers.IO) {
         try {
@@ -118,10 +218,19 @@ class ArticleRepository(
                 } else {
                     resolveImageUrl(item.imageUrl)
                 }
-                item.copy(imageUrl = finalUrl)
+                val resolvedDuration = when {
+                    item.durationSeconds != null && item.durationSeconds > 0f -> {
+                        cacheVideoDuration(item.id, item.durationSeconds)
+                        item.durationSeconds
+                    }
+                    isVideoArticle(item) -> getCachedVideoDuration(item.id)
+                    else -> item.durationSeconds
+                }
+                item.copy(imageUrl = finalUrl, durationSeconds = resolvedDuration)
             }
             Result.success(mapped)
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -138,8 +247,12 @@ class ArticleRepository(
             } else {
                 resolveImageUrl(detail.imageUrl)
             }
-            Result.success(detail.copy(imageUrl = finalUrl))
+            val resolvedDuration = detail.durationSeconds?.takeIf { it > 0f }
+                ?.also { cacheVideoDuration(detail.id, it) }
+                ?: getCachedVideoDuration(detail.id)
+            Result.success(detail.copy(imageUrl = finalUrl, durationSeconds = resolvedDuration))
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -147,8 +260,14 @@ class ArticleRepository(
     suspend fun getArticleFileInfo(id: Int): Result<ArticleFileInfo> = withContext(Dispatchers.IO) {
         try {
             val info = getApi().getArticleFileInfo(id)
+            val resolved = info.durationSeconds?.takeIf { it > 0f }
+                ?: parseDurationFormattedSeconds(info.durationFormatted)
+            if (resolved != null) {
+                cacheVideoDuration(id, resolved)
+            }
             Result.success(info)
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -421,7 +540,11 @@ class ArticleRepository(
             } else {
                 resolveImageUrl(article.imageUrl)
             }
-            Result.success(article.copy(imageUrl = finalUrl))
+            val effectiveDuration = article.durationSeconds?.takeIf { it > 0f } ?: durationSec
+            if (effectiveDuration != null && effectiveDuration > 0f) {
+                cacheVideoDuration(article.id, effectiveDuration)
+            }
+            Result.success(article.copy(imageUrl = finalUrl, durationSeconds = effectiveDuration))
         } catch (e: Exception) {
             val userFriendlyMsg = when {
                 e is java.net.SocketTimeoutException -> "Hết thời gian chờ kết nối (Tệp quá lớn hoặc mạng quá chậm)"

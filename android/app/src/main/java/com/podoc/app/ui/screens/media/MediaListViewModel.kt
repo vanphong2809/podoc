@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.podoc.app.data.model.ArticleListItem
 import com.podoc.app.data.model.Category
+import com.podoc.app.data.model.withVideoDuration
 import com.podoc.app.data.repository.ArticleRepository
 import com.podoc.app.data.repository.CategoryRepository
 import kotlinx.coroutines.Job
@@ -11,6 +12,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class MediaListUiState(
@@ -50,6 +52,7 @@ class MediaListViewModel(
 
     private var searchJob: Job? = null
     private var loadArticlesJob: Job? = null
+    private var durationJob: Job? = null
 
     init {
         loadCategories()
@@ -72,6 +75,7 @@ class MediaListViewModel(
             _uiState.value = currentState.copy(isLoading = true, errorMessage = null)
         } else {
             loadArticlesJob?.cancel()
+            durationJob?.cancel()
             val currentArticles = _uiState.value.articles
             if (currentArticles.isEmpty()) {
                 _uiState.value = _uiState.value.copy(isLoading = true, isRefreshing = false, errorMessage = null)
@@ -99,6 +103,9 @@ class MediaListViewModel(
                         isLoading = false,
                         isRefreshing = false
                     )
+                    if (targetState.contentType == "video") {
+                        hydrateMissingDurations(nextArticles)
+                    }
                 },
                 onFailure = { error ->
                     _uiState.value = _uiState.value.copy(
@@ -108,6 +115,17 @@ class MediaListViewModel(
                     )
                 }
             )
+        }
+    }
+
+    private fun hydrateMissingDurations(items: List<ArticleListItem>) {
+        durationJob?.cancel()
+        durationJob = viewModelScope.launch {
+            articleRepository.hydrateMissingVideoDurations(items) { id, dur ->
+                _uiState.update { state ->
+                    state.copy(articles = state.articles.withVideoDuration(id, dur))
+                }
+            }
         }
     }
 
