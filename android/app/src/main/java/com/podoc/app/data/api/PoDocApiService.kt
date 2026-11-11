@@ -72,7 +72,8 @@ interface PoDocApiService {
         @Part thumbnail: MultipartBody.Part? = null,
         @Part("category_id") categoryId: RequestBody? = null,
         @Part("title") title: RequestBody? = null,
-        @Part("file_name") fileName: RequestBody? = null
+        @Part("file_name") fileName: RequestBody? = null,
+        @Part("duration_seconds") durationSeconds: RequestBody? = null
     ): ArticleDetail
 
     @PATCH("api/articles/{id}")

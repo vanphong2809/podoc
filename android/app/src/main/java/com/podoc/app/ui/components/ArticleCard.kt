@@ -222,7 +222,8 @@ fun ArticleCard(
     onShare: () -> Unit,
     onChangeCategory: () -> Unit,
     onEditTitle: () -> Unit,
-    onShowFileInfo: (() -> Unit)? = null
+    onShowFileInfo: (() -> Unit)? = null,
+    showDurationInsteadOfCategory: Boolean = false
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -306,7 +307,8 @@ fun ArticleCard(
                     onOpenSource = onOpenSource,
                     onShare = onShare,
                     onDelete = onDelete,
-                    onShowFileInfo = onShowFileInfo
+                    onShowFileInfo = onShowFileInfo,
+                    showDurationInsteadOfCategory = showDurationInsteadOfCategory
                 )
             } else {
                 StandardCardContent(
@@ -327,7 +329,8 @@ fun ArticleCard(
                     onOpenSource = onOpenSource,
                     onShare = onShare,
                     onDelete = onDelete,
-                    onShowFileInfo = onShowFileInfo
+                    onShowFileInfo = onShowFileInfo,
+                    showDurationInsteadOfCategory = showDurationInsteadOfCategory
                 )
             }
         }
@@ -357,7 +360,8 @@ private fun HeroBannerContent(
     onOpenSource: () -> Unit,
     onShare: () -> Unit,
     onDelete: () -> Unit,
-    onShowFileInfo: (() -> Unit)? = null
+    onShowFileInfo: (() -> Unit)? = null,
+    showDurationInsteadOfCategory: Boolean = false
 ) {
     val context = LocalContext.current
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -405,10 +409,14 @@ private fun HeroBannerContent(
                     .padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val displayCatName = article.categoryName ?: "Chưa phân loại"
-                if (displayCatName.isNotBlank()) {
+                val firstBadgeText = if (showDurationInsteadOfCategory) {
+                    formatVideoDuration(article.durationSeconds)
+                } else {
+                    article.categoryName ?: "Chưa phân loại"
+                }
+                if (!firstBadgeText.isNullOrBlank()) {
                     ArticleBadge(
-                        text = displayCatName,
+                        text = firstBadgeText,
                         bgColor = Color.White.copy(alpha = 0.92f),
                         textColor = Color(0xFF1E293B)
                     )
@@ -537,7 +545,8 @@ private fun StandardCardContent(
     onOpenSource: () -> Unit,
     onShare: () -> Unit,
     onDelete: () -> Unit,
-    onShowFileInfo: (() -> Unit)? = null
+    onShowFileInfo: (() -> Unit)? = null,
+    showDurationInsteadOfCategory: Boolean = false
 ) {
     val context = LocalContext.current
     Column(modifier = Modifier.padding(16.dp)) {
@@ -546,10 +555,14 @@ private fun StandardCardContent(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
         ) {
-            val displayCatName = article.categoryName ?: "Chưa phân loại"
-            if (displayCatName.isNotBlank()) {
+            val firstBadgeText = if (showDurationInsteadOfCategory) {
+                formatVideoDuration(article.durationSeconds)
+            } else {
+                article.categoryName ?: "Chưa phân loại"
+            }
+            if (!firstBadgeText.isNullOrBlank()) {
                 ArticleBadge(
-                    text = displayCatName,
+                    text = firstBadgeText,
                     bgColor = categoryBadgeBg,
                     textColor = categoryBadgeText
                 )
@@ -913,4 +926,17 @@ fun formatArticleDate(isoString: String?): String? {
             }
         }
     } catch (_: Exception) { null }
+}
+
+fun formatVideoDuration(seconds: Float?): String? {
+    if (seconds == null || seconds <= 0f) return null
+    val totalSeconds = kotlin.math.round(seconds).toInt().coerceAtLeast(1)
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val secs = totalSeconds % 60
+    return if (hours > 0) {
+        String.format(java.util.Locale.US, "%d:%02d:%02d", hours, minutes, secs)
+    } else {
+        String.format(java.util.Locale.US, "%02d:%02d", minutes, secs)
+    }
 }

@@ -236,7 +236,16 @@ class ArticleRepository(
             val isVideo = mimeType.startsWith("video/") || lowerName.endsWith(".mp4") ||
                     lowerName.endsWith(".mkv") || lowerName.endsWith(".mov") ||
                     lowerName.endsWith(".webm") || lowerName.endsWith(".avi") ||
-                    lowerName.endsWith(".3gp") || lowerName.endsWith(".ts")
+                    lowerName.endsWith(".3gp") || lowerName.endsWith(".ts") ||
+                    lowerName.endsWith(".flv") || lowerName.endsWith(".m4v")
+
+            val isAudio = mimeType.startsWith("audio/") || lowerName.endsWith(".mp3") ||
+                    lowerName.endsWith(".wav") || lowerName.endsWith(".m4a") ||
+                    lowerName.endsWith(".aac") || lowerName.endsWith(".flac") ||
+                    lowerName.endsWith(".ogg") || lowerName.endsWith(".wma") ||
+                    lowerName.endsWith(".opus")
+
+            val durationSec = if (isVideo || isAudio) queryMediaDurationSeconds(uri) else null
 
             // Tạo tên tệp ASCII hợp lệ cho Header Content-Disposition để tránh lỗi OkHttp Unexpected char
             val safeHeaderFileName = buildString {
@@ -349,9 +358,12 @@ class ArticleRepository(
             val catBody = categoryId?.toString()?.toRequestBody("text/plain".toMediaTypeOrNull())
             val titleBody = (customTitle ?: fileName).toRequestBody("text/plain".toMediaTypeOrNull())
             val fileNameBody = fileName.toRequestBody("text/plain".toMediaTypeOrNull())
+            val durationBody = durationSec?.let {
+                String.format(java.util.Locale.US, "%.1f", it).toRequestBody("text/plain".toMediaTypeOrNull())
+            }
 
             val article = try {
-                getApi().uploadArticleFile(filePart, thumbnailPart, catBody, titleBody, fileNameBody)
+                getApi().uploadArticleFile(filePart, thumbnailPart, catBody, titleBody, fileNameBody, durationBody)
             } catch (e: retrofit2.HttpException) {
                 if (e.code() == 413) {
                     val errDetail = try {
@@ -669,6 +681,20 @@ class ArticleRepository(
             }
         }
         return Pair(name, size)
+    }
+
+    private fun queryMediaDurationSeconds(uri: Uri): Float? {
+        var retriever: MediaMetadataRetriever? = null
+        return try {
+            retriever = MediaMetadataRetriever()
+            retriever.setDataSource(context, uri)
+            val ms = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+            if (ms != null && ms > 0L) ms / 1000f else null
+        } catch (_: Throwable) {
+            null
+        } finally {
+            try { retriever?.release() } catch (_: Throwable) {}
+        }
     }
 
     private fun queryFileName(uri: Uri): String? = queryFileInfo(uri).first

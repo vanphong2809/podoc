@@ -342,7 +342,8 @@ fun CategoryDetailScreen(
                                         editingArticle = article
                                         newTitleInput = article.title
                                     },
-                                    onShowFileInfo = { fileInfoArticle = article }
+                                    onShowFileInfo = { fileInfoArticle = article },
+                                    showDurationInsteadOfCategory = (uiState.selectedContentType == "video")
                                 )
                             }
                         }

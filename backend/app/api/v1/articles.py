@@ -38,7 +38,13 @@ from app.services.extractors.base import generate_excerpt
 from app.services.extractors.registry import extractor_registry
 from app.services.thumbnail import ensure_thumbnail
 from app.services.url_utils import normalize_url
-from app.services.video_transcoder import is_video_file, optimized_path, remove_video_derivatives, smaller_optimized_path
+from app.services.video_transcoder import (
+    is_video_file,
+    optimized_path,
+    probe_duration_seconds,
+    remove_video_derivatives,
+    smaller_optimized_path,
+)
 from app.services.video_sources import describe_video, file_revision
 
 logger = logging.getLogger(__name__)
@@ -183,6 +189,42 @@ async def list_articles(
     result = await db.execute(stmt)
     articles = result.scalars().all()
 
+    # Probe and cache video duration for any video item missing duration_seconds.
+    probed_durations: dict[int, float] = {}
+    missing_video_probes = [
+        art for art in articles
+        if art.duration_seconds is None
+        and art.file_path
+        and is_video_file(art.file_path, art.mime_type, art.file_name)
+    ][:50]
+    if missing_video_probes:
+        sem = asyncio.Semaphore(4)
+
+        async def _probe_one(art_item: Article):
+            async with sem:
+                target = smaller_optimized_path(art_item.file_path) or (
+                    Path(settings.FILES_STORAGE_DIR) / art_item.file_path
+                )
+                return art_item.id, await probe_duration_seconds(target)
+
+        probe_results = await asyncio.gather(
+            *[_probe_one(art_item) for art_item in missing_video_probes],
+            return_exceptions=True,
+        )
+        for item in probe_results:
+            if isinstance(item, tuple) and item[1] is not None:
+                art_id, dur = item
+                probed_durations[art_id] = dur
+        if probed_durations:
+            for art_id, dur in probed_durations.items():
+                await db.execute(
+                    update(Article).where(Article.id == art_id).values(
+                        duration_seconds=dur,
+                        updated_at=Article.updated_at,
+                    )
+                )
+            await db.commit()
+
     response_items = []
     for art in articles:
         resolved_img = art.image_url
@@ -193,11 +235,7 @@ async def list_articles(
             or any(lower_name.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"))
             or any(lower_path.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp"))
         )
-        is_video = (
-            (art.mime_type and art.mime_type.startswith("video/"))
-            or any(lower_name.endswith(ext) for ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts", ".flv"))
-            or any(lower_path.endswith(ext) for ext in (".mp4", ".mkv", ".mov", ".webm", ".avi", ".3gp", ".ts", ".flv"))
-        )
+        is_video = is_video_file(art.file_path, art.mime_type, art.file_name)
         # Nếu là tệp hình ảnh hoặc video đính kèm, luôn phân giải về endpoint thumbnail tối ưu băng thông
         if art.file_path and (is_image or is_video):
             resolved_img = f"/api/articles/{art.id}/thumbnail"
@@ -217,6 +255,7 @@ async def list_articles(
                 file_path=art.file_path,
                 mime_type=art.mime_type,
                 video_status=art.video_status,
+                duration_seconds=probed_durations.get(art.id, art.duration_seconds),
                 excerpt=art.excerpt,
                 author=art.author,
                 site_name=art.site_name,
@@ -374,6 +413,7 @@ async def upload_article_file(
     category_id: Optional[int] = Form(None),
     title: Optional[str] = Form(None),
     file_name: Optional[str] = Form(None),
+    duration_seconds: Optional[float] = Form(None),
 ):
     """
     Tải lên và lưu trực tiếp tệp tin (Video, Ảnh, PDF, DOCX, DOC, HTML, TXT, MD...)
@@ -514,6 +554,10 @@ async def upload_article_file(
     excerpt = generate_excerpt(content_text) if content_text else f"Tệp tin đính kèm: {orig_name}"
     reading_mins = max(1, len(content_text.split()) // 200) if content_text else 1
 
+    parsed_duration = round(duration_seconds, 1) if (duration_seconds is not None and duration_seconds > 0) else None
+    if parsed_duration is None and (is_video or is_audio):
+        parsed_duration = await probe_duration_seconds(Path(disk_path))
+
     new_article = Article(
         title=final_title,
         source_type="FILE",
@@ -521,6 +565,7 @@ async def upload_article_file(
         file_path=stored_filename,
         mime_type=mime_type,
         video_status="pending" if is_video else None,
+        duration_seconds=parsed_duration,
         content_markdown=content_text,
         excerpt=excerpt,
         category_id=cat.id,
@@ -603,6 +648,7 @@ async def get_article(
         file_path=art.file_path,
         mime_type=art.mime_type,
         video_status=art.video_status,
+        duration_seconds=art.duration_seconds,
         content_markdown=art.content_markdown,
         excerpt=art.excerpt,
         author=art.author,
@@ -1029,13 +1075,28 @@ async def get_article_file_info(
                     dur_str = probe_data.get("format", {}).get("duration")
                     if dur_str:
                         dur_sec = float(dur_str)
-                        duration_seconds = round(dur_sec, 1)
-                        total_secs = int(dur_sec)
-                        m = total_secs // 60
-                        s = total_secs % 60
-                        duration_formatted = f"{m:02d}:{s:02d}"
+                        if dur_sec > 0:
+                            duration_seconds = round(dur_sec, 1)
             except Exception:
                 pass
+
+    if duration_seconds is None and art.duration_seconds and art.duration_seconds > 0:
+        duration_seconds = art.duration_seconds
+    elif duration_seconds is not None and art.duration_seconds is None:
+        await db.execute(
+            update(Article).where(Article.id == art.id).values(
+                duration_seconds=duration_seconds,
+                updated_at=Article.updated_at,
+            )
+        )
+        await db.commit()
+
+    if duration_seconds is not None and duration_seconds > 0:
+        total_secs = int(round(duration_seconds))
+        h = total_secs // 3600
+        m = (total_secs % 3600) // 60
+        s = total_secs % 60
+        duration_formatted = f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
 
     versions = []
     queue_position = None

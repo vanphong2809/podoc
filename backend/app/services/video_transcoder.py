@@ -87,6 +87,24 @@ async def probe_video(source: Path) -> dict:
     return data
 
 
+async def probe_duration_seconds(source: Path) -> float | None:
+    """Return rounded media duration in seconds, or None if unavailable."""
+    try:
+        if not source.is_file():
+            return None
+        raw = await run_command(
+            settings.FFPROBE_BINARY, "-v", "error", "-protocol_whitelist", "file,pipe",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1", str(source), timeout=10,
+        )
+        duration = float(raw.decode(errors="replace").strip())
+        if duration > 0:
+            return round(duration, 1)
+    except Exception:
+        pass
+    return None
+
+
 async def transcode_video(source: Path, partial: Path) -> bool:
     """Return False when an already compact MP4 should be retained losslessly."""
     metadata = await probe_video(source)
@@ -170,6 +188,8 @@ class VideoTranscoder:
     def __init__(self, session_factory=None):
         self.session_factory = session_factory or AsyncSessionLocal
         self.task: asyncio.Task | None = None
+        self._duration_cursor: int | None = None
+        self._duration_backfill_done: bool = False
 
     def start(self) -> None:
         if settings.VIDEO_TRANSCODING_ENABLED:
@@ -223,6 +243,7 @@ class VideoTranscoder:
             if article is None:
                 return False
             article_id, file_path = article.id, article.file_path
+            existing_duration = article.duration_seconds
             # Quote the original name so Unicode stays readable and newlines
             # cannot forge extra server log entries.
             log_file_name = json.dumps(article.file_name or Path(file_path or f"video_{article_id}").name, ensure_ascii=False)
@@ -248,6 +269,10 @@ class VideoTranscoder:
                 keep_reason = str(exc)
             optimized_bytes = partial.stat().st_size if encoded is not False else original_bytes
             publish = encoded is not False and optimized_bytes < original_bytes
+            probed_duration = existing_duration
+            if probed_duration is None:
+                target_probe = partial if publish and partial is not None and partial.is_file() else source
+                probed_duration = await probe_duration_seconds(target_probe)
             # Re-check after encoding: a deleted article must not leave an orphan.
             async with self.session_factory() as db:
                 exists = await db.scalar(select(Article.id).where(
@@ -257,9 +282,13 @@ class VideoTranscoder:
                     return True
                 if publish:
                     partial.replace(output)  # Atomic publish, never serve partial MP4.
-                await db.execute(update(Article).where(Article.id == article_id).values(
-                    video_status="ready" if publish else "kept_original", updated_at=Article.updated_at,
-                ))
+                update_values = {
+                    "video_status": "ready" if publish else "kept_original",
+                    "updated_at": Article.updated_at,
+                }
+                if probed_duration is not None and existing_duration is None:
+                    update_values["duration_seconds"] = probed_duration
+                await db.execute(update(Article).where(Article.id == article_id).values(**update_values))
                 await db.commit()
             if not publish:
                 output.unlink(missing_ok=True)  # Remove only a generated derivative.
@@ -292,6 +321,40 @@ class VideoTranscoder:
                 partial.unlink(missing_ok=True)
         return True
 
+    async def backfill_missing_durations(self, limit: int = 25) -> int:
+        """Populate cached duration_seconds for previously uploaded videos without re-encoding."""
+        updated = 0
+        async with self.session_factory() as db:
+            stmt = select(Article).where(
+                Article.file_path.is_not(None),
+                Article.duration_seconds.is_(None),
+            )
+            if self._duration_cursor is not None:
+                stmt = stmt.where(Article.id < self._duration_cursor)
+            stmt = stmt.order_by(Article.id.desc()).limit(limit)
+            rows = (await db.execute(stmt)).scalars().all()
+            if not rows:
+                self._duration_backfill_done = True
+                return 0
+            self._duration_cursor = rows[-1].id
+            if len(rows) < limit:
+                self._duration_backfill_done = True
+            for article in rows:
+                if not is_video_file(article.file_path, article.mime_type, article.file_name):
+                    continue
+                candidate = smaller_optimized_path(article.file_path) or (
+                    Path(settings.FILES_STORAGE_DIR) / article.file_path
+                )
+                duration = await probe_duration_seconds(candidate)
+                if duration is not None:
+                    await db.execute(update(Article).where(Article.id == article.id).values(
+                        duration_seconds=duration, updated_at=Article.updated_at,
+                    ))
+                    updated += 1
+            if updated:
+                await db.commit()
+        return updated
+
     async def run(self) -> None:
         # A shared disk lock also prevents two uvicorn workers/restarts from
         # encoding concurrently or resetting each other's active DB jobs.
@@ -310,6 +373,10 @@ class VideoTranscoder:
                     while True:
                         try:
                             if not await self.process_next():
+                                if not self._duration_backfill_done:
+                                    await self.backfill_missing_durations(limit=25)
+                                    if not self._duration_backfill_done:
+                                        continue
                                 await asyncio.sleep(settings.VIDEO_TRANSCODING_POLL_SECONDS)
                         except Exception:
                             logger.exception("Video queue unavailable; retrying")

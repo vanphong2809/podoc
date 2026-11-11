@@ -48,6 +48,7 @@ import com.podoc.app.service.MediaPlaybackManager
 import com.podoc.app.ui.components.ArticleCard
 import com.podoc.app.ui.components.EmptyStateView
 import com.podoc.app.ui.components.FileInfoBottomSheet
+import com.podoc.app.ui.components.formatVideoDuration
 import com.podoc.app.ui.theme.parseHexColor
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -321,7 +322,8 @@ fun MediaListScreen(
                                         editingArticle = article
                                         newTitleInput = article.title
                                     },
-                                    onShowFileInfo = { fileInfoArticle = article }
+                                    onShowFileInfo = { fileInfoArticle = article },
+                                    showDurationInsteadOfCategory = (uiState.contentType == "video")
                                 )
                             }
                         }
@@ -628,23 +630,27 @@ private fun MediaGridCard(
             }
         }
 
-        // Overlay thông tin danh mục ở góc dưới
-        if (!article.categoryName.isNullOrBlank()) {
+        // Overlay thời lượng video (nếu là Video) hoặc tên danh mục ở góc dưới
+        val bottomLabel = remember(isVideo, article.durationSeconds, article.categoryName) {
+            if (isVideo) formatVideoDuration(article.durationSeconds) else article.categoryName
+        }
+        if (!bottomLabel.isNullOrBlank()) {
             Surface(
-                color = Color.Black.copy(alpha = 0.55f),
+                color = Color.Black.copy(alpha = if (isVideo) 0.65f else 0.55f),
                 shape = RoundedCornerShape(4.dp),
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(4.dp)
             ) {
                 Text(
-                    text = article.categoryName,
+                    text = bottomLabel,
                     style = MaterialTheme.typography.labelSmall,
                     color = Color.White,
-                    fontSize = 9.sp,
+                    fontSize = if (isVideo) 10.sp else 9.sp,
+                    fontWeight = if (isVideo) FontWeight.SemiBold else FontWeight.Normal,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                 )
             }
         }

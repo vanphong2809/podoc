@@ -43,6 +43,7 @@ class ArticleListResponse(BaseModel):
     file_path: Optional[str] = None
     mime_type: Optional[str] = None
     video_status: Optional[str] = None
+    duration_seconds: Optional[float] = None
     excerpt: Optional[str] = None
     author: Optional[str] = None
     site_name: Optional[str] = None

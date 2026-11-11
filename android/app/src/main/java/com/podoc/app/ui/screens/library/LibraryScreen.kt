@@ -55,6 +55,7 @@ import com.podoc.app.ui.components.ArticleCard
 import com.podoc.app.ui.components.ArticleCardSkeleton
 import com.podoc.app.ui.components.EmptyStateView
 import com.podoc.app.ui.components.ShimmerBrush
+import com.podoc.app.ui.components.formatVideoDuration
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1044,8 +1045,30 @@ private fun MediaGridItem(
             }
         }
 
-        // Video play icon
+        // Video play icon + duration overlay
         if (isVideo) {
+            val formattedDuration = remember(article.durationSeconds) {
+                formatVideoDuration(article.durationSeconds)
+            }
+            if (!formattedDuration.isNullOrBlank()) {
+                Surface(
+                    color = Color.Black.copy(alpha = 0.65f),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(3.dp)
+                ) {
+                    Text(
+                        text = formattedDuration,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
+            }
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
