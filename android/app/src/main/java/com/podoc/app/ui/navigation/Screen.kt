@@ -6,6 +6,7 @@ sealed class Screen(val route: String) {
     object Categories : Screen("categories")
     object Tools : Screen("tools")
     object Ocr : Screen("ocr")
+    object PdfTools : Screen("pdf_tools")
     object CategoryDetail : Screen("category_detail/{categoryId}?name={name}&color={color}") {
         fun createRoute(categoryId: Int, name: String, color: String = "#4F46E5"): String {
             val encodedName = java.net.URLEncoder.encode(name, "UTF-8")

@@ -13,6 +13,7 @@ from app.api.v1.categories import router as categories_router
 from app.api.v1.export import router as export_router
 from app.api.v1.extract import router as extract_router
 from app.api.v1.ocr import router as ocr_router
+from app.api.v1.pdf import router as pdf_router
 from app.api.v1.system import router as system_router
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, engine
@@ -143,4 +144,5 @@ app.include_router(categories_router, prefix="/api")
 app.include_router(articles_router, prefix="/api")
 app.include_router(export_router, prefix="/api")
 app.include_router(ocr_router, prefix="/api")
+app.include_router(pdf_router, prefix="/api")
 app.include_router(system_router, prefix="/api")

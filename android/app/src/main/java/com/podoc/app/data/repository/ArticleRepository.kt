@@ -8,9 +8,12 @@ import android.util.Size
 import android.webkit.MimeTypeMap
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.pdf.PdfRenderer
 import android.media.MediaMetadataRetriever
 import com.podoc.app.data.api.PoDocApiService
 import com.podoc.app.data.model.*
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
@@ -768,6 +771,155 @@ class ArticleRepository(
             Result.success(stats)
         } catch (e: Exception) {
             Result.failure(Exception(extractErrorMessage(e)))
+        }
+    }
+
+    suspend fun inspectLocalPdf(uri: Uri): LocalPdfMeta = withContext(Dispatchers.IO) {
+        val (rawName, sizeBytes) = queryFileInfo(uri)
+        val fileName = (rawName ?: "document.pdf").let {
+            if (it.lowercase().endsWith(".pdf")) it else "$it.pdf"
+        }
+        var pageCount: Int? = null
+        var isEncrypted = false
+        try {
+            context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                PdfRenderer(pfd).use { renderer ->
+                    pageCount = renderer.pageCount
+                }
+            }
+        } catch (_: SecurityException) {
+            isEncrypted = true
+        } catch (_: Exception) {}
+        LocalPdfMeta(
+            fileName = fileName,
+            fileSizeBytes = sizeBytes.coerceAtLeast(0L),
+            pageCount = pageCount,
+            isEncrypted = isEncrypted
+        )
+    }
+
+    suspend fun getLibraryPdfInfo(articleId: Int): Result<PdfInfoResponse> = withContext(Dispatchers.IO) {
+        try {
+            Result.success(getApi().getLibraryPdfInfo(articleId))
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Result.failure(Exception(extractErrorMessage(e)))
+        }
+    }
+
+    suspend fun mergePdfFiles(
+        items: List<PdfMergeInput>,
+        title: String?,
+        categoryId: Int?
+    ): Result<ArticleDetail> = withContext(Dispatchers.IO) {
+        try {
+            if (items.size < 2) {
+                return@withContext Result.failure(IllegalArgumentException("Cần chọn ít nhất 2 tệp PDF để ghép."))
+            }
+            val fileParts = mutableListOf<MultipartBody.Part>()
+            val sourceSpecs = mutableListOf<PdfMergeSourceSpec>()
+            val textMediaType = "text/plain".toMediaTypeOrNull()
+
+            for (item in items) {
+                when (item) {
+                    is PdfMergeInput.LocalUri -> {
+                        val uploadIndex = fileParts.size
+                        val (_, queriedSize) = queryFileInfo(item.uri)
+                        val body = StreamingUriRequestBody(
+                            context.contentResolver,
+                            item.uri,
+                            "application/pdf",
+                            queriedSize.coerceAtLeast(item.fileSizeBytes)
+                        )
+                        val headerName = asciiSafeHeaderFileName(item.displayName, "pdf")
+                        fileParts.add(MultipartBody.Part.createFormData("files", headerName, body))
+                        sourceSpecs.add(PdfMergeSourceSpec(type = "upload", index = uploadIndex))
+                    }
+                    is PdfMergeInput.LibraryArticle -> {
+                        sourceSpecs.add(PdfMergeSourceSpec(type = "article", id = item.articleId))
+                    }
+                }
+            }
+
+            val sourcesJsonBody = Json.encodeToString(sourceSpecs).toRequestBody(textMediaType)
+            val titleBody = title?.trim()?.takeIf { it.isNotBlank() }?.toRequestBody(textMediaType)
+            val categoryBody = categoryId?.toString()?.toRequestBody(textMediaType)
+
+            val created = getApi().mergePdfFiles(
+                files = fileParts,
+                sourcesJson = sourcesJsonBody,
+                title = titleBody,
+                categoryId = categoryBody
+            )
+            Result.success(created.copy(imageUrl = resolveImageUrl(created.imageUrl)))
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Result.failure(Exception(extractErrorMessage(e)))
+        }
+    }
+
+    suspend fun splitPdfFile(
+        source: PdfSplitSource,
+        mode: String,
+        ranges: String?,
+        mergeRanges: Boolean,
+        pagesPerSplit: Int,
+        titlePrefix: String?,
+        categoryId: Int?
+    ): Result<SplitPdfResponse> = withContext(Dispatchers.IO) {
+        try {
+            val textMediaType = "text/plain".toMediaTypeOrNull()
+            var filePart: MultipartBody.Part? = null
+            var articleIdBody: RequestBody? = null
+
+            when (source) {
+                is PdfSplitSource.LocalUri -> {
+                    val (_, queriedSize) = queryFileInfo(source.uri)
+                    val body = StreamingUriRequestBody(
+                        context.contentResolver,
+                        source.uri,
+                        "application/pdf",
+                        queriedSize
+                    )
+                    val headerName = asciiSafeHeaderFileName(source.displayName, "pdf")
+                    filePart = MultipartBody.Part.createFormData("file", headerName, body)
+                }
+                is PdfSplitSource.LibraryArticle -> {
+                    articleIdBody = source.articleId.toString().toRequestBody(textMediaType)
+                }
+            }
+
+            val resp = getApi().splitPdfFile(
+                file = filePart,
+                articleId = articleIdBody,
+                mode = mode.toRequestBody(textMediaType),
+                ranges = ranges?.trim()?.takeIf { it.isNotBlank() }?.toRequestBody(textMediaType),
+                mergeRanges = mergeRanges.toString().toRequestBody(textMediaType),
+                pagesPerSplit = pagesPerSplit.toString().toRequestBody(textMediaType),
+                titlePrefix = titlePrefix?.trim()?.takeIf { it.isNotBlank() }?.toRequestBody(textMediaType),
+                categoryId = categoryId?.toString()?.toRequestBody(textMediaType)
+            )
+            val mappedArticles = resp.articles.map { art ->
+                art.copy(imageUrl = resolveImageUrl(art.imageUrl))
+            }
+            Result.success(resp.copy(articles = mappedArticles))
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Result.failure(Exception(extractErrorMessage(e)))
+        }
+    }
+
+    private fun asciiSafeHeaderFileName(fileName: String, defaultExt: String): String {
+        val safe = buildString {
+            for (ch in fileName) {
+                if (ch.code in 32..126 && ch != '"' && ch != '\\' && ch != ';') append(ch)
+                else append('_')
+            }
+        }.trim()
+        return if (safe.isBlank() || safe.all { it == '_' || it == '.' }) {
+            "pdf_${System.currentTimeMillis()}.$defaultExt"
+        } else {
+            safe
         }
     }
 

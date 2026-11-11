@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -38,7 +39,8 @@ fun ToolsScreen(
     viewModel: ToolsViewModel,
     onPickOfficeForPdf: () -> Unit,
     onPasteLink: (url: String, asWebFormat: Boolean) -> Unit,
-    onOpenOcr: () -> Unit = {}
+    onOpenOcr: () -> Unit = {},
+    onOpenPdfTools: () -> Unit = {}
 ) {
     var showUrlDialog by remember { mutableStateOf(false) }
     var urlInput by remember { mutableStateOf("") }
@@ -300,10 +302,10 @@ fun ToolsScreen(
                 }
             }
 
-            // ── Nhóm 1: Chuyển đổi tài liệu ──
-            if (matchOfficeToPdf || matchWeb || matchOcr) {
+            // ── Nhóm 1: Chuyển đổi & Xử lý tài liệu ──
+            if (matchOfficeToPdf || matchWeb || matchOcr || matchPdfMerge) {
                 Text(
-                    text = "CHUYỂN ĐỔI TÀI LIỆU",
+                    text = "ĐANG HOẠT ĐỘNG",
                     style = MaterialTheme.typography.labelMedium.copy(
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.5.sp,
@@ -790,8 +792,166 @@ fun ToolsScreen(
                 }
             }
 
+            // Thẻ Công cụ: Ghép & Tách file PDF
+            if (matchPdfMerge) {
+                Card(
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 20.dp)
+                ) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color(0xFFE0F2FE)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.CallSplit,
+                                    contentDescription = null,
+                                    tint = Color(0xFF0284C7),
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Ghép & Tách file PDF",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        color = Color(0xFFDCFCE7),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text(
+                                            text = "Khả dụng",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFF16A34A),
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Trên máy / Thư viện PoDoc -> Tệp PDF mới",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Text(
+                            text = "Ghép nhiều tệp PDF theo thứ tự tùy chọn hoặc tách riêng từng khoảng trang, chia đều mỗi N trang mà vẫn giữ nguyên độ nét gốc và lưu trực tiếp vào Thư viện.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 18.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                                modifier = Modifier.weight(1f).height(36.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(Icons.Default.Layers, contentDescription = null, tint = Color(0xFF0284C7), modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Ghép nhiều file",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                                modifier = Modifier.weight(1f).height(36.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.CallSplit, contentDescription = null, tint = Color(0xFF4F46E5), modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Tách khoảng trang",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Button(
+                            onClick = onOpenPdfTools,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF0284C7),
+                                contentColor = Color.White
+                            ),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                        ) {
+                            Icon(imageVector = Icons.AutoMirrored.Filled.CallSplit, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Mở công cụ Ghép & Tách PDF",
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Icon(imageVector = Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+            }
+
             // ── Nhóm 3: Các công cụ chuẩn bị tích hợp ──
-            if (matchPdfMerge || matchPdfCompress) {
+            if (matchPdfCompress) {
                 Text(
                     text = "CÔNG CỤ SẮP RA MẮT",
                     style = MaterialTheme.typography.labelMedium.copy(
@@ -805,16 +965,6 @@ fun ToolsScreen(
             }
 
             // Danh sách các công cụ tương lai
-            if (matchPdfMerge) {
-                UpcomingToolItem(
-                    icon = Icons.Default.CallSplit,
-                    iconTint = Color(0xFF0284C7),
-                    title = "Ghép & Tách file PDF",
-                    description = "Ghép nhiều tệp PDF lại với nhau hoặc tách rời các trang tài liệu cụ thể."
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-            }
-
             if (matchPdfCompress) {
                 UpcomingToolItem(
                     icon = Icons.Default.Compress,

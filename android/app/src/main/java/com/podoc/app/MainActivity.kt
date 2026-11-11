@@ -43,6 +43,8 @@ import com.podoc.app.ui.screens.settings.SettingsScreen
 import com.podoc.app.ui.screens.settings.SettingsViewModel
 import com.podoc.app.ui.screens.tools.OcrScreen
 import com.podoc.app.ui.screens.tools.OcrViewModel
+import com.podoc.app.ui.screens.tools.PdfToolsScreen
+import com.podoc.app.ui.screens.tools.PdfToolsViewModel
 import com.podoc.app.ui.screens.tools.ToolsScreen
 import com.podoc.app.ui.screens.tools.ToolsViewModel
 import com.podoc.app.ui.theme.PoDocTheme
@@ -89,6 +91,12 @@ class MainActivity : ComponentActivity() {
                     container.categoryRepository,
                     container.dataStoreManager,
                     apiServiceProvider = { container.getApiService() }
+                )
+            }
+            val pdfToolsViewModel = remember {
+                PdfToolsViewModel(
+                    container.articleRepository,
+                    container.categoryRepository
                 )
             }
 
@@ -414,6 +422,10 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onOpenOcr = {
                                     navController.navigate(Screen.Ocr.route)
+                                },
+                                onOpenPdfTools = {
+                                    pdfToolsViewModel.loadCategories()
+                                    navController.navigate(Screen.PdfTools.route)
                                 }
                             )
                         }
@@ -428,6 +440,27 @@ class MainActivity : ComponentActivity() {
                                     categoryViewModel.loadCategories()
                                     navController.navigate(Screen.Reader.createRoute(articleId)) {
                                         popUpTo(Screen.Ocr.route) { inclusive = true }
+                                    }
+                                }
+                            )
+                        }
+
+                        // Màn hình Ghép & Tách file PDF
+                        composable(Screen.PdfTools.route) {
+                            LaunchedEffect(pdfToolsViewModel.mergedResult, pdfToolsViewModel.splitResult) {
+                                if (pdfToolsViewModel.mergedResult != null || pdfToolsViewModel.splitResult != null) {
+                                    libraryViewModel.loadArticles(refresh = true)
+                                    categoryViewModel.loadCategories()
+                                }
+                            }
+                            PdfToolsScreen(
+                                viewModel = pdfToolsViewModel,
+                                onNavigateBack = { navController.popBackStack() },
+                                onOpenArticle = { articleId ->
+                                    libraryViewModel.loadArticles(refresh = true)
+                                    categoryViewModel.loadCategories()
+                                    navController.navigate(Screen.Reader.createRoute(articleId)) {
+                                        launchSingleTop = true
                                     }
                                 }
                             )

@@ -138,4 +138,30 @@ interface PoDocApiService {
     // Thống kê thông số máy chủ (RAM, Disk, CPU)
     @GET("api/system/stats")
     suspend fun getServerSystemStats(): ServerSystemStats
+
+    // Ghép & Tách file PDF
+    @GET("api/pdf/articles/{id}/info")
+    suspend fun getLibraryPdfInfo(@Path("id") id: Int): PdfInfoResponse
+
+    @Multipart
+    @POST("api/pdf/merge")
+    suspend fun mergePdfFiles(
+        @Part files: List<MultipartBody.Part>,
+        @Part("sources_json") sourcesJson: RequestBody? = null,
+        @Part("title") title: RequestBody? = null,
+        @Part("category_id") categoryId: RequestBody? = null
+    ): ArticleDetail
+
+    @Multipart
+    @POST("api/pdf/split")
+    suspend fun splitPdfFile(
+        @Part file: MultipartBody.Part? = null,
+        @Part("article_id") articleId: RequestBody? = null,
+        @Part("mode") mode: RequestBody,
+        @Part("ranges") ranges: RequestBody? = null,
+        @Part("merge_ranges") mergeRanges: RequestBody? = null,
+        @Part("pages_per_split") pagesPerSplit: RequestBody? = null,
+        @Part("title_prefix") titlePrefix: RequestBody? = null,
+        @Part("category_id") categoryId: RequestBody? = null
+    ): SplitPdfResponse
 }
