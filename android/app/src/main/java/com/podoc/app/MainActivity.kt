@@ -274,6 +274,9 @@ class MainActivity : ComponentActivity() {
                                 viewModel = libraryViewModel,
                                 onArticleClick = { articleId ->
                                     navController.navigate(Screen.Reader.createRoute(articleId))
+                                },
+                                onEditNote = { noteId ->
+                                    navController.navigate(Screen.NoteEditor.createRoute(noteId))
                                 }
                             )
                         }
@@ -312,6 +315,9 @@ class MainActivity : ComponentActivity() {
                                     navController.navigate(Screen.Reader.createRoute(newArticleId)) {
                                         popUpTo(Screen.Reader.createRoute(articleId)) { inclusive = true }
                                     }
+                                },
+                                onEditNote = { noteId ->
+                                    navController.navigate(Screen.NoteEditor.createRoute(noteId))
                                 }
                             )
                         }
@@ -407,6 +413,9 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onOpenNoteEditor = {
                                     navController.navigate(Screen.NoteEditor.createRoute())
+                                },
+                                onEditNote = { noteId ->
+                                    navController.navigate(Screen.NoteEditor.createRoute(noteId))
                                 }
                             )
                         }
@@ -529,11 +538,12 @@ class MainActivity : ComponentActivity() {
                                 viewModel = noteEditorViewModel,
                                 articleId = articleId,
                                 onNavigateBack = { navController.popBackStack() },
-                                onOpenArticle = { createdId ->
+                                onOpenArticle = { createdOrUpdatedId ->
                                     libraryViewModel.loadArticles(refresh = true)
                                     categoryViewModel.loadCategories()
-                                    navController.navigate(Screen.Reader.createRoute(createdId)) {
-                                        popUpTo(Screen.NoteEditor.route) { inclusive = true }
+                                    navController.popBackStack()
+                                    navController.navigate(Screen.Reader.createRoute(createdOrUpdatedId)) {
+                                        launchSingleTop = true
                                     }
                                 }
                             )

@@ -630,28 +630,45 @@ private fun MediaGridCard(
             }
         }
 
-        // Overlay thời lượng video (nếu là Video) hoặc tên danh mục ở góc dưới
-        val bottomLabel = remember(isVideo, article.durationSeconds, article.categoryName) {
-            if (isVideo) formatVideoDuration(article.durationSeconds) else article.categoryName
-        }
-        if (!bottomLabel.isNullOrBlank()) {
+        // Overlay thời lượng video (nếu là Video) ở góc dưới bên phải (chuẩn video app)
+        // hoặc tên danh mục (nếu là Ảnh) ở góc dưới bên trái
+        if (isVideo) {
+            val durLabel = formatVideoDuration(article.durationSeconds) ?: "--:--"
             Surface(
-                color = Color.Black.copy(alpha = if (isVideo) 0.72f else 0.55f),
+                color = Color.Black.copy(alpha = 0.72f),
                 shape = RoundedCornerShape(4.dp),
-                border = if (isVideo) androidx.compose.foundation.BorderStroke(0.5.dp, Color.White.copy(alpha = 0.22f)) else null,
+                border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.25f)),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(5.dp)
+            ) {
+                Text(
+                    text = durLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                )
+            }
+        } else if (!article.categoryName.isNullOrBlank()) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.55f),
+                shape = RoundedCornerShape(4.dp),
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(4.dp)
             ) {
                 Text(
-                    text = bottomLabel,
+                    text = article.categoryName,
                     style = MaterialTheme.typography.labelSmall,
                     color = Color.White,
-                    fontSize = if (isVideo) 10.sp else 9.sp,
-                    fontWeight = if (isVideo) FontWeight.SemiBold else FontWeight.Normal,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Normal,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                 )
             }
         }

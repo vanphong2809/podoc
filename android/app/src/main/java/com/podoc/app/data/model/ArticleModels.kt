@@ -75,7 +75,8 @@ data class UpdateArticleRequest(
     @SerialName("category_id") val categoryId: Int? = null,
     @SerialName("content_markdown") val contentMarkdown: String? = null,
     @SerialName("is_favorite") val isFavorite: Boolean? = null,
-    @SerialName("read_progress") val readProgress: Float? = null
+    @SerialName("read_progress") val readProgress: Float? = null,
+    @SerialName("duration_seconds") val durationSeconds: Float? = null
 )
 
 @Serializable

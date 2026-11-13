@@ -79,6 +79,12 @@ class NoteEditorViewModel(
     var editingArticleId by mutableStateOf<Int?>(null)
         private set
 
+    var originalCategoryId by mutableStateOf<Int?>(null)
+        private set
+
+    var categoryName by mutableStateOf("Ghi chú")
+        private set
+
     var errorMessage by mutableStateOf<String?>(null)
         private set
 
@@ -112,6 +118,8 @@ class NoteEditorViewModel(
         isSaving = false
         isEditMode = false
         editingArticleId = null
+        originalCategoryId = null
+        categoryName = "Ghi chú"
         errorMessage = null
         saveSuccess = false
         savedArticleId = null
@@ -126,6 +134,8 @@ class NoteEditorViewModel(
                 onSuccess = { art ->
                     title = art.title
                     content = art.contentMarkdown
+                    originalCategoryId = art.categoryId
+                    categoryName = art.categoryName ?: "Ghi chú"
                 },
                 onFailure = { err ->
                     errorMessage = "Không thể tải ghi chú: ${err.message}"
@@ -173,22 +183,25 @@ class NoteEditorViewModel(
 
         viewModelScope.launch {
             try {
-                // 1. Tìm hoặc tạo danh mục "Ghi chú"
-                val catListResult = categoryRepository.getCategories()
-                val categories = catListResult.getOrDefault(emptyList())
-                var noteCat = categories.find { it.name.trim().equals("Ghi chú", ignoreCase = true) }
+                val targetCategoryId = if (isEditMode && originalCategoryId != null && originalCategoryId!! > 0) {
+                    originalCategoryId!!
+                } else {
+                    // 1. Tìm hoặc tạo danh mục "Ghi chú"
+                    val catListResult = categoryRepository.getCategories()
+                    val categories = catListResult.getOrDefault(emptyList())
+                    var noteCat = categories.find { it.name.trim().equals("Ghi chú", ignoreCase = true) }
 
-                if (noteCat == null) {
-                    val createCatResult = categoryRepository.createCategory(
-                        name = "Ghi chú",
-                        icon = "note",
-                        color = "#F59E0B",
-                        sortOrder = 7
-                    )
-                    noteCat = createCatResult.getOrNull()
+                    if (noteCat == null) {
+                        val createCatResult = categoryRepository.createCategory(
+                            name = "Ghi chú",
+                            icon = "note",
+                            color = "#F59E0B",
+                            sortOrder = 7
+                        )
+                        noteCat = createCatResult.getOrNull()
+                    }
+                    noteCat?.id ?: 1
                 }
-
-                val targetCategoryId = noteCat?.id ?: 1
 
                 if (isEditMode && editingArticleId != null) {
                     val updateResult = articleRepository.updateArticle(

@@ -46,7 +46,8 @@ fun CategoryDetailScreen(
     onNavigateBack: () -> Unit,
     onArticleClick: (Int) -> Unit,
     onPasteLink: (url: String, asWebFormat: Boolean) -> Unit,
-    onOpenNoteEditor: () -> Unit = {}
+    onOpenNoteEditor: () -> Unit = {},
+    onEditNote: (Int) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -344,7 +345,8 @@ fun CategoryDetailScreen(
                                         newTitleInput = article.title
                                     },
                                     onShowFileInfo = { fileInfoArticle = article },
-                                    showDurationInsteadOfCategory = (uiState.selectedContentType == "video")
+                                    showDurationInsteadOfCategory = (uiState.selectedContentType == "video"),
+                                    onEditNote = { onEditNote(article.id) }
                                 )
                             }
                         }

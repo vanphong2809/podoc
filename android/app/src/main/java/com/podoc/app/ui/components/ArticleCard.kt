@@ -223,11 +223,15 @@ fun ArticleCard(
     onChangeCategory: () -> Unit,
     onEditTitle: () -> Unit,
     onShowFileInfo: (() -> Unit)? = null,
-    showDurationInsteadOfCategory: Boolean = false
+    showDurationInsteadOfCategory: Boolean = false,
+    onEditNote: (() -> Unit)? = null
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
     var isImageValid by remember(article.imageUrl) { mutableStateOf(!article.imageUrl.isNullOrBlank()) }
+
+    val isEditableNote = article.sourceType == "NOTE" || article.mimeType == "text/markdown" || (article.sourceType == "URL" && article.fileName.isNullOrBlank())
+    val actualOnEditNote: (() -> Unit)? = if (isEditableNote && onEditNote != null) onEditNote else null
 
     // Xác định badge loại nội dung
     val (typeBadgeText, typeBadgeBg, typeBadgeColor) = remember(article) {
@@ -308,7 +312,8 @@ fun ArticleCard(
                     onShare = onShare,
                     onDelete = onDelete,
                     onShowFileInfo = onShowFileInfo,
-                    showDurationInsteadOfCategory = showDurationInsteadOfCategory
+                    showDurationInsteadOfCategory = showDurationInsteadOfCategory,
+                    onEditNote = actualOnEditNote
                 )
             } else {
                 StandardCardContent(
@@ -330,7 +335,8 @@ fun ArticleCard(
                     onShare = onShare,
                     onDelete = onDelete,
                     onShowFileInfo = onShowFileInfo,
-                    showDurationInsteadOfCategory = showDurationInsteadOfCategory
+                    showDurationInsteadOfCategory = showDurationInsteadOfCategory,
+                    onEditNote = actualOnEditNote
                 )
             }
         }
@@ -361,7 +367,8 @@ private fun HeroBannerContent(
     onShare: () -> Unit,
     onDelete: () -> Unit,
     onShowFileInfo: (() -> Unit)? = null,
-    showDurationInsteadOfCategory: Boolean = false
+    showDurationInsteadOfCategory: Boolean = false,
+    onEditNote: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -410,7 +417,7 @@ private fun HeroBannerContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val firstBadgeText = if (showDurationInsteadOfCategory) {
-                    formatVideoDuration(article.durationSeconds)
+                    formatVideoDuration(article.durationSeconds) ?: "--:--"
                 } else {
                     article.categoryName ?: "Chưa phân loại"
                 }
@@ -480,7 +487,8 @@ private fun HeroBannerContent(
                             onOpenSource = onOpenSource,
                             onShare = onShare,
                             onDelete = onDelete,
-                            onShowFileInfo = onShowFileInfo
+                            onShowFileInfo = onShowFileInfo,
+                            onEditNote = onEditNote
                         )
                     }
                 }
@@ -546,7 +554,8 @@ private fun StandardCardContent(
     onShare: () -> Unit,
     onDelete: () -> Unit,
     onShowFileInfo: (() -> Unit)? = null,
-    showDurationInsteadOfCategory: Boolean = false
+    showDurationInsteadOfCategory: Boolean = false,
+    onEditNote: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     Column(modifier = Modifier.padding(16.dp)) {
@@ -556,7 +565,7 @@ private fun StandardCardContent(
             modifier = Modifier.fillMaxWidth()
         ) {
             val firstBadgeText = if (showDurationInsteadOfCategory) {
-                formatVideoDuration(article.durationSeconds)
+                formatVideoDuration(article.durationSeconds) ?: "--:--"
             } else {
                 article.categoryName ?: "Chưa phân loại"
             }
@@ -633,7 +642,8 @@ private fun StandardCardContent(
                         onOpenSource = onOpenSource,
                         onShare = onShare,
                         onDelete = onDelete,
-                        onShowFileInfo = onShowFileInfo
+                        onShowFileInfo = onShowFileInfo,
+                        onEditNote = onEditNote
                     )
                 }
             }
@@ -843,13 +853,21 @@ private fun ArticleActionDropdownMenu(
     onOpenSource: () -> Unit,
     onShare: () -> Unit,
     onDelete: () -> Unit,
-    onShowFileInfo: (() -> Unit)? = null
+    onShowFileInfo: (() -> Unit)? = null,
+    onEditNote: (() -> Unit)? = null
 ) {
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(14.dp)
     ) {
+        if (onEditNote != null) {
+            DropdownMenuItem(
+                text = { Text("Sửa ghi chú") },
+                leadingIcon = { Icon(Icons.Default.EditNote, contentDescription = null, tint = Color(0xFFD97706)) },
+                onClick = { onDismiss(); onEditNote() }
+            )
+        }
         if (onShowFileInfo != null) {
             DropdownMenuItem(
                 text = { Text("Thông tin file") },

@@ -72,7 +72,8 @@ class StreamingUriRequestBody(
 class ArticleRepository(
     private val apiServiceProvider: () -> PoDocApiService?,
     private val context: Context,
-    private val serverUrlProvider: () -> String = { "" }
+    private val serverUrlProvider: () -> String = { "" },
+    private val tokenProvider: () -> String? = { null }
 ) {
     private fun getApi(): PoDocApiService =
         apiServiceProvider() ?: throw IllegalStateException("Chưa kết nối tới máy chủ API")
@@ -126,16 +127,40 @@ class ArticleRepository(
         }
     }
 
+    suspend fun extractDurationWithRetriever(articleId: Int): Float? = withContext(Dispatchers.IO) {
+        val videoUrl = resolveImageUrl("/api/articles/$articleId/file") ?: return@withContext null
+        var retriever: android.media.MediaMetadataRetriever? = null
+        try {
+            retriever = android.media.MediaMetadataRetriever()
+            val token = tokenProvider()
+            val headers = HashMap<String, String>()
+            if (!token.isNullOrBlank()) {
+                headers["Authorization"] = "Bearer $token"
+            }
+            retriever.setDataSource(videoUrl, headers)
+            val durStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+            val durMs = durStr?.toLongOrNull()
+            if (durMs != null && durMs > 0L) {
+                val durSec = durMs / 1000f
+                return@withContext durSec
+            }
+        } catch (_: Exception) {
+        } finally {
+            try { retriever?.release() } catch (_: Exception) {}
+        }
+        null
+    }
+
     /**
-     * Fetches duration via /file-info for video items whose list payload omitted duration_seconds
-     * (e.g. while backend is on an older version or ffprobe backfill has not finished yet).
+     * Fetches duration via /file-info or MediaMetadataRetriever for video items whose list payload omitted duration_seconds.
      */
     suspend fun hydrateMissingVideoDurations(
         items: List<ArticleListItem>,
+        forceAll: Boolean = false,
         onDurationResolved: (articleId: Int, durationSeconds: Float) -> Unit
     ) {
         val missing = items.filter { item ->
-            isVideoArticle(item) &&
+            (forceAll || isVideoArticle(item)) &&
                 (item.durationSeconds == null || item.durationSeconds <= 0f) &&
                 !unresolvableDurationKeys.contains(durationCacheKey(item.id))
         }
@@ -152,18 +177,30 @@ class ArticleRepository(
                 launch(Dispatchers.IO) {
                     semaphore.withPermit {
                         val key = durationCacheKey(item.id)
+                        var resolved: Float? = null
+
+                        // 1. Thử lấy từ FileInfo API của server
                         val result = getArticleFileInfo(item.id)
                         result.onSuccess { info ->
-                            val resolved = info.durationSeconds?.takeIf { it > 0f }
+                            resolved = info.durationSeconds?.takeIf { it > 0f }
                                 ?: parseDurationFormattedSeconds(info.durationFormatted)
-                            if (resolved != null) {
-                                cacheVideoDuration(item.id, resolved)
-                                onDurationResolved(item.id, resolved)
-                            } else {
-                                unresolvableDurationKeys.add(key)
-                            }
-                        }.onFailure { err ->
-                            if (err is CancellationException) throw err
+                        }
+
+                        // 2. Nếu server chưa có, dùng MediaMetadataRetriever trực tiếp qua stream URL
+                        if (resolved == null || resolved!! <= 0f) {
+                            resolved = extractDurationWithRetriever(item.id)
+                        }
+
+                        if (resolved != null && resolved!! > 0f) {
+                            val dur = resolved!!
+                            cacheVideoDuration(item.id, dur)
+                            onDurationResolved(item.id, dur)
+                            // Lưu ngược lên server trong nền để lần sau server trả thẳng
+                            try {
+                                updateArticle(item.id, durationSeconds = dur)
+                            } catch (_: Exception) {}
+                        } else {
+                            unresolvableDurationKeys.add(key)
                         }
                     }
                 }
@@ -595,12 +632,13 @@ class ArticleRepository(
         categoryId: Int? = null,
         contentMarkdown: String? = null,
         isFavorite: Boolean? = null,
-        readProgress: Float? = null
+        readProgress: Float? = null,
+        durationSeconds: Float? = null
     ): Result<ArticleDetail> {
         return try {
             val article = getApi().updateArticle(
                 id,
-                UpdateArticleRequest(title, categoryId, contentMarkdown, isFavorite, readProgress)
+                UpdateArticleRequest(title, categoryId, contentMarkdown, isFavorite, readProgress, durationSeconds)
             )
             Result.success(article)
         } catch (e: Exception) {

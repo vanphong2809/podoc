@@ -178,7 +178,7 @@ fun NoteEditorScreen(
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Lưu tự động vào Danh mục: ",
+                        text = if (viewModel.isEditMode) "Đang chỉnh sửa trong Danh mục: " else "Lưu tự động vào Danh mục: ",
                         style = MaterialTheme.typography.bodySmall,
                         color = NoteAmberText
                     )
@@ -189,7 +189,7 @@ fun NoteEditorScreen(
                         modifier = Modifier.padding(start = 2.dp)
                     ) {
                         Text(
-                            text = "Ghi chú",
+                            text = viewModel.categoryName,
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.Bold
                             ),

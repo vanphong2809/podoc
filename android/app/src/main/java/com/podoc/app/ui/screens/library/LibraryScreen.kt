@@ -61,7 +61,8 @@ import com.podoc.app.ui.components.formatVideoDuration
 @Composable
 fun LibraryScreen(
     viewModel: LibraryViewModel,
-    onArticleClick: (Int) -> Unit
+    onArticleClick: (Int) -> Unit,
+    onEditNote: (Int) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -334,7 +335,8 @@ fun LibraryScreen(
                                                 editingArticle = article
                                                 newTitleInput = article.title
                                             },
-                                            onShowFileInfo = { fileInfoArticle = article }
+                                            onShowFileInfo = { fileInfoArticle = article },
+                                            onEditNote = { onEditNote(article.id) }
                                         )
                                 }
 
@@ -1048,27 +1050,25 @@ private fun MediaGridItem(
         // Video play icon + duration overlay
         if (isVideo) {
             val formattedDuration = remember(article.durationSeconds) {
-                formatVideoDuration(article.durationSeconds)
+                formatVideoDuration(article.durationSeconds) ?: "--:--"
             }
-            if (!formattedDuration.isNullOrBlank()) {
-                Surface(
-                    color = Color.Black.copy(alpha = 0.72f),
-                    shape = RoundedCornerShape(4.dp),
-                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color.White.copy(alpha = 0.22f)),
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(3.dp)
-                ) {
-                    Text(
-                        text = formattedDuration,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                    )
-                }
+            Surface(
+                color = Color.Black.copy(alpha = 0.72f),
+                shape = RoundedCornerShape(4.dp),
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, Color.White.copy(alpha = 0.22f)),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(3.dp)
+            ) {
+                Text(
+                    text = formattedDuration,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                )
             }
             Box(
                 modifier = Modifier

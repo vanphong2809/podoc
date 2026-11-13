@@ -93,13 +93,28 @@ async def probe_duration_seconds(source: Path) -> float | None:
         if not source.is_file():
             return None
         raw = await run_command(
-            settings.FFPROBE_BINARY, "-v", "error", "-protocol_whitelist", "file,pipe",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1", str(source), timeout=10,
+            settings.FFPROBE_BINARY, "-v", "error",
+            "-show_entries", "format=duration:stream=duration",
+            "-of", "json", str(source), timeout=15,
         )
-        duration = float(raw.decode(errors="replace").strip())
-        if duration > 0:
-            return round(duration, 1)
+        data = json.loads(raw.decode(errors="replace"))
+        fmt_dur = data.get("format", {}).get("duration")
+        if fmt_dur and fmt_dur != "N/A":
+            try:
+                d = float(fmt_dur)
+                if d > 0:
+                    return round(d, 1)
+            except (ValueError, TypeError):
+                pass
+        for st in data.get("streams", []):
+            st_dur = st.get("duration")
+            if st_dur and st_dur != "N/A":
+                try:
+                    d = float(st_dur)
+                    if d > 0:
+                        return round(d, 1)
+                except (ValueError, TypeError):
+                    pass
     except Exception:
         pass
     return None

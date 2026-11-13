@@ -130,6 +130,9 @@ class AppContainer(private val context: Context) {
             serverUrlProvider = {
                 val url = runBlocking { dataStoreManager.serverUrlFlow.first() }
                 if (url.endsWith("/")) url else "$url/"
+            },
+            tokenProvider = {
+                runBlocking { dataStoreManager.authTokenFlow.first() }
             }
         )
     }

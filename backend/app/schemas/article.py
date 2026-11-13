@@ -32,6 +32,7 @@ class ArticleUpdate(BaseModel):
     category_id: Optional[int] = None
     is_favorite: Optional[bool] = None
     read_progress: Optional[float] = Field(None, ge=0.0, le=1.0)
+    duration_seconds: Optional[float] = None
 
 
 class ArticleListResponse(BaseModel):

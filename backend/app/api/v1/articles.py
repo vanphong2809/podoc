@@ -195,8 +195,11 @@ async def list_articles(
         art for art in articles
         if art.duration_seconds is None
         and art.file_path
-        and is_video_file(art.file_path, art.mime_type, art.file_name)
-    ][:50]
+        and (
+            (content_type and content_type.lower() in ("video", "clip"))
+            or is_video_file(art.file_path, art.mime_type, art.file_name)
+        )
+    ][:100]
     if missing_video_probes:
         sem = asyncio.Semaphore(4)
 
@@ -746,6 +749,8 @@ async def update_article(
     if data.content_markdown is not None:
         art.content_markdown = data.content_markdown
         art.excerpt = generate_excerpt(data.content_markdown)
+        word_count = len(data.content_markdown.split())
+        art.reading_minutes = max(1, word_count // 200) if word_count > 0 else 0
 
     if data.category_id is not None:
         cat_stmt = select(Category).where(Category.id == data.category_id)
@@ -759,6 +764,9 @@ async def update_article(
 
     if data.read_progress is not None:
         art.read_progress = data.read_progress
+
+    if data.duration_seconds is not None and data.duration_seconds > 0:
+        art.duration_seconds = round(data.duration_seconds, 1)
 
     await db.commit()
     return await get_article(id, current_user, db)
@@ -1067,7 +1075,7 @@ async def get_article_file_info(
                     "-show_streams",
                     disk_path,
                 ]
-                proc = await asyncio.to_thread(subprocess.run, probe_cmd, capture_output=True, text=True, timeout=4)
+                proc = await asyncio.to_thread(subprocess.run, probe_cmd, capture_output=True, text=True, timeout=15)
                 if proc.returncode == 0:
                     probe_data = json.loads(proc.stdout)
                     v_stream = next((s for s in probe_data.get("streams", []) if s.get("codec_type") == "video"), None)
@@ -1093,10 +1101,24 @@ async def get_article_file_info(
                                 pass
 
                     dur_str = probe_data.get("format", {}).get("duration")
-                    if dur_str:
-                        dur_sec = float(dur_str)
-                        if dur_sec > 0:
-                            duration_seconds = round(dur_sec, 1)
+                    if dur_str and dur_str != "N/A":
+                        try:
+                            dur_sec = float(dur_str)
+                            if dur_sec > 0:
+                                duration_seconds = round(dur_sec, 1)
+                        except (ValueError, TypeError):
+                            pass
+                    if duration_seconds is None:
+                        for s in probe_data.get("streams", []):
+                            s_dur = s.get("duration")
+                            if s_dur and s_dur != "N/A":
+                                try:
+                                    dur_sec = float(s_dur)
+                                    if dur_sec > 0:
+                                        duration_seconds = round(dur_sec, 1)
+                                        break
+                                except (ValueError, TypeError):
+                                    pass
             except Exception:
                 pass
 

@@ -121,7 +121,7 @@ class MediaListViewModel(
     private fun hydrateMissingDurations(items: List<ArticleListItem>) {
         durationJob?.cancel()
         durationJob = viewModelScope.launch {
-            articleRepository.hydrateMissingVideoDurations(items) { id, dur ->
+            articleRepository.hydrateMissingVideoDurations(items, forceAll = true) { id, dur ->
                 _uiState.update { state ->
                     state.copy(articles = state.articles.withVideoDuration(id, dur))
                 }

@@ -87,6 +87,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -95,7 +96,8 @@ fun ReaderScreen(
     articleId: Int,
     viewModel: ReaderViewModel,
     onNavigateBack: () -> Unit,
-    onNavigateToArticle: (Int) -> Unit = {}
+    onNavigateToArticle: (Int) -> Unit = {},
+    onEditNote: ((Int) -> Unit)? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -106,8 +108,9 @@ fun ReaderScreen(
     var fileInfoArticleId by remember { mutableStateOf<Int?>(null) }
     var fileInfoFallbackItem by remember { mutableStateOf<ArticleListItem?>(null) }
 
-    LaunchedEffect(articleId) {
+    LifecycleResumeEffect(articleId) {
         viewModel.loadArticle(articleId, context)
+        onPauseOrDispose { }
     }
 
     val article = uiState.article
@@ -274,7 +277,10 @@ fun ReaderScreen(
                     onDelete = { showDeleteDialog = true },
                     onBackClick = onNavigateBack,
                     currentProgress = currentProgress,
-                    onShowFileInfo = { fileInfoArticleId = uiState.article?.id }
+                    onShowFileInfo = { fileInfoArticleId = uiState.article?.id },
+                    onEditNote = if (article != null && (article.sourceType == "NOTE" || article.mimeType == "text/markdown" || !isFile) && onEditNote != null) {
+                        { onEditNote(article.id) }
+                    } else null
                 )
             }
         }
@@ -1421,7 +1427,8 @@ private fun CompactReaderTopBar(
     onDelete: () -> Unit,
     onBackClick: () -> Unit,
     currentProgress: Float,
-    onShowFileInfo: (() -> Unit)? = null
+    onShowFileInfo: (() -> Unit)? = null,
+    onEditNote: (() -> Unit)? = null
 ) {
     Column(
         modifier = Modifier
@@ -1461,6 +1468,21 @@ private fun CompactReaderTopBar(
             )
 
             Spacer(modifier = Modifier.width(4.dp))
+
+            // Chỉnh sửa ghi chú (nếu là ghi chú hoặc tài liệu văn bản)
+            if (onEditNote != null) {
+                IconButton(
+                    onClick = onEditNote,
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.EditNote,
+                        contentDescription = "Chỉnh sửa ghi chú",
+                        tint = Color(0xFFD97706),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
 
             // Cỡ chữ (cho markdown/text)
             if (!isFile || fileExt in listOf("txt", "md", "mdf")) {
