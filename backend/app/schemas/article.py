@@ -28,6 +28,7 @@ class ArticleCreate(ArticleBase):
 
 class ArticleUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=500)
+    content_markdown: Optional[str] = None
     category_id: Optional[int] = None
     is_favorite: Optional[bool] = None
     read_progress: Optional[float] = Field(None, ge=0.0, le=1.0)

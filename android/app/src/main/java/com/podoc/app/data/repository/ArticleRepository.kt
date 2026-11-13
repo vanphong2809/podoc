@@ -593,13 +593,14 @@ class ArticleRepository(
         id: Int,
         title: String? = null,
         categoryId: Int? = null,
+        contentMarkdown: String? = null,
         isFavorite: Boolean? = null,
         readProgress: Float? = null
     ): Result<ArticleDetail> {
         return try {
             val article = getApi().updateArticle(
                 id,
-                UpdateArticleRequest(title, categoryId, isFavorite, readProgress)
+                UpdateArticleRequest(title, categoryId, contentMarkdown, isFavorite, readProgress)
             )
             Result.success(article)
         } catch (e: Exception) {
@@ -907,6 +908,100 @@ class ArticleRepository(
             if (e is CancellationException) throw e
             Result.failure(Exception(extractErrorMessage(e)))
         }
+    }
+
+    suspend fun probeLibraryVideoAudio(articleId: Int): Result<AudioProbeResponse> = withContext(Dispatchers.IO) {
+        try {
+            Result.success(getApi().probeLibraryVideoAudio(articleId))
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Result.failure(Exception(extractErrorMessage(e)))
+        }
+    }
+
+    suspend fun inspectLocalVideoAudio(uri: Uri): LocalVideoAudioMeta = withContext(Dispatchers.IO) {
+        val (name, size) = queryFileInfo(uri)
+        var durationSec: Float? = null
+        var hasAudio = true
+        var mime: String? = null
+        var retriever: MediaMetadataRetriever? = null
+        try {
+            retriever = MediaMetadataRetriever()
+            retriever.setDataSource(context, uri)
+            val ms = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+            if (ms != null && ms > 0L) durationSec = ms / 1000f
+            val hasAudioMeta = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO)
+            if (hasAudioMeta != null) {
+                hasAudio = hasAudioMeta.equals("yes", ignoreCase = true)
+            }
+            mime = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
+        } catch (_: Throwable) {
+        } finally {
+            try { retriever?.release() } catch (_: Throwable) {}
+        }
+        val durationFormatted = durationSec?.let { formatSecondsToMmSs(it) }
+        LocalVideoAudioMeta(
+            fileName = name ?: "video.mp4",
+            fileSizeBytes = size.coerceAtLeast(0L),
+            durationSeconds = durationSec,
+            durationFormatted = durationFormatted,
+            hasAudio = hasAudio,
+            mimeType = mime ?: "video/mp4"
+        )
+    }
+
+    suspend fun extractAudioFromVideo(
+        source: AudioExtractSource,
+        outputFormat: String,
+        title: String?,
+        categoryId: Int?
+    ): Result<AudioExtractResultResponse> = withContext(Dispatchers.IO) {
+        try {
+            val textMediaType = "text/plain".toMediaTypeOrNull()
+            var filePart: MultipartBody.Part? = null
+            var articleIdBody: RequestBody? = null
+
+            when (source) {
+                is AudioExtractSource.LocalUri -> {
+                    val (_, queriedSize) = queryFileInfo(source.uri)
+                    val body = StreamingUriRequestBody(
+                        context.contentResolver,
+                        source.uri,
+                        "video/*",
+                        queriedSize.coerceAtLeast(source.fileSizeBytes)
+                    )
+                    val headerName = asciiSafeHeaderFileName(source.displayName, "mp4")
+                    filePart = MultipartBody.Part.createFormData("file", headerName, body)
+                }
+                is AudioExtractSource.LibraryArticle -> {
+                    articleIdBody = source.articleId.toString().toRequestBody(textMediaType)
+                }
+            }
+
+            val formatBody = outputFormat.trim().toRequestBody(textMediaType)
+            val titleBody = title?.trim()?.takeIf { it.isNotBlank() }?.toRequestBody(textMediaType)
+            val categoryBody = categoryId?.toString()?.toRequestBody(textMediaType)
+
+            val resp = getApi().extractAudioFromVideo(
+                file = filePart,
+                articleId = articleIdBody,
+                outputFormat = formatBody,
+                title = titleBody,
+                categoryId = categoryBody
+            )
+            Result.success(resp)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Result.failure(Exception(extractErrorMessage(e)))
+        }
+    }
+
+    private fun formatSecondsToMmSs(seconds: Float): String {
+        val totalSec = Math.round(seconds)
+        val h = totalSec / 3600
+        val m = (totalSec % 3600) / 60
+        val s = totalSec % 60
+        return if (h > 0) String.format("%02d:%02d:%02d", h, m, s) else String.format("%02d:%02d", m, s)
     }
 
     private fun asciiSafeHeaderFileName(fileName: String, defaultExt: String): String {

@@ -672,11 +672,27 @@ async def create_article(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Lưu bài viết vào cơ sở dữ liệu sau khi người dùng xem trước và chọn danh mục."""
-    cat_stmt = select(Category).where(Category.id == data.category_id)
-    cat_res = await db.execute(cat_stmt)
-    cat = cat_res.scalar_one_or_none()
+    cat = None
+    if data.category_id and data.category_id > 0:
+        cat_stmt = select(Category).where(Category.id == data.category_id)
+        cat_res = await db.execute(cat_stmt)
+        cat = cat_res.scalar_one_or_none()
+
     if not cat:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Danh mục không tồn tại")
+        fallback_name = "Ghi chú" if data.source_type == "NOTE" else "Chưa phân loại"
+        cat_stmt = select(Category).where(Category.name == fallback_name)
+        cat_res = await db.execute(cat_stmt)
+        cat = cat_res.scalar_one_or_none()
+        if not cat:
+            cat = Category(
+                name=fallback_name,
+                icon="note" if fallback_name == "Ghi chú" else "folder",
+                color="#F59E0B" if fallback_name == "Ghi chú" else "#64748B",
+                sort_order=7 if fallback_name == "Ghi chú" else 99,
+                is_system=False,
+            )
+            db.add(cat)
+            await db.flush()
 
     norm_url = normalize_url(data.source_url) if data.source_url else data.normalized_url
     excerpt = data.excerpt or generate_excerpt(data.content_markdown)
@@ -697,7 +713,7 @@ async def create_article(
         image_url=data.image_url,
         language=data.language,
         reading_minutes=data.reading_minutes,
-        category_id=data.category_id,
+        category_id=cat.id,
         is_favorite=data.is_favorite,
         read_progress=data.read_progress,
     )
@@ -716,7 +732,7 @@ async def update_article(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Cập nhật thông tin bài viết: tiêu đề, danh mục, yêu thích, tiến độ đọc read_progress."""
+    """Cập nhật thông tin bài viết: tiêu đề, danh mục, nội dung, yêu thích, tiến độ đọc read_progress."""
     stmt = select(Article).where(Article.id == id)
     result = await db.execute(stmt)
     art = result.scalar_one_or_none()
@@ -726,6 +742,10 @@ async def update_article(
 
     if data.title is not None and data.title.strip():
         art.title = data.title.strip()
+
+    if data.content_markdown is not None:
+        art.content_markdown = data.content_markdown
+        art.excerpt = generate_excerpt(data.content_markdown)
 
     if data.category_id is not None:
         cat_stmt = select(Category).where(Category.id == data.category_id)

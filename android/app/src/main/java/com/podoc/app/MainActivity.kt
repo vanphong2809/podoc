@@ -37,10 +37,14 @@ import com.podoc.app.ui.screens.library.LibraryScreen
 import com.podoc.app.ui.screens.library.LibraryViewModel
 import com.podoc.app.ui.screens.preview.PreviewScreen
 import com.podoc.app.ui.screens.preview.PreviewViewModel
+import com.podoc.app.ui.screens.note.NoteEditorScreen
+import com.podoc.app.ui.screens.note.NoteEditorViewModel
 import com.podoc.app.ui.screens.reader.ReaderScreen
 import com.podoc.app.ui.screens.reader.ReaderViewModel
 import com.podoc.app.ui.screens.settings.SettingsScreen
 import com.podoc.app.ui.screens.settings.SettingsViewModel
+import com.podoc.app.ui.screens.tools.AudioExtractorScreen
+import com.podoc.app.ui.screens.tools.AudioExtractorViewModel
 import com.podoc.app.ui.screens.tools.OcrScreen
 import com.podoc.app.ui.screens.tools.OcrViewModel
 import com.podoc.app.ui.screens.tools.PdfToolsScreen
@@ -95,6 +99,18 @@ class MainActivity : ComponentActivity() {
             }
             val pdfToolsViewModel = remember {
                 PdfToolsViewModel(
+                    container.articleRepository,
+                    container.categoryRepository
+                )
+            }
+            val audioExtractorViewModel = remember {
+                AudioExtractorViewModel(
+                    container.articleRepository,
+                    container.categoryRepository
+                )
+            }
+            val noteEditorViewModel = remember {
+                NoteEditorViewModel(
                     container.articleRepository,
                     container.categoryRepository
                 )
@@ -388,6 +404,9 @@ class MainActivity : ComponentActivity() {
                                     navController.navigate(Screen.Preview.route) {
                                         launchSingleTop = true
                                     }
+                                },
+                                onOpenNoteEditor = {
+                                    navController.navigate(Screen.NoteEditor.createRoute())
                                 }
                             )
                         }
@@ -426,6 +445,13 @@ class MainActivity : ComponentActivity() {
                                 onOpenPdfTools = {
                                     pdfToolsViewModel.loadCategories()
                                     navController.navigate(Screen.PdfTools.route)
+                                },
+                                onOpenAudioExtractor = {
+                                    audioExtractorViewModel.loadCategories()
+                                    navController.navigate(Screen.AudioExtractor.route)
+                                },
+                                onOpenNoteEditor = {
+                                    navController.navigate(Screen.NoteEditor.createRoute())
                                 }
                             )
                         }
@@ -461,6 +487,53 @@ class MainActivity : ComponentActivity() {
                                     categoryViewModel.loadCategories()
                                     navController.navigate(Screen.Reader.createRoute(articleId)) {
                                         launchSingleTop = true
+                                    }
+                                }
+                            )
+                        }
+
+                        // Màn hình Tách âm thanh từ Video
+                        composable(Screen.AudioExtractor.route) {
+                            LaunchedEffect(audioExtractorViewModel.extractionResult) {
+                                if (audioExtractorViewModel.extractionResult != null) {
+                                    libraryViewModel.loadArticles(refresh = true)
+                                    categoryViewModel.loadCategories()
+                                }
+                            }
+                            AudioExtractorScreen(
+                                viewModel = audioExtractorViewModel,
+                                onNavigateBack = { navController.popBackStack() },
+                                onOpenArticle = { articleId ->
+                                    libraryViewModel.loadArticles(refresh = true)
+                                    categoryViewModel.loadCategories()
+                                    navController.navigate(Screen.Reader.createRoute(articleId)) {
+                                        launchSingleTop = true
+                                    }
+                                }
+                            )
+                        }
+
+                        // Màn hình Soạn thảo Ghi chú
+                        composable(
+                            route = Screen.NoteEditor.route,
+                            arguments = listOf(
+                                navArgument("articleId") {
+                                    type = NavType.StringType
+                                    nullable = true
+                                    defaultValue = null
+                                }
+                            )
+                        ) { backStackEntry ->
+                            val articleId = backStackEntry.arguments?.getString("articleId")?.toIntOrNull()
+                            NoteEditorScreen(
+                                viewModel = noteEditorViewModel,
+                                articleId = articleId,
+                                onNavigateBack = { navController.popBackStack() },
+                                onOpenArticle = { createdId ->
+                                    libraryViewModel.loadArticles(refresh = true)
+                                    categoryViewModel.loadCategories()
+                                    navController.navigate(Screen.Reader.createRoute(createdId)) {
+                                        popUpTo(Screen.NoteEditor.route) { inclusive = true }
                                     }
                                 }
                             )
@@ -506,6 +579,9 @@ class MainActivity : ComponentActivity() {
                             onPickAudios = {
                                 // Mở trình chọn tệp âm thanh từ máy (MP3, WAV, M4A, FLAC...)
                                 audioPickerLauncher.launch("audio/*")
+                            },
+                            onOpenNoteEditor = {
+                                navController.navigate(Screen.NoteEditor.createRoute())
                             }
                         )
                     }

@@ -45,7 +45,8 @@ fun CategoryDetailScreen(
     viewModel: CategoryDetailViewModel,
     onNavigateBack: () -> Unit,
     onArticleClick: (Int) -> Unit,
-    onPasteLink: (url: String, asWebFormat: Boolean) -> Unit
+    onPasteLink: (url: String, asWebFormat: Boolean) -> Unit,
+    onOpenNoteEditor: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -371,6 +372,9 @@ fun CategoryDetailScreen(
             },
             onPickAudios = {
                 audioPickerLauncher.launch("audio/*")
+            },
+            onOpenNoteEditor = {
+                onOpenNoteEditor()
             }
         )
     }

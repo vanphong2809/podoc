@@ -10,6 +10,7 @@ from sqlalchemy import text, select
 from app.api.v1.articles import router as articles_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.categories import router as categories_router
+from app.api.v1.audio import router as audio_router
 from app.api.v1.export import router as export_router
 from app.api.v1.extract import router as extract_router
 from app.api.v1.ocr import router as ocr_router
@@ -37,6 +38,7 @@ DEFAULT_CATEGORIES = [
     {"name": "Học tập", "icon": "book", "color": "#8B5CF6", "sort_order": 4, "is_system": False},
     {"name": "Công việc", "icon": "briefcase", "color": "#EC4899", "sort_order": 5, "is_system": False},
     {"name": "Giải trí", "icon": "film", "color": "#06B6D4", "sort_order": 6, "is_system": False},
+    {"name": "Ghi chú", "icon": "note", "color": "#F59E0B", "sort_order": 7, "is_system": False},
     {"name": "Chưa phân loại", "icon": "folder", "color": "#64748B", "sort_order": 99, "is_system": True},
 ]
 
@@ -145,4 +147,5 @@ app.include_router(articles_router, prefix="/api")
 app.include_router(export_router, prefix="/api")
 app.include_router(ocr_router, prefix="/api")
 app.include_router(pdf_router, prefix="/api")
+app.include_router(audio_router, prefix="/api")
 app.include_router(system_router, prefix="/api")

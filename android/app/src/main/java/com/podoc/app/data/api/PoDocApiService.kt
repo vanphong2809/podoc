@@ -164,4 +164,18 @@ interface PoDocApiService {
         @Part("title_prefix") titlePrefix: RequestBody? = null,
         @Part("category_id") categoryId: RequestBody? = null
     ): SplitPdfResponse
+
+    // Tách âm thanh từ video
+    @GET("api/audio/articles/{id}/probe")
+    suspend fun probeLibraryVideoAudio(@Path("id") id: Int): AudioProbeResponse
+
+    @Multipart
+    @POST("api/audio/extract")
+    suspend fun extractAudioFromVideo(
+        @Part file: MultipartBody.Part? = null,
+        @Part("article_id") articleId: RequestBody? = null,
+        @Part("output_format") outputFormat: RequestBody? = null,
+        @Part("title") title: RequestBody? = null,
+        @Part("category_id") categoryId: RequestBody? = null
+    ): AudioExtractResultResponse
 }

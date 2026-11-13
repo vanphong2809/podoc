@@ -2,6 +2,7 @@ package com.podoc.app.ui.components
 
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -10,6 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,7 +35,8 @@ fun AddOptionBottomSheet(
     onPickFiles: () -> Unit,
     onPickImages: () -> Unit = {},
     onPickVideos: () -> Unit = {},
-    onPickAudios: () -> Unit = {}
+    onPickAudios: () -> Unit = {},
+    onOpenNoteEditor: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var urlInput by remember { mutableStateOf("") }
@@ -292,6 +295,55 @@ fun AddOptionBottomSheet(
                         onClick = { onPickFiles(); onDismiss() },
                         modifier = Modifier.weight(1f)
                     )
+                }
+
+                // Nút tạo ghi chú nhanh
+                Surface(
+                    onClick = { onOpenNoteEditor(); onDismiss() },
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFFFEF3C7),
+                    border = BorderStroke(1.dp, Color(0xFFFDE68A)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFFD97706)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.EditNote,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Tạo ghi chú mới",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = Color(0xFF92400E)
+                            )
+                            Text(
+                                text = "Soạn thảo văn bản, việc cần làm vào Danh mục \"Ghi chú\"",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFFB45309),
+                                fontSize = 11.5.sp
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = null,
+                            tint = Color(0xFFD97706),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         }
