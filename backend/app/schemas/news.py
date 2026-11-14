@@ -8,6 +8,19 @@ class GenerateBriefingRequest(BaseModel):
     max_items_per_topic: int = Field(default=3, ge=1, le=10)
 
 
+class NewsSlideItem(BaseModel):
+    slide_index: int = 0
+    title: str = ""
+    summary: str = ""
+    category_name: str = ""
+    category_color: Optional[str] = None
+    source: Optional[str] = None
+    link: Optional[str] = None
+    image_file: Optional[str] = None
+    image_url: Optional[str] = None
+    original_image_url: Optional[str] = None
+
+
 class NewsBriefingResponse(BaseModel):
     article_id: int
     title: str
@@ -16,6 +29,7 @@ class NewsBriefingResponse(BaseModel):
     file_path: Optional[str] = None
     image_url: Optional[str] = None
     created_at: Optional[str] = None
+    slides: List[NewsSlideItem] = Field(default_factory=list)
     briefing: Optional[Dict[str, Any]] = None
 
 

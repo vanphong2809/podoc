@@ -41,4 +41,5 @@ htmlcov/
 
 # Docker
 postgres_data/
+storage/
 *.log

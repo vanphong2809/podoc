@@ -1,6 +1,10 @@
+import json
 import logging
+import os
+import re
 from typing import Annotated, Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +23,7 @@ from app.services.news_briefing_service import (
     BRIEFING_CATEGORY_NAME,
     generate_and_save_daily_briefing,
 )
+from app.services.news_card_generator import get_effective_storage_dir
 
 logger = logging.getLogger("podoc.api.news")
 
@@ -72,6 +77,20 @@ async def get_latest_briefing(
     if not article:
         return None
 
+    # Trích xuất metadata series slides từ markdown nếu có
+    slides = []
+    if article.content_markdown and "<!-- PODOC_BRIEFING_SLIDES_START -->" in article.content_markdown:
+        match = re.search(
+            r"<!-- PODOC_BRIEFING_SLIDES_START -->\s*(.*?)\s*<!-- PODOC_BRIEFING_SLIDES_END -->",
+            article.content_markdown,
+            re.DOTALL,
+        )
+        if match:
+            try:
+                slides = json.loads(match.group(1))
+            except Exception as e:
+                logger.warning(f"Lỗi phân tích JSON slides từ article {article.id}: {e}")
+
     return {
         "article_id": article.id,
         "title": article.title,
@@ -81,8 +100,33 @@ async def get_latest_briefing(
         "image_url": article.image_url or f"/api/articles/{article.id}/file",
         "content_markdown": article.content_markdown,
         "excerpt": article.excerpt,
+        "slides": slides,
         "created_at": article.created_at.isoformat() if article.created_at else None,
     }
+
+
+@router.get("/slides/{filename}")
+async def get_slide_image(filename: str):
+    """Phục vụ ảnh slide tin tức (TikTok style) theo tên file."""
+    safe_filename = os.path.basename(filename)
+    if not safe_filename.endswith((".jpg", ".jpeg", ".png", ".webp")):
+        raise HTTPException(status_code=400, detail="Tên file không hợp lệ")
+
+    storage_dir = get_effective_storage_dir()
+    disk_path = os.path.join(storage_dir, safe_filename)
+
+    if not os.path.exists(disk_path):
+        alt_path = os.path.join(settings.FILES_STORAGE_DIR, safe_filename)
+        if os.path.exists(alt_path):
+            disk_path = alt_path
+        else:
+            raise HTTPException(status_code=404, detail="Không tìm thấy ảnh slide")
+
+    return FileResponse(
+        path=disk_path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @router.get("/settings", response_model=NewsSettings)

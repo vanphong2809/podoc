@@ -1,7 +1,9 @@
 import asyncio
+import json
 import logging
 import os
-from typing import Any, Dict, Optional, Tuple
+import re
+from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,7 +12,7 @@ from app.core.database import AsyncSessionLocal
 from app.models.article import Article
 from app.models.category import Category
 from app.services.news_aggregator import aggregate_daily_news
-from app.services.news_card_generator import generate_news_infographic_card
+from app.services.news_card_generator import generate_all_news_slides, generate_news_infographic_card
 from app.services.news_summarizer import summarize_news_briefing
 from app.services.thumbnail import ensure_thumbnail
 
@@ -68,8 +70,8 @@ async def generate_and_save_daily_briefing(
         user_model=user_model
     )
 
-    # 3. Vẽ ảnh Infographic
-    stored_filename, disk_path = generate_news_infographic_card(briefing)
+    # 3. Vẽ toàn bộ series ảnh Slide tin tức (TikTok style: mỗi ảnh 1 tin)
+    slides, cover_filename, cover_disk_path = generate_all_news_slides(briefing)
 
     # 4. Lưu vào cơ sở dữ liệu
     async with AsyncSessionLocal() as db:
@@ -80,13 +82,26 @@ async def generate_and_save_daily_briefing(
         greeting = briefing.get("greeting") or "Bản tin tổng hợp sáng tự động."
         markdown_body = briefing.get("markdown_content") or ""
 
+        # Gói dữ liệu slides dưới dạng JSON có đánh dấu nhận diện
+        slides_json = json.dumps(slides, ensure_ascii=False)
+        slides_header = f"<!-- PODOC_BRIEFING_SLIDES_START -->\n{slides_json}\n<!-- PODOC_BRIEFING_SLIDES_END -->\n\n"
+
+        # Chèn các ảnh slide vào phần đầu markdown
+        slides_markdown_images = "\n\n".join(
+            f"![{s.get('title', 'Slide')}](/api/news/slides/{s.get('image_file')})"
+            for s in slides
+        )
+
+        final_markdown = f"{slides_header}{slides_markdown_images}\n\n---\n\n{markdown_body}"
+
         new_article = Article(
             title=title,
             source_type="FILE",
             file_name=f"{title}.jpg",
-            file_path=stored_filename,
+            file_path=cover_filename,
+            image_url=f"/api/news/slides/{cover_filename}",
             mime_type="image/jpeg",
-            content_markdown=markdown_body,
+            content_markdown=final_markdown,
             excerpt=greeting,
             category_id=category.id,
             reading_minutes=2,
@@ -97,18 +112,11 @@ async def generate_and_save_daily_briefing(
         await db.commit()
         await db.refresh(new_article)
 
-        # Cập nhật markdown chèn ảnh Infographic ở đầu bài viết
-        final_markdown = f"![{title}](/api/articles/{new_article.id}/file)\n\n{markdown_body}"
-        new_article.content_markdown = final_markdown
-        new_article.image_url = f"/api/articles/{new_article.id}/thumbnail"
-        await db.commit()
-        await db.refresh(new_article)
-
-        # Sinh thumbnail nhanh
+        # Sinh thumbnail nhanh cho ảnh bìa
         try:
             await asyncio.to_thread(
                 ensure_thumbnail,
-                stored_filename,
+                cover_filename,
                 settings.FILES_STORAGE_DIR,
                 "image/jpeg",
                 f"{title}.jpg"
@@ -116,7 +124,7 @@ async def generate_and_save_daily_briefing(
         except Exception as e:
             logger.warning(f"Lỗi tạo thumbnail cho bản tin: {e}")
 
-        logger.info(f"Đã xuất bản thành công bản tin sáng ID={new_article.id} vào Danh mục '{category.name}'")
+        logger.info(f"Đã xuất bản thành công bản tin sáng ID={new_article.id} với {len(slides)} slides vào Danh mục '{category.name}'")
 
         return {
             "article_id": new_article.id,
@@ -126,6 +134,7 @@ async def generate_and_save_daily_briefing(
             "file_path": new_article.file_path,
             "image_url": new_article.image_url,
             "created_at": new_article.created_at.isoformat() if new_article.created_at else None,
+            "slides": slides,
             "briefing": briefing
         }
 

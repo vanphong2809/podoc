@@ -14,8 +14,8 @@ android {
         applicationId = "com.podoc.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 92
-        versionName = "1.6.49"
+        versionCode = 93
+        versionName = "1.6.50"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -89,6 +89,9 @@ dependencies {
 
     // Markdown Renderer M3
     implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.16.0")
+
+    // Chrome Custom Tabs for in-app browser
+    implementation("androidx.browser:browser:1.8.0")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

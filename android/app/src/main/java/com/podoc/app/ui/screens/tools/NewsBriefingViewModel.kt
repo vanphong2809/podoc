@@ -81,6 +81,7 @@ class NewsBriefingViewModel(
                             imageUrl = res.imageUrl,
                             contentMarkdown = res.briefing?.markdownContent,
                             excerpt = res.briefing?.greeting ?: res.title,
+                            slides = res.slides,
                             createdAt = res.createdAt
                         ),
                         userMessage = "Đã tạo Bản tin sáng mới thành công!"

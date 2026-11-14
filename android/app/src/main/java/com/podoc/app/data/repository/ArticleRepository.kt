@@ -1118,8 +1118,12 @@ class ArticleRepository(
                 geminiModel = geminiModel
             )
             val res = getApi().generateNewsBriefing(req)
+            val resolvedSlides = res.slides.map { s ->
+                s.copy(imageUrl = resolveImageUrl(s.imageUrl))
+            }
             val resolved = res.copy(
-                imageUrl = resolveImageUrl(res.imageUrl ?: res.filePath?.let { "/api/articles/${res.articleId}/file" })
+                imageUrl = resolveImageUrl(res.imageUrl ?: res.filePath?.let { "/api/articles/${res.articleId}/file" }),
+                slides = resolvedSlides
             )
             Result.success(resolved)
         } catch (e: Exception) {
@@ -1131,9 +1135,15 @@ class ArticleRepository(
     suspend fun getLatestNewsBriefing(): Result<com.podoc.app.data.model.LatestBriefingResponse?> = withContext(Dispatchers.IO) {
         try {
             val res = getApi().getLatestNewsBriefing()
-            val resolved = res?.copy(
-                imageUrl = resolveImageUrl(res.imageUrl ?: res.filePath?.let { "/api/articles/${res.articleId}/file" })
-            )
+            val resolved = res?.let { r ->
+                val resolvedSlides = r.slides.map { s ->
+                    s.copy(imageUrl = resolveImageUrl(s.imageUrl))
+                }
+                r.copy(
+                    imageUrl = resolveImageUrl(r.imageUrl ?: r.filePath?.let { "/api/articles/${r.articleId}/file" }),
+                    slides = resolvedSlides
+                )
+            }
             Result.success(resolved)
         } catch (e: Exception) {
             if (e is CancellationException) throw e

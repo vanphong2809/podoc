@@ -190,6 +190,7 @@ fun ReaderScreen(
     val cleanedMarkdown = remember(article?.contentMarkdown, article?.title, uiState.textContent) {
         val raw = uiState.textContent ?: article?.contentMarkdown ?: ""
         var text = raw.trim()
+        text = text.replace(Regex("<!-- PODOC_BRIEFING_SLIDES_START -->[\\s\\S]*?<!-- PODOC_BRIEFING_SLIDES_END -->"), "").trim()
         val lines = text.lines()
         if (lines.isNotEmpty() && article != null) {
             val firstLine = lines.first().trim()

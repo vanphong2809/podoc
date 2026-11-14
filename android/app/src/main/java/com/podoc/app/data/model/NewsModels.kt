@@ -11,6 +11,20 @@ data class GenerateBriefingRequest(
 )
 
 @Serializable
+data class NewsSlideItem(
+    @SerialName("slide_index") val slideIndex: Int = 0,
+    @SerialName("title") val title: String = "",
+    @SerialName("summary") val summary: String = "",
+    @SerialName("category_name") val categoryName: String = "",
+    @SerialName("category_color") val categoryColor: String? = null,
+    @SerialName("source") val source: String? = null,
+    @SerialName("link") val link: String? = null,
+    @SerialName("image_file") val imageFile: String? = null,
+    @SerialName("image_url") val imageUrl: String? = null,
+    @SerialName("original_image_url") val originalImageUrl: String? = null
+)
+
+@Serializable
 data class NewsBriefingResponse(
     @SerialName("article_id") val articleId: Int,
     @SerialName("title") val title: String,
@@ -19,6 +33,7 @@ data class NewsBriefingResponse(
     @SerialName("file_path") val filePath: String? = null,
     @SerialName("image_url") val imageUrl: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("slides") val slides: List<NewsSlideItem> = emptyList(),
     @SerialName("briefing") val briefing: NewsBriefingContent? = null
 )
 
@@ -60,6 +75,7 @@ data class LatestBriefingResponse(
     @SerialName("image_url") val imageUrl: String? = null,
     @SerialName("content_markdown") val contentMarkdown: String? = null,
     @SerialName("excerpt") val excerpt: String? = null,
+    @SerialName("slides") val slides: List<NewsSlideItem> = emptyList(),
     @SerialName("created_at") val createdAt: String? = null
 )
 
