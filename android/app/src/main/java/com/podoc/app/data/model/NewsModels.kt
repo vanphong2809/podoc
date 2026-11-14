@@ -87,3 +87,40 @@ data class NewsSettingsResponse(
     @SerialName("has_custom_api_key") val hasCustomApiKey: Boolean = false
 )
 
+fun parseBriefingSlides(contentMarkdown: String?, resolveUrl: (String?) -> String?): List<NewsSlideItem> {
+    if (contentMarkdown.isNullOrBlank()) return emptyList()
+    val startTag = "<!-- PODOC_BRIEFING_SLIDES_START -->"
+    val endTag = "<!-- PODOC_BRIEFING_SLIDES_END -->"
+    if (contentMarkdown.contains(startTag) && contentMarkdown.contains(endTag)) {
+        val startIndex = contentMarkdown.indexOf(startTag)
+        val endIndex = contentMarkdown.indexOf(endTag)
+        if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
+            val jsonStr = contentMarkdown.substring(startIndex + startTag.length, endIndex).trim()
+            try {
+                val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+                val rawSlides = json.decodeFromString<List<NewsSlideItem>>(jsonStr)
+                return rawSlides.map { slide ->
+                    slide.copy(imageUrl = resolveUrl(slide.imageUrl))
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    // Fallback trích xuất ảnh slide từ cú pháp Markdown ![[title]](/api/news/slides/...)
+    val imageRegex = Regex("!\\[(.*?)\\]\\((/api/news/slides/.*?)\\)")
+    val matches = imageRegex.findAll(contentMarkdown).toList()
+    if (matches.isNotEmpty()) {
+        return matches.mapIndexed { idx, m ->
+            val title = m.groupValues[1]
+            val path = m.groupValues[2]
+            NewsSlideItem(
+                slideIndex = idx,
+                title = title,
+                imageUrl = resolveUrl(path)
+            )
+        }
+    }
+
+    return emptyList()
+}
+

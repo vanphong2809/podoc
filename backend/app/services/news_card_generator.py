@@ -314,6 +314,20 @@ def download_thumbnail_image(url: str, target_size: Tuple[int, int]) -> Optional
     return None
 
 
+def download_raw_news_image(url: str) -> Optional[Image.Image]:
+    """Tải nguyên vẹn ảnh gốc bài báo (không crop) để hiển thị trọn vẹn khung hình."""
+    if not url or not (url.startswith("http://") or url.startswith("https://")):
+        return None
+    try:
+        with httpx.Client(timeout=4.0, follow_redirects=True) as client:
+            resp = client.get(url)
+            if resp.status_code == 200 and resp.content:
+                return Image.open(io.BytesIO(resp.content)).convert("RGB")
+    except Exception as e:
+        logger.debug(f"Không thể tải ảnh gốc từ {url}: {e}")
+    return None
+
+
 def generate_cover_slide(date_str: str, greeting: str, categories: List[Dict[str, Any]]) -> Tuple[str, str]:
     """Vẽ slide bìa tổng quan (Slide 0) cho bộ series ảnh TikTok style."""
     w, h = 1080, 1440
@@ -400,7 +414,9 @@ def generate_news_slide_card(
 ) -> Tuple[str, str]:
     """
     Vẽ 1 ảnh slide tin tức riêng biệt (TikTok/Story Style, 1080x1440).
-    Mỗi ảnh là 1 tin tức trọn vẹn gồm ảnh bài báo, tiêu đề to rõ, và phần tóm tắt nổi bật.
+    Ưu tiên tối đa không gian cho bức ảnh bài báo (chiếm ~67% chiều cao),
+    hiển thị trọn vẹn full ảnh không bị cắt xén với nền mờ ambient,
+    phần text tóm tắt gọn gàng, tinh tế ở phía dưới.
     """
     w, h = 1080, 1440
     card = Image.new("RGB", (w, h), color=(15, 23, 42))
@@ -410,78 +426,111 @@ def generate_news_slide_card(
     cat_color_rgb = hex_to_rgb(cat_color_hex)
     raw_img_url = item.get("image_url")
 
-    bg_img = download_thumbnail_image(raw_img_url, target_size=(w, 800)) if raw_img_url else None
+    photo_area_h = 960  # Vùng ảnh chiếm 960/1440px (~67% chiều cao)
 
-    if bg_img:
-        card.paste(bg_img, (0, 0))
+    raw_photo = download_raw_news_image(raw_img_url) if raw_img_url else None
+
+    if raw_photo:
+        # 1. Vẽ nền mờ ambient blur phía sau để tạo chiều sâu và không gian điện ảnh
+        try:
+            blurred_bg = raw_photo.resize((w, photo_area_h + 80), Image.Resampling.LANCZOS).filter(ImageFilter.GaussianBlur(32))
+            card.paste(blurred_bg, (0, 0))
+        except Exception:
+            pass
+
+        # 2. Đặt ảnh gốc nguyên vẹn (100% full ảnh, không bị cắt xén) căn giữa vùng hiển thị
+        scale = min(w / raw_photo.width, photo_area_h / raw_photo.height)
+        disp_w = int(raw_photo.width * scale)
+        disp_h = int(raw_photo.height * scale)
+        scaled_photo = raw_photo.resize((disp_w, disp_h), Image.Resampling.LANCZOS)
+        paste_x = (w - disp_w) // 2
+        paste_y = (photo_area_h - disp_h) // 2
+        card.paste(scaled_photo, (paste_x, paste_y))
     else:
+        # Nền gradient mỹ thuật khi bài viết không có ảnh
         draw_temp = ImageDraw.Draw(card)
-        for y in range(800):
-            ratio = y / 800
+        for y in range(photo_area_h + 80):
+            ratio = y / (photo_area_h + 80)
             r = int(cat_color_rgb[0] * 0.7 * (1 - ratio) + 15 * ratio)
             g = int(cat_color_rgb[1] * 0.7 * (1 - ratio) + 23 * ratio)
             b = int(cat_color_rgb[2] * 0.7 * (1 - ratio) + 42 * ratio)
             draw_temp.line([(0, y), (w, y)], fill=(r, g, b))
 
+    # 3. Lớp gradient chuyển tiếp mềm mại từ ảnh xuống vùng thông tin phía dưới
+    overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d_ov = ImageDraw.Draw(overlay)
+    trans_start = photo_area_h - 100
+    trans_end = photo_area_h + 60
+    for y in range(trans_start, trans_end):
+        ratio = (y - trans_start) / (trans_end - trans_start)
+        alpha = int(ratio * 255)
+        d_ov.line([(0, y), (w, y)], fill=(15, 23, 42, alpha))
+    for y in range(trans_end, h):
+        d_ov.line([(0, y), (w, y)], fill=(15, 23, 42, 255))
+
+    card.paste(overlay, (0, 0), mask=overlay)
+
     draw = ImageDraw.Draw(card)
 
-    scrim_start = 380
-    scrim_height = h - scrim_start
-    for y in range(scrim_start, h):
-        draw.line([(0, y), (w, y)], fill=(11, 15, 25))
-
-    font_badge = load_font(26, bold=True)
+    # 4. Badge chuyên mục ở góc trên bên trái
+    font_badge = load_font(24, bold=True)
     badge_label = f"  {cat_name.upper()}  "
     bbox_b = font_badge.getbbox(badge_label)
     bw = (bbox_b[2] - bbox_b[0]) + 16
-    draw.rounded_rectangle([(48, 44), (48 + bw, 98)], radius=14, fill=cat_color_rgb)
-    draw.text((56, 56), badge_label, font=font_badge, fill=(255, 255, 255))
+    draw.rounded_rectangle([(44, 38), (44 + bw, 88)], radius=12, fill=cat_color_rgb)
+    draw.text((52, 48), badge_label, font=font_badge, fill=(255, 255, 255))
 
-    font_counter = load_font(24, bold=True)
+    # 5. Bộ đếm slide ở góc trên bên phải (Tin 1/8)
+    font_counter = load_font(22, bold=True)
     counter_label = f"Tin {slide_index}/{total_slides}"
-    draw.rounded_rectangle([(w - 220, 44), (w - 48, 98)], radius=14, fill=(30, 41, 59))
-    draw.text((w - 192, 58), counter_label, font=font_counter, fill=(226, 232, 240))
+    draw.rounded_rectangle([(w - 200, 38), (w - 44, 88)], radius=12, fill=(15, 23, 42))
+    draw.rounded_rectangle([(w - 200, 38), (w - 44, 88)], radius=12, outline=(51, 65, 85), width=1)
+    draw.text((w - 176, 50), counter_label, font=font_counter, fill=(226, 232, 240))
 
-    font_title = load_font(44, bold=True)
+    # 6. Phần Tiêu đề: Tối đa 2 dòng, in đậm, trắng sáng rõ ràng
+    font_title = load_font(36, bold=True)
     title = item.get("title", "")
-    title_lines = wrap_text(title, font_title, max_width_px=w - 96)
+    title_lines = wrap_text(title, font_title, max_width_px=w - 88)
 
-    y_content = 660
-    for line in title_lines[:4]:
-        draw.text((50, y_content + 2), line, font=font_title, fill=(0, 0, 0))
-        draw.text((48, y_content), line, font=font_title, fill=(255, 255, 255))
-        y_content += 58
+    y_content = photo_area_h - 10
+    for line in title_lines[:2]:
+        draw.text((46, y_content + 2), line, font=font_title, fill=(0, 0, 0))
+        draw.text((44, y_content), line, font=font_title, fill=(255, 255, 255))
+        y_content += 48
 
-    y_content += 20
+    y_content += 14
 
+    # 7. Khung tóm tắt AI: Tinh gọn, tối đa 3 dòng, nền mờ sang trọng
     summary = item.get("summary", "")
-    font_summary = load_font(30, bold=False)
-    summary_lines = wrap_text(summary, font_summary, max_width_px=w - 140)
+    font_summary = load_font(25, bold=False)
+    summary_lines = wrap_text(summary, font_summary, max_width_px=w - 130)
 
-    box_pad_v = 24
-    box_h = len(summary_lines) * 44 + box_pad_v * 2
+    box_pad_v = 18
+    line_count = min(len(summary_lines), 3)
+    box_h = line_count * 36 + box_pad_v * 2
     box_top = y_content
-    box_bottom = min(h - 130, box_top + box_h)
+    box_bottom = min(h - 95, box_top + box_h)
 
-    draw.rounded_rectangle([(48, box_top), (w - 48, box_bottom)], radius=18, fill=(30, 41, 59))
-    draw.rounded_rectangle([(48, box_top), (58, box_bottom)], radius=6, fill=cat_color_rgb)
+    draw.rounded_rectangle([(44, box_top), (w - 44, box_bottom)], radius=16, fill=(30, 41, 59))
+    draw.rounded_rectangle([(44, box_top), (52, box_bottom)], radius=4, fill=cat_color_rgb)
 
     sy = box_top + box_pad_v
-    for line in summary_lines[:5]:
-        if sy + 38 > box_bottom - 10:
+    for line in summary_lines[:3]:
+        if sy + 30 > box_bottom - 8:
             break
-        draw.text((76, sy), line, font=font_summary, fill=(241, 245, 249))
-        sy += 44
+        draw.text((70, sy), line, font=font_summary, fill=(241, 245, 249))
+        sy += 36
 
-    footer_y = h - 90
-    draw.line([(48, footer_y), (w - 48, footer_y)], fill=(51, 65, 85), width=1)
+    # 8. Chân trang (Footer): Nguồn báo + Ngày tháng + Gợi ý vuốt
+    footer_y = h - 75
+    draw.line([(44, footer_y), (w - 44, footer_y)], fill=(51, 65, 85), width=1)
 
     source = item.get("source", "Báo chí")
-    font_footer = load_font(22, bold=False)
-    draw.text((48, footer_y + 16), f"Nguồn: {source} • {date_str}", font=font_footer, fill=(148, 163, 184))
+    font_footer = load_font(21, bold=False)
+    draw.text((44, footer_y + 16), f"Nguồn: {source} • {date_str}", font=font_footer, fill=(148, 163, 184))
 
     swipe_prompt = "Vuốt tiếp ➔" if slide_index < total_slides else "Tin cuối cùng ✓"
-    draw.text((w - 220, footer_y + 16), swipe_prompt, font=font_footer, fill=(203, 213, 225))
+    draw.text((w - 200, footer_y + 16), swipe_prompt, font=font_footer, fill=(203, 213, 225))
 
     storage_dir = get_effective_storage_dir()
     os.makedirs(storage_dir, exist_ok=True)

@@ -244,6 +244,29 @@ fun ReaderScreen(
         return
     }
 
+    // Nếu bài viết thuộc Điểm tin sáng hoặc có series slides -> Hiển thị chuẩn TikTok Style như ở Menu Công cụ
+    val briefingSlides = remember(article?.contentMarkdown) {
+        val md = article?.contentMarkdown ?: ""
+        if (md.contains("<!-- PODOC_BRIEFING_SLIDES_START -->") || article?.categoryName == "Điểm tin sáng") {
+            com.podoc.app.data.model.parseBriefingSlides(md) { url ->
+                viewModel.articleRepository.resolveImageUrl(url)
+            }
+        } else {
+            emptyList()
+        }
+    }
+
+    if (article != null && briefingSlides.isNotEmpty()) {
+        com.podoc.app.ui.components.BriefingSlideSeriesViewer(
+            title = article.title,
+            slides = briefingSlides,
+            onNavigateBack = onNavigateBack,
+            onDeleteClick = { showDeleteDialog = true },
+            textMarkdown = cleanedMarkdown
+        )
+        return
+    }
+
     Scaffold(
         topBar = {
             if (!isMediaViewer) {
