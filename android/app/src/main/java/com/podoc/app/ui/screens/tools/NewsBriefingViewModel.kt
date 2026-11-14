@@ -72,10 +72,19 @@ class NewsBriefingViewModel(
                     _uiState.value = _uiState.value.copy(
                         isGenerating = false,
                         generatedBriefing = res,
+                        latestBriefing = LatestBriefingResponse(
+                            articleId = res.articleId,
+                            title = res.title,
+                            categoryId = res.categoryId,
+                            categoryName = res.categoryName,
+                            filePath = res.filePath,
+                            imageUrl = res.imageUrl,
+                            contentMarkdown = res.briefing?.markdownContent,
+                            excerpt = res.briefing?.greeting ?: res.title,
+                            createdAt = res.createdAt
+                        ),
                         userMessage = "Đã tạo Bản tin sáng mới thành công!"
                     )
-                    // Reload latest
-                    loadLatestBriefing()
                 },
                 onFailure = { err ->
                     _uiState.value = _uiState.value.copy(

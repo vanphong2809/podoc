@@ -471,6 +471,10 @@ class MainActivity : ComponentActivity() {
                                 onOpenNewsBriefing = {
                                     newsBriefingViewModel.loadLatestBriefing()
                                     navController.navigate(Screen.NewsBriefing.route)
+                                },
+                                onGenerateNewsBriefingNow = {
+                                    newsBriefingViewModel.generateBriefingNow()
+                                    navController.navigate(Screen.NewsBriefing.route)
                                 }
                             )
                         }

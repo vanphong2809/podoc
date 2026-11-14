@@ -14,8 +14,8 @@ android {
         applicationId = "com.podoc.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 91
-        versionName = "1.6.48"
+        versionCode = 92
+        versionName = "1.6.49"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

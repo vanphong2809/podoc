@@ -2,6 +2,7 @@ package com.podoc.app.ui.screens.tools
 
 import android.content.Intent
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -136,6 +137,57 @@ fun NewsBriefingScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
+                }
+            }
+
+            // Thẻ hành động nhanh: Chạy điểm tin ngay (không cần chờ 7h sáng)
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color(0xFFFFF7ED)
+                ),
+                border = BorderStroke(1.dp, Color(0xFFFED7AA)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "⚡ Cập nhật tin tức tức thì",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF9A3412)
+                        )
+                        Text(
+                            text = "Không cần đợi 07:00 AM, chạy quét tin tức và tạo infographic ngay.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFFC2410C),
+                            lineHeight = 16.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Button(
+                        onClick = viewModel::generateBriefingNow,
+                        enabled = !uiState.isGenerating,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFEA580C),
+                            contentColor = Color.White
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Chạy ngay", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             }
@@ -281,17 +333,21 @@ fun NewsBriefingScreen(
                     }
 
                     // Nút Điểm tin ngay
-                    FilledTonalButton(
+                    Button(
                         onClick = viewModel::generateBriefingNow,
                         enabled = !uiState.isGenerating,
                         shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFEA580C),
+                            contentColor = Color.White
+                        ),
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp)
                     ) {
                         Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Điểm tin ngay", fontWeight = FontWeight.SemiBold)
+                        Text("Điểm tin ngay", fontWeight = FontWeight.Bold)
                     }
                 }
 
