@@ -115,6 +115,12 @@ class MainActivity : ComponentActivity() {
                     container.categoryRepository
                 )
             }
+            val newsBriefingViewModel = remember {
+                com.podoc.app.ui.screens.tools.NewsBriefingViewModel(
+                    container.articleRepository,
+                    container.dataStoreManager
+                )
+            }
 
             // Reload khi server URL thay đổi
             val serverUrl by container.dataStoreManager.serverUrlFlow.collectAsState(initial = "")
@@ -461,6 +467,10 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onOpenNoteEditor = {
                                     navController.navigate(Screen.NoteEditor.createRoute())
+                                },
+                                onOpenNewsBriefing = {
+                                    newsBriefingViewModel.loadLatestBriefing()
+                                    navController.navigate(Screen.NewsBriefing.route)
                                 }
                             )
                         }
@@ -511,6 +521,21 @@ class MainActivity : ComponentActivity() {
                             }
                             AudioExtractorScreen(
                                 viewModel = audioExtractorViewModel,
+                                onNavigateBack = { navController.popBackStack() },
+                                onOpenArticle = { articleId ->
+                                    libraryViewModel.loadArticles(refresh = true)
+                                    categoryViewModel.loadCategories()
+                                    navController.navigate(Screen.Reader.createRoute(articleId)) {
+                                        launchSingleTop = true
+                                    }
+                                }
+                            )
+                        }
+
+                        // Màn hình Điểm tin sáng AI
+                        composable(Screen.NewsBriefing.route) {
+                            com.podoc.app.ui.screens.tools.NewsBriefingScreen(
+                                viewModel = newsBriefingViewModel,
                                 onNavigateBack = { navController.popBackStack() },
                                 onOpenArticle = { articleId ->
                                     libraryViewModel.loadArticles(refresh = true)

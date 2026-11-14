@@ -220,7 +220,7 @@ class ArticleRepository(
         }
     }
 
-    private fun resolveImageUrl(url: String?): String? {
+    fun resolveImageUrl(url: String?): String? {
         if (url.isNullOrBlank()) return null
         if (url.startsWith("http://") || url.startsWith("https://")) return url
         val base = serverUrlProvider().trimEnd('/')
@@ -1106,4 +1106,48 @@ class ArticleRepository(
     }
 
     private fun queryFileName(uri: Uri): String? = queryFileInfo(uri).first
+
+    // ── ĐIỂM TIN SÁNG AI ───────────────────────────────────────────────────
+    suspend fun generateNewsBriefing(
+        geminiApiKey: String? = null,
+        geminiModel: String = "gemini-3.8-flash"
+    ): Result<com.podoc.app.data.model.NewsBriefingResponse> = withContext(Dispatchers.IO) {
+        try {
+            val req = com.podoc.app.data.model.GenerateBriefingRequest(
+                geminiApiKey = geminiApiKey?.ifBlank { null },
+                geminiModel = geminiModel
+            )
+            val res = getApi().generateNewsBriefing(req)
+            val resolved = res.copy(
+                imageUrl = resolveImageUrl(res.imageUrl ?: res.filePath?.let { "/api/articles/${res.articleId}/file" })
+            )
+            Result.success(resolved)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getLatestNewsBriefing(): Result<com.podoc.app.data.model.LatestBriefingResponse?> = withContext(Dispatchers.IO) {
+        try {
+            val res = getApi().getLatestNewsBriefing()
+            val resolved = res?.copy(
+                imageUrl = resolveImageUrl(res.imageUrl ?: res.filePath?.let { "/api/articles/${res.articleId}/file" })
+            )
+            Result.success(resolved)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getNewsSettings(): Result<com.podoc.app.data.model.NewsSettingsResponse> = withContext(Dispatchers.IO) {
+        try {
+            val res = getApi().getNewsSettings()
+            Result.success(res)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Result.failure(e)
+        }
+    }
 }

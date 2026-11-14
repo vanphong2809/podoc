@@ -178,4 +178,16 @@ interface PoDocApiService {
         @Part("title") title: RequestBody? = null,
         @Part("category_id") categoryId: RequestBody? = null
     ): AudioExtractResultResponse
+
+    // Điểm tin sáng AI
+    @POST("api/news/briefing/generate")
+    suspend fun generateNewsBriefing(
+        @Body request: com.podoc.app.data.model.GenerateBriefingRequest = com.podoc.app.data.model.GenerateBriefingRequest()
+    ): com.podoc.app.data.model.NewsBriefingResponse
+
+    @GET("api/news/briefing/latest")
+    suspend fun getLatestNewsBriefing(): com.podoc.app.data.model.LatestBriefingResponse?
+
+    @GET("api/news/settings")
+    suspend fun getNewsSettings(): com.podoc.app.data.model.NewsSettingsResponse
 }

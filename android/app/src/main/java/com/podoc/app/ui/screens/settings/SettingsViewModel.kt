@@ -18,6 +18,7 @@ data class SettingsUiState(
     val dynamicColor: Boolean = true,
     val accentColor: String = "#4F46E5",
     val defaultFontSize: Int = 16,
+    val geminiApiKey: String = "",
     val isExporting: Boolean = false,
     val exportSuccessMessage: String? = null,
     val errorMessage: String? = null,
@@ -42,7 +43,8 @@ class SettingsViewModel(
         val theme: String,
         val dynamic: Boolean,
         val accent: String,
-        val fontSize: Int
+        val fontSize: Int,
+        val geminiKey: String
     )
 
     private val baseSettingsFlow = combine(
@@ -50,9 +52,13 @@ class SettingsViewModel(
         authRepository.username,
         dataStoreManager.themeModeFlow,
         dataStoreManager.dynamicColorFlow,
-        combine(dataStoreManager.accentColorFlow, dataStoreManager.defaultFontSizeFlow) { a, f -> a to f }
-    ) { server, user, theme, dynamic, (accent, fontSize) ->
-        BaseSettings(server, user, theme, dynamic, accent, fontSize)
+        combine(
+            dataStoreManager.accentColorFlow,
+            dataStoreManager.defaultFontSizeFlow,
+            dataStoreManager.geminiApiKeyFlow
+        ) { a, f, k -> Triple(a, f, k) }
+    ) { server, user, theme, dynamic, (accent, fontSize, geminiKey) ->
+        BaseSettings(server, user, theme, dynamic, accent, fontSize, geminiKey)
     }
 
     val uiState: StateFlow<SettingsUiState> = combine(
@@ -68,6 +74,7 @@ class SettingsViewModel(
             dynamicColor = base.dynamic,
             accentColor = base.accent,
             defaultFontSize = base.fontSize,
+            geminiApiKey = base.geminiKey,
             serverStats = stats,
             isLoadingServerStats = isLoading,
             serverStatsError = error
@@ -109,6 +116,10 @@ class SettingsViewModel(
 
     fun setDefaultFontSize(size: Int) {
         viewModelScope.launch { dataStoreManager.setDefaultFontSize(size) }
+    }
+
+    fun saveGeminiApiKey(key: String) {
+        viewModelScope.launch { dataStoreManager.saveGeminiApiKey(key) }
     }
 
     fun exportDataToUri(context: Context, destinationUri: Uri) {

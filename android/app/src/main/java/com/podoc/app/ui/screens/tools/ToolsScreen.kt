@@ -43,7 +43,8 @@ fun ToolsScreen(
     onOpenOcr: () -> Unit = {},
     onOpenPdfTools: () -> Unit = {},
     onOpenAudioExtractor: () -> Unit = {},
-    onOpenNoteEditor: () -> Unit = {}
+    onOpenNoteEditor: () -> Unit = {},
+    onOpenNewsBriefing: () -> Unit = {}
 ) {
     var showUrlDialog by remember { mutableStateOf(false) }
     var urlInput by remember { mutableStateOf("") }
@@ -58,8 +59,9 @@ fun ToolsScreen(
     val matchPdfMerge = q.isEmpty() || listOf("ghép", "ghep", "tách", "tach", "pdf").any { it.contains(q) || q.contains(it) }
     val matchExtractAudio = q.isEmpty() || listOf("âm thanh", "am thanh", "audio", "nhạc", "nhac", "tách", "tach", "video", "mp3", "m4a").any { it.contains(q) || q.contains(it) }
     val matchNote = q.isEmpty() || listOf("ghi chú", "ghi chu", "note", "soạn thảo", "soan thao", "viết", "viet", "to-do", "todo").any { it.contains(q) || q.contains(it) }
+    val matchNews = q.isEmpty() || listOf("tin tức", "tin tuc", "điểm tin", "diem tin", "bản tin", "ban tin", "báo", "bao", "thời sự", "thoi su", "sáng", "sang", "gemini", "ai").any { it.contains(q) || q.contains(it) }
     val matchPdfCompress = q.isEmpty() || listOf("nén", "nen", "tối ưu", "toi uu", "dung lượng", "dung luong", "pdf").any { it.contains(q) || q.contains(it) }
-    val hasAnyMatch = matchOfficeToPdf || matchWeb || matchOcr || matchPdfMerge || matchExtractAudio || matchNote || matchPdfCompress
+    val hasAnyMatch = matchOfficeToPdf || matchWeb || matchOcr || matchPdfMerge || matchExtractAudio || matchNote || matchNews || matchPdfCompress
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -308,7 +310,7 @@ fun ToolsScreen(
             }
 
             // ── Nhóm 1: Chuyển đổi & Xử lý tài liệu ──
-            if (matchOfficeToPdf || matchWeb || matchOcr || matchPdfMerge || matchExtractAudio || matchNote) {
+            if (matchOfficeToPdf || matchWeb || matchOcr || matchPdfMerge || matchExtractAudio || matchNote || matchNews) {
                 Text(
                     text = "ĐANG HOẠT ĐỘNG",
                     style = MaterialTheme.typography.labelMedium.copy(
@@ -1248,6 +1250,157 @@ fun ToolsScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Tạo ghi chú mới",
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Icon(imageVector = Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+            }
+
+            // Thẻ Công cụ: Điểm tin sáng AI
+            if (matchNews) {
+                Card(
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
+                ) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(Color(0xFFFFEDD5)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.WbSunny,
+                                    contentDescription = null,
+                                    tint = Color(0xFFEA580C),
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(14.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "Điểm tin sáng AI",
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Surface(
+                                        color = Color(0xFFFFEDD5),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            text = "07:00 AM",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp),
+                                            color = Color(0xFFC2410C),
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "Tóm tắt thời sự, công nghệ, thể thao bằng Gemini",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Text(
+                            text = "Tự động thu thập tin tức mới nhất từ VnExpress, Tuổi Trẻ, tóm tắt thông minh bằng AI Gemini 3.8 Flash và xuất bản ảnh Infographic trực quan mỗi sáng.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 18.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                                modifier = Modifier.weight(1f).height(36.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(Icons.Default.Image, contentDescription = null, tint = Color(0xFFEA580C), modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Ảnh Infographic Card",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                                modifier = Modifier.weight(1f).height(36.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFF2563EB), modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Gemini 3.8 Flash",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Button(
+                            onClick = onOpenNewsBriefing,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFEA580C),
+                                contentColor = Color.White
+                            ),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.WbSunny, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Mở Bản tin sáng",
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.weight(1f)
                             )

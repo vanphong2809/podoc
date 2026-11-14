@@ -1,6 +1,7 @@
 package com.podoc.app.ui.screens.settings
 
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -25,6 +26,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,6 +54,8 @@ fun SettingsScreen(
     }
     var showServerDialog by remember { mutableStateOf(false) }
     var editingServerUrl by remember { mutableStateOf("") }
+    var geminiApiKeyInput by remember(uiState.geminiApiKey) { mutableStateOf(uiState.geminiApiKey) }
+    var isApiKeyVisible by remember { mutableStateOf(false) }
 
     // Màu sắc theo thiết kế chuẩn Indigo / Purple mới của PoDoc
     val brandPrimary = Color(0xFF4F46E5)
@@ -669,6 +674,137 @@ fun SettingsScreen(
                                 }
                             }
                         }
+                    }
+                }
+
+                // CARD AI: Cấu hình Trí tuệ nhân tạo (AI)
+                Card(
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardBg),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFFEA580C).copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = Color(0xFFEA580C),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Trí tuệ nhân tạo (AI)",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 18.sp
+                                    ),
+                                    color = brandPrimary
+                                )
+                                Text(
+                                    text = "Google Gemini 3.8 Flash & Điểm tin sáng",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontSize = 12.sp
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Text(
+                            text = "Khóa API Google Gemini dùng cho tính năng tự động tóm tắt tin tức sáng hàng ngày lúc 07:00 AM và tạo ảnh báo cáo Infographic.",
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 13.5.sp,
+                                lineHeight = 19.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        OutlinedTextField(
+                            value = geminiApiKeyInput,
+                            onValueChange = { geminiApiKeyInput = it },
+                            label = { Text("Gemini API Key") },
+                            placeholder = { Text("AIzaSy...") },
+                            singleLine = true,
+                            visualTransformation = if (isApiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { isApiKeyVisible = !isApiKeyVisible }) {
+                                    Icon(
+                                        imageVector = if (isApiKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = if (isApiKeyVisible) "Ẩn API Key" else "Hiện API Key",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Button(
+                                onClick = {
+                                    viewModel.saveGeminiApiKey(geminiApiKeyInput)
+                                    Toast.makeText(context, "Đã lưu Google Gemini API Key!", Toast.LENGTH_SHORT).show()
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = brandPrimary),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Lưu khóa API", fontWeight = FontWeight.SemiBold)
+                            }
+
+                            if (geminiApiKeyInput.isNotBlank()) {
+                                OutlinedButton(
+                                    onClick = {
+                                        geminiApiKeyInput = ""
+                                        viewModel.saveGeminiApiKey("")
+                                        Toast.makeText(context, "Đã xóa Google Gemini API Key", Toast.LENGTH_SHORT).show()
+                                    },
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Xóa")
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "💡 Lưu ý: Nếu máy chủ Backend đã thiết lập biến môi trường GEMINI_API_KEY, bạn có thể để trống mục này.",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 11.5.sp,
+                                lineHeight = 16.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        )
                     }
                 }
 

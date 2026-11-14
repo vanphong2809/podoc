@@ -15,6 +15,7 @@ from app.api.v1.export import router as export_router
 from app.api.v1.extract import router as extract_router
 from app.api.v1.ocr import router as ocr_router
 from app.api.v1.pdf import router as pdf_router
+from app.api.v1.news import router as news_router
 from app.api.v1.system import router as system_router
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, engine
@@ -23,6 +24,7 @@ from app.core.security import hash_password
 from app.models.category import Category
 from app.models.user import User
 from app.services.video_transcoder import VideoTranscoder
+from app.services.news_scheduler import daily_news_scheduler
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,6 +41,7 @@ DEFAULT_CATEGORIES = [
     {"name": "Công việc", "icon": "briefcase", "color": "#EC4899", "sort_order": 5, "is_system": False},
     {"name": "Giải trí", "icon": "film", "color": "#06B6D4", "sort_order": 6, "is_system": False},
     {"name": "Ghi chú", "icon": "note", "color": "#F59E0B", "sort_order": 7, "is_system": False},
+    {"name": "Điểm tin sáng", "icon": "newspaper", "color": "#EA580C", "sort_order": 8, "is_system": False},
     {"name": "Chưa phân loại", "icon": "folder", "color": "#64748B", "sort_order": 99, "is_system": True},
 ]
 
@@ -89,9 +92,11 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Chưa thể kết nối DB để seed lúc start (có thể DB đang chờ migrate): {e}")
     video_transcoder = VideoTranscoder()
     video_transcoder.start()
+    daily_news_scheduler.start()
     try:
         yield
     finally:
+        await daily_news_scheduler.stop()
         await video_transcoder.stop()
         logger.info("PoDoc Backend đang tắt kết nối...")
         await engine.dispose()
@@ -148,4 +153,5 @@ app.include_router(export_router, prefix="/api")
 app.include_router(ocr_router, prefix="/api")
 app.include_router(pdf_router, prefix="/api")
 app.include_router(audio_router, prefix="/api")
+app.include_router(news_router, prefix="/api")
 app.include_router(system_router, prefix="/api")
