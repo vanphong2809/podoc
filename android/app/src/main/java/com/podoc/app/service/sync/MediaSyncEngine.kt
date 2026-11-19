@@ -59,11 +59,10 @@ object MediaSyncEngine {
             return@withContext MediaSyncResult.Error(errMsg)
         }
 
-        // 3. Kiểm tra đăng nhập và máy chủ PoDoc
+        // 3. Kiểm tra máy chủ PoDoc (không bắt buộc đăng nhập vì PoDoc là ứng dụng máy chủ cá nhân tự chủ)
         val serverUrl = container.dataStoreManager.serverUrlFlow.first()
-        val authToken = container.dataStoreManager.authTokenFlow.first()
-        if (serverUrl.isBlank() || authToken.isBlank()) {
-            val errMsg = "Chưa đăng nhập vào tài khoản PoDoc hoặc chưa cấu hình máy chủ."
+        if (serverUrl.isBlank()) {
+            val errMsg = "Chưa cấu hình địa chỉ máy chủ PoDoc. Vui lòng vào Cài đặt để kiểm tra."
             Log.e(TAG, errMsg)
             return@withContext MediaSyncResult.Error(errMsg)
         }
