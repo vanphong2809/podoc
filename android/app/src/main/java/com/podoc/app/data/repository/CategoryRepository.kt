@@ -27,7 +27,7 @@ class CategoryRepository(
         }
     }
 
-    suspend fun createCategory(name: String, icon: String, color: String, sortOrder: Int): Result<Category> {
+    suspend fun createCategory(name: String, icon: String, color: String, sortOrder: Int = 10): Result<Category> {
         return try {
             val cat = getApi().createCategory(CreateCategoryRequest(name, icon, color, sortOrder))
             // Cập nhật lại danh mục để mọi màn hình đều có danh mục mới ngay lập tức

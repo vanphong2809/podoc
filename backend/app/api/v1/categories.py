@@ -62,8 +62,8 @@ async def list_categories(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Lấy danh sách toàn bộ danh mục, kèm số lượng bài viết trong mỗi danh mục, sắp xếp theo sort_order."""
-    # 1. Dọn dẹp pseudo-categories đa phương tiện và đồng bộ bài viết về danh mục thực tế
-    await cleanup_media_categories(db)
+    # Không tự ý dọn dẹp các danh mục Hình ảnh / Video để hỗ trợ đồng bộ đa phương tiện
+    # await cleanup_media_categories(db)
 
     # 2. Tự động khắc phục bài viết mồ côi (category_id null hoặc không hợp lệ) về danh mục mặc định
     default_cat_stmt = select(Category).order_by(Category.is_system.desc(), Category.sort_order.asc(), Category.id.asc()).limit(1)

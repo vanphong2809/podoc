@@ -45,7 +45,8 @@ fun ToolsScreen(
     onOpenAudioExtractor: () -> Unit = {},
     onOpenNoteEditor: () -> Unit = {},
     onOpenNewsBriefing: () -> Unit = {},
-    onGenerateNewsBriefingNow: () -> Unit = {}
+    onGenerateNewsBriefingNow: () -> Unit = {},
+    onOpenMediaSync: () -> Unit = {}
 ) {
     var showUrlDialog by remember { mutableStateOf(false) }
     var urlInput by remember { mutableStateOf("") }
@@ -61,8 +62,9 @@ fun ToolsScreen(
     val matchExtractAudio = q.isEmpty() || listOf("âm thanh", "am thanh", "audio", "nhạc", "nhac", "tách", "tach", "video", "mp3", "m4a").any { it.contains(q) || q.contains(it) }
     val matchNote = q.isEmpty() || listOf("ghi chú", "ghi chu", "note", "soạn thảo", "soan thao", "viết", "viet", "to-do", "todo").any { it.contains(q) || q.contains(it) }
     val matchNews = q.isEmpty() || listOf("tin tức", "tin tuc", "điểm tin", "diem tin", "bản tin", "ban tin", "báo", "bao", "thời sự", "thoi su", "sáng", "sang", "gemini", "ai").any { it.contains(q) || q.contains(it) }
+    val matchMediaSync = q.isEmpty() || listOf("đồng bộ", "dong bo", "ảnh", "anh", "video", "photos", "gallery", "wifi", "sao lưu", "sao luu", "23h59", "sync").any { it.contains(q) || q.contains(it) }
     val matchPdfCompress = q.isEmpty() || listOf("nén", "nen", "tối ưu", "toi uu", "dung lượng", "dung luong", "pdf").any { it.contains(q) || q.contains(it) }
-    val hasAnyMatch = matchOfficeToPdf || matchWeb || matchOcr || matchPdfMerge || matchExtractAudio || matchNote || matchNews || matchPdfCompress
+    val hasAnyMatch = matchOfficeToPdf || matchWeb || matchOcr || matchPdfMerge || matchExtractAudio || matchNote || matchNews || matchMediaSync || matchPdfCompress
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -311,7 +313,7 @@ fun ToolsScreen(
             }
 
             // ── Nhóm 1: Chuyển đổi & Xử lý tài liệu ──
-            if (matchOfficeToPdf || matchWeb || matchOcr || matchPdfMerge || matchExtractAudio || matchNote || matchNews) {
+            if (matchOfficeToPdf || matchWeb || matchOcr || matchPdfMerge || matchExtractAudio || matchNote || matchNews || matchMediaSync) {
                 Text(
                     text = "ĐANG HOẠT ĐỘNG",
                     style = MaterialTheme.typography.labelMedium.copy(
@@ -1427,6 +1429,110 @@ fun ToolsScreen(
                                     fontSize = 13.sp
                                 )
                             }
+                        }
+                    }
+                }
+            }
+
+            // Thẻ Công cụ: Đồng bộ Ảnh & Video điện thoại (23:59 qua Wi-Fi)
+            if (matchMediaSync) {
+                Card(
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 18.dp)
+                ) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(Color(0xFF6366F1), Color(0xFF4338CA))
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Sync,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Đồng bộ Ảnh & Video",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color(0xFF0284C7).copy(alpha = 0.12f))
+                                            .padding(horizontal = 7.dp, vertical = 3.dp)
+                                    ) {
+                                        Text(
+                                            text = "23:59 • Chỉ Wi-Fi",
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF0284C7)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Từ ứng dụng Ảnh -> Hình ảnh & Video",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Text(
+                            text = "Tự động quét ảnh và video chụp/lưu trong ngày và đồng bộ lên PoDoc lúc 23:59, phân loại vào đúng 'Hình ảnh' hoặc 'Video'. Chỉ chạy khi kết nối Wi-Fi, không dùng 3G/4G/5G.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 18.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Button(
+                            onClick = onOpenMediaSync,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF6366F1)
+                            ),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Mở đồng bộ & Đồng bộ ngay",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.5.sp
+                            )
                         }
                     }
                 }

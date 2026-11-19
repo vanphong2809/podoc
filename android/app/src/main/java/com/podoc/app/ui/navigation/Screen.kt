@@ -9,6 +9,7 @@ sealed class Screen(val route: String) {
     object PdfTools : Screen("pdf_tools")
     object AudioExtractor : Screen("audio_extractor")
     object NewsBriefing : Screen("news_briefing")
+    object MediaSync : Screen("media_sync")
     object NoteEditor : Screen("note_editor?articleId={articleId}") {
         fun createRoute(articleId: Int? = null): String {
             return if (articleId != null && articleId > 0) {

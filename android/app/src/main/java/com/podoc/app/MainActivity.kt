@@ -121,6 +121,12 @@ class MainActivity : ComponentActivity() {
                     container.dataStoreManager
                 )
             }
+            val mediaSyncViewModel = remember {
+                com.podoc.app.ui.screens.tools.MediaSyncViewModel(
+                    context = applicationContext,
+                    container = container
+                )
+            }
 
             // Reload khi server URL thay đổi
             val serverUrl by container.dataStoreManager.serverUrlFlow.collectAsState(initial = "")
@@ -475,6 +481,10 @@ class MainActivity : ComponentActivity() {
                                 onGenerateNewsBriefingNow = {
                                     newsBriefingViewModel.generateBriefingNow()
                                     navController.navigate(Screen.NewsBriefing.route)
+                                },
+                                onOpenMediaSync = {
+                                    mediaSyncViewModel.loadSettingsAndStatus()
+                                    navController.navigate(Screen.MediaSync.route)
                                 }
                             )
                         }
@@ -547,6 +557,18 @@ class MainActivity : ComponentActivity() {
                                     navController.navigate(Screen.Reader.createRoute(articleId)) {
                                         launchSingleTop = true
                                     }
+                                }
+                            )
+                        }
+
+                        // Màn hình Đồng bộ Ảnh & Video điện thoại (Tự động 23:59 qua Wi-Fi)
+                        composable(Screen.MediaSync.route) {
+                            com.podoc.app.ui.screens.tools.MediaSyncScreen(
+                                viewModel = mediaSyncViewModel,
+                                onNavigateBack = {
+                                    categoryViewModel.loadCategories()
+                                    libraryViewModel.loadArticles(refresh = true)
+                                    navController.popBackStack()
                                 }
                             )
                         }

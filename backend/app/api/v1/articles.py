@@ -489,13 +489,31 @@ async def upload_article_file(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Danh mục không tồn tại")
 
     if not cat:
-        def_cat_stmt = select(Category).order_by(Category.is_system.desc(), Category.sort_order.asc(), Category.id.asc()).limit(1)
-        def_cat_res = await db.execute(def_cat_stmt)
-        cat = def_cat_res.scalar_one_or_none()
-        if not cat:
-            cat = Category(name="Chưa phân loại", icon="folder", color="#64748B", is_system=True)
-            db.add(cat)
-            await db.flush()
+        # Nếu là hình ảnh hoặc video, tự động gán vào danh mục 'Hình ảnh' hoặc 'Video' tương ứng
+        if is_image:
+            image_cat_stmt = select(Category).where(Category.name.ilike("Hình ảnh")).limit(1)
+            image_cat_res = await db.execute(image_cat_stmt)
+            cat = image_cat_res.scalar_one_or_none()
+            if not cat:
+                cat = Category(name="Hình ảnh", icon="image", color="#EC4899", is_system=False)
+                db.add(cat)
+                await db.flush()
+        elif is_video:
+            video_cat_stmt = select(Category).where(Category.name.ilike("Video")).limit(1)
+            video_cat_res = await db.execute(video_cat_stmt)
+            cat = video_cat_res.scalar_one_or_none()
+            if not cat:
+                cat = Category(name="Video", icon="videocam", color="#EF4444", is_system=False)
+                db.add(cat)
+                await db.flush()
+        else:
+            def_cat_stmt = select(Category).order_by(Category.is_system.desc(), Category.sort_order.asc(), Category.id.asc()).limit(1)
+            def_cat_res = await db.execute(def_cat_stmt)
+            cat = def_cat_res.scalar_one_or_none()
+            if not cat:
+                cat = Category(name="Chưa phân loại", icon="folder", color="#64748B", is_system=True)
+                db.add(cat)
+                await db.flush()
 
     # 4. Lưu nguyên vẹn file vật lý vào thư mục storage theo dạng stream chunk để tối ưu RAM
     os.makedirs(settings.FILES_STORAGE_DIR, exist_ok=True)

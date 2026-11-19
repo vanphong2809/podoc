@@ -14,8 +14,8 @@ android {
         applicationId = "com.podoc.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 94
-        versionName = "1.6.51"
+        versionCode = 95
+        versionName = "1.6.52"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -92,6 +92,9 @@ dependencies {
 
     // Chrome Custom Tabs for in-app browser
     implementation("androidx.browser:browser:1.8.0")
+
+    // WorkManager for scheduled background tasks (Media Sync at 23:59)
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

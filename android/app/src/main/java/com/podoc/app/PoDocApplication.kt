@@ -14,6 +14,7 @@ class PoDocApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        com.podoc.app.service.sync.MediaSyncScheduler.scheduleDailySync(this)
     }
 
     override fun newImageLoader(): ImageLoader {
